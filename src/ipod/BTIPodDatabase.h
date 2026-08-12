@@ -50,9 +50,6 @@
 // Names of the playlists on the device, excluding the master list.
 - (NSSet *)playlistNames;
 
-- (BTIPodTrackRef *)trackWithID:(uint32_t)trackID;
-- (uint32_t)nextFreeTrackID;
-
 // Serializes the whole database. deviceName becomes the master playlist name.
 - (NSData *)serializedDataWithDeviceName:(NSString *)deviceName;
 

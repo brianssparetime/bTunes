@@ -148,15 +148,6 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
 
 #pragma mark - Lookup
 
-- (BTTrack *)trackWithID:(NSString *)trackID {
-    NSUInteger i;
-    for (i = 0; i < [self.tracks count]; i++) {
-        BTTrack *t = [self.tracks objectAtIndex:i];
-        if ([t.trackID isEqualToString:trackID]) return t;
-    }
-    return nil;
-}
-
 - (void)removeTracks:(NSArray *)tracks {
     NSUInteger i;
     for (i = 0; i < [tracks count]; i++) {

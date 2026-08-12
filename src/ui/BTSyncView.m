@@ -163,6 +163,9 @@
     [_outline reloadData];
     [_outline expandItem:nil expandChildren:YES];
     [self layoutPane];
+    // Without this the button reads a bare "Sync" until the first checkbox is
+    // clicked, even though the playlists already on the device arrive checked.
+    [self updateSyncButton];
 }
 
 - (void)markPlaylistsIn:(NSArray *)playlists whoseNamesAreIn:(NSSet *)names {

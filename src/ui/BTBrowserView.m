@@ -111,72 +111,79 @@
 
 #pragma mark - Data
 
-static NSArray *BTSortedUniqueValues(NSArray *tracks, NSInteger which) {
+// The three columns differ only in which of a track's fields they read, so the
+// gathering and the narrowing are written once and told which field to use.
+typedef NS_ENUM(NSInteger, BTBrowserField) {
+    BTBrowserFieldGenre = 0,
+    BTBrowserFieldArtist,
+    BTBrowserFieldAlbum
+};
+
+static NSString *BTFieldOfTrack(BTTrack *track, BTBrowserField field) {
+    switch (field) {
+        case BTBrowserFieldGenre:  return [track displayGenre];
+        case BTBrowserFieldArtist: return [track displayArtist];
+        case BTBrowserFieldAlbum:  return [track displayAlbum];
+    }
+    return @"";
+}
+
+static NSArray *BTSortedUniqueValues(NSArray *tracks, BTBrowserField field) {
     NSMutableSet *set = [NSMutableSet set];
     NSUInteger i;
     for (i = 0; i < [tracks count]; i++) {
-        BTTrack *t = [tracks objectAtIndex:i];
-        NSString *value = (which == 0) ? [t displayGenre] : ((which == 1) ? [t displayArtist] : [t displayAlbum]);
-        [set addObject:value];
+        [set addObject:BTFieldOfTrack([tracks objectAtIndex:i], field)];
     }
     return [[set allObjects] sortedArrayUsingSelector:@selector(caseInsensitiveCompare:)];
 }
 
+// A nil value is the All row, which narrows nothing.
+static NSArray *BTTracksMatching(NSArray *tracks, BTBrowserField field, NSString *value) {
+    if (value == nil) return tracks;
+    NSMutableArray *out = [NSMutableArray array];
+    NSUInteger i;
+    for (i = 0; i < [tracks count]; i++) {
+        BTTrack *t = [tracks objectAtIndex:i];
+        if ([BTFieldOfTrack(t, field) isEqualToString:value]) [out addObject:t];
+    }
+    return out;
+}
+
 - (void)setSourceTracks:(NSArray *)tracks {
     _sourceTracks = tracks ? tracks : @[];
-    [self rebuildKeepingSelection:YES];
+    [self rebuild];
 }
 
 - (void)resetSelection {
     _selectedGenre = nil;
     _selectedArtist = nil;
     _selectedAlbum = nil;
-    [self rebuildKeepingSelection:NO];
+    [self rebuild];
 }
 
+// Each column narrows the one to its right, so the three run in a chain.
 - (NSArray *)tracksMatchingGenre {
-    if (_selectedGenre == nil) return _sourceTracks;
-    NSMutableArray *out = [NSMutableArray array];
-    NSUInteger i;
-    for (i = 0; i < [_sourceTracks count]; i++) {
-        BTTrack *t = [_sourceTracks objectAtIndex:i];
-        if ([[t displayGenre] isEqualToString:_selectedGenre]) [out addObject:t];
-    }
-    return out;
+    return BTTracksMatching(_sourceTracks, BTBrowserFieldGenre, _selectedGenre);
 }
 
 - (NSArray *)tracksMatchingGenreAndArtist {
-    NSArray *base = [self tracksMatchingGenre];
-    if (_selectedArtist == nil) return base;
-    NSMutableArray *out = [NSMutableArray array];
-    NSUInteger i;
-    for (i = 0; i < [base count]; i++) {
-        BTTrack *t = [base objectAtIndex:i];
-        if ([[t displayArtist] isEqualToString:_selectedArtist]) [out addObject:t];
-    }
-    return out;
+    return BTTracksMatching([self tracksMatchingGenre], BTBrowserFieldArtist, _selectedArtist);
 }
 
 - (NSArray *)filteredTracks {
-    NSArray *base = [self tracksMatchingGenreAndArtist];
-    if (_selectedAlbum == nil) return base;
-    NSMutableArray *out = [NSMutableArray array];
-    NSUInteger i;
-    for (i = 0; i < [base count]; i++) {
-        BTTrack *t = [base objectAtIndex:i];
-        if ([[t displayAlbum] isEqualToString:_selectedAlbum]) [out addObject:t];
-    }
-    return out;
+    return BTTracksMatching([self tracksMatchingGenreAndArtist], BTBrowserFieldAlbum, _selectedAlbum);
 }
 
-- (void)rebuildKeepingSelection:(BOOL)keep {
-    _genres = BTSortedUniqueValues(_sourceTracks, 0);
+// A selection that the new set of tracks no longer offers is dropped, which
+// puts that column back on its All row.
+- (void)rebuild {
+    _genres = BTSortedUniqueValues(_sourceTracks, BTBrowserFieldGenre);
     if (_selectedGenre && ![_genres containsObject:_selectedGenre]) _selectedGenre = nil;
 
-    _artists = BTSortedUniqueValues([self tracksMatchingGenre], 1);
+    _artists = BTSortedUniqueValues([self tracksMatchingGenre], BTBrowserFieldArtist);
     if (_selectedArtist && ![_artists containsObject:_selectedArtist]) _selectedArtist = nil;
 
-    _albums = BTSortedUniqueValues([self tracksMatchingGenreAndArtist], 2);
+    _albums = BTSortedUniqueValues([self tracksMatchingGenreAndArtist], BTBrowserFieldAlbum);
     if (_selectedAlbum && ![_albums containsObject:_selectedAlbum]) _selectedAlbum = nil;
 
     [_genreTable reloadData];
@@ -252,7 +259,7 @@ static NSArray *BTSortedUniqueValues(NSArray *tracks, NSInteger which) {
         _selectedAlbum = value;
     }
 
-    [self rebuildKeepingSelection:YES];
+    [self rebuild];
     if (self.browserDelegate) [self.browserDelegate browserViewSelectionDidChange:self];
 }
 

@@ -14,6 +14,14 @@
     NSButton *_limitCheck;
     NSTextField *_limitField;
     NSView *_rulesContainer;
+    // The captions are held rather than looked up. The sheet grows and shrinks
+    // with the number of rules, so every one of these is repositioned on each
+    // rebuild, and finding them by the words they display breaks the moment two
+    // of them read alike.
+    NSTextField *_nameLabel;
+    NSTextField *_matchLabel;
+    NSTextField *_rulesLabel;
+    NSTextField *_songsLabel;
     void (^_completion)(BOOL accepted);
 }
 
@@ -45,45 +53,45 @@
     return self;
 }
 
-- (NSTextField *)labelWithText:(NSString *)text frame:(NSRect)frame {
-    NSTextField *label = BTLabelWithText(text, [BTStyle uiFont]);
-    [label setFrame:frame];
-    return label;
-}
-
+// Everything is created without a position. layoutWindow places all of it, so
+// each coordinate is written once.
 - (void)buildInterface {
     NSView *content = [[self window] contentView];
 
-    _nameField = [[NSTextField alloc] initWithFrame:NSMakeRect(70, 0, BT_SHEET_WIDTH - 90, 22)];
+    _nameLabel = BTLabelWithText(@"Name:", [BTStyle uiFont]);
+    _nameField = [[NSTextField alloc] initWithFrame:NSZeroRect];
     [_nameField setFont:[BTStyle uiFont]];
     [_nameField setStringValue:(_playlist.name ? _playlist.name : @"Smart Playlist")];
-    [content addSubview:[self labelWithText:@"Name:" frame:NSMakeRect(20, 0, 50, 18)]];
+    [content addSubview:_nameLabel];
     [content addSubview:_nameField];
 
-    _matchPopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(58, 0, 60, 22)];
+    _matchLabel = BTLabelWithText(@"Match", [BTStyle uiFont]);
+    _rulesLabel = BTLabelWithText(@"of the following rules:", [BTStyle uiFont]);
+    _matchPopUp = [[NSPopUpButton alloc] initWithFrame:NSZeroRect];
     [_matchPopUp addItemsWithTitles:@[@"all", @"any"]];
     [_matchPopUp selectItemAtIndex:(_playlist.matchAll ? 0 : 1)];
     [[_matchPopUp cell] setControlSize:NSSmallControlSize];
     [_matchPopUp setFont:[BTStyle uiFont]];
-    [content addSubview:[self labelWithText:@"Match" frame:NSMakeRect(20, 0, 40, 18)]];
+    [content addSubview:_matchLabel];
     [content addSubview:_matchPopUp];
-    [content addSubview:[self labelWithText:@"of the following rules:" frame:NSMakeRect(124, 0, 200, 18)]];
+    [content addSubview:_rulesLabel];
 
-    _rulesContainer = [[NSView alloc] initWithFrame:NSMakeRect(20, 0, BT_SHEET_WIDTH - 40, BT_ROW_HEIGHT)];
+    _rulesContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, BT_SHEET_WIDTH - 40, BT_ROW_HEIGHT)];
     [content addSubview:_rulesContainer];
 
-    _limitCheck = [[NSButton alloc] initWithFrame:NSMakeRect(20, 0, 90, 20)];
+    _limitCheck = [[NSButton alloc] initWithFrame:NSZeroRect];
     [_limitCheck setButtonType:NSSwitchButton];
     [_limitCheck setTitle:@"Limit to"];
     [_limitCheck setFont:[BTStyle uiFont]];
     [_limitCheck setState:(_playlist.limit > 0 ? NSOnState : NSOffState)];
     [content addSubview:_limitCheck];
 
-    _limitField = [[NSTextField alloc] initWithFrame:NSMakeRect(110, 0, 60, 20)];
+    _limitField = [[NSTextField alloc] initWithFrame:NSZeroRect];
     [_limitField setFont:[BTStyle uiFont]];
     [_limitField setStringValue:(_playlist.limit > 0 ? [NSString stringWithFormat:@"%ld", (long)_playlist.limit] : @"25")];
+    _songsLabel = BTLabelWithText(@"songs", [BTStyle uiFont]);
     [content addSubview:_limitField];
-    [content addSubview:[self labelWithText:@"songs" frame:NSMakeRect(176, 0, 60, 18)]];
+    [content addSubview:_songsLabel];
 
     NSButton *cancel = [[NSButton alloc] initWithFrame:NSMakeRect(BT_SHEET_WIDTH - 190, 12, 80, 28)];
     [cancel setTitle:@"Cancel"];
@@ -173,6 +181,8 @@
     [self layoutWindow];
 }
 
+// The sheet is a stack of rows placed from the top down, since only the rules
+// block changes height. The buttons stay pinned to the bottom.
 - (void)layoutWindow {
     CGFloat rulesHeight = NSHeight([_rulesContainer frame]);
     CGFloat height = 52 + 30 + 30 + rulesHeight + 30 + 46;
@@ -182,41 +192,21 @@
     [window setFrame:[window frameRectForContentRect:contentRect] display:YES];
 
     CGFloat y = height - 34;
-    NSView *content = [window contentView];
-    NSArray *subviews = [content subviews];
-    NSUInteger i;
-
-    // Name row.
-    for (i = 0; i < [subviews count]; i++) {
-        NSView *v = [subviews objectAtIndex:i];
-        if (v == _nameField) [v setFrameOrigin:NSMakePoint(70, y)];
-    }
-    [[self viewWithLabel:@"Name:"] setFrameOrigin:NSMakePoint(20, y + 4)];
+    [_nameLabel setFrame:NSMakeRect(20, y + 4, 50, 18)];
+    [_nameField setFrame:NSMakeRect(70, y, BT_SHEET_WIDTH - 90, 22)];
 
     y -= 32;
-    [_matchPopUp setFrameOrigin:NSMakePoint(58, y)];
-    [[self viewWithLabel:@"Match"] setFrameOrigin:NSMakePoint(20, y + 4)];
-    [[self viewWithLabel:@"of the following rules:"] setFrameOrigin:NSMakePoint(124, y + 4)];
+    [_matchLabel setFrame:NSMakeRect(20, y + 4, 40, 18)];
+    [_matchPopUp setFrame:NSMakeRect(58, y, 60, 22)];
+    [_rulesLabel setFrame:NSMakeRect(124, y + 4, 200, 18)];
 
     y -= rulesHeight + 6;
     [_rulesContainer setFrameOrigin:NSMakePoint(20, y)];
 
     y -= 30;
-    [_limitCheck setFrameOrigin:NSMakePoint(20, y)];
-    [_limitField setFrameOrigin:NSMakePoint(110, y)];
-    [[self viewWithLabel:@"songs"] setFrameOrigin:NSMakePoint(176, y + 3)];
-}
-
-- (NSView *)viewWithLabel:(NSString *)text {
-    NSArray *subviews = [[[self window] contentView] subviews];
-    NSUInteger i;
-    for (i = 0; i < [subviews count]; i++) {
-        NSView *v = [subviews objectAtIndex:i];
-        if ([v isKindOfClass:[NSTextField class]] && ![(NSTextField *)v isEditable]) {
-            if ([[(NSTextField *)v stringValue] isEqualToString:text]) return v;
-        }
-    }
-    return nil;
+    [_limitCheck setFrame:NSMakeRect(20, y, 90, 20)];
+    [_limitField setFrame:NSMakeRect(110, y, 60, 20)];
+    [_songsLabel setFrame:NSMakeRect(176, y + 3, 60, 18)];
 }
 
 #pragma mark - Rule edits

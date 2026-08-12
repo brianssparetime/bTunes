@@ -299,25 +299,6 @@ static NSData *BTStringObject(uint32_t type, NSString *string) {
     return names;
 }
 
-- (BTIPodTrackRef *)trackWithID:(uint32_t)trackID {
-    NSUInteger i;
-    for (i = 0; i < [self.tracks count]; i++) {
-        BTIPodTrackRef *track = [self.tracks objectAtIndex:i];
-        if (track.trackID == trackID) return track;
-    }
-    return nil;
-}
-
-- (uint32_t)nextFreeTrackID {
-    uint32_t highest = 0;
-    NSUInteger i;
-    for (i = 0; i < [self.tracks count]; i++) {
-        BTIPodTrackRef *track = [self.tracks objectAtIndex:i];
-        if (track.trackID > highest) highest = track.trackID;
-    }
-    return highest + 1;
-}
-
 #pragma mark Writing
 
 - (NSData *)trackChunkFor:(BTIPodTrackRef *)track {
@@ -465,7 +446,7 @@ static NSData *BTStringObject(uint32_t type, NSString *string) {
     BTAppendU32(root, BT_MHBD_HEADER);
     BTAppendU32(root, 0);                  // patched below
     BTAppendU32(root, 1);                  // unknown, always one
-    BTAppendU32(root, 0x13);               // version, the sixth generation of the format
+    BTAppendU32(root, 0x13);               // format version, not a device generation
     BTAppendU32(root, 2);                  // two datasets follow
     BTAppendU64(root, 0x0102030405060708ULL);   // library id
     BTPad(root, BT_MHBD_HEADER);

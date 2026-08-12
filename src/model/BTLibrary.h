@@ -28,7 +28,6 @@ extern NSString *const BTLibraryImportProgressNotification;
 // thread with the number of tracks added.
 - (void)importPaths:(NSArray *)paths completion:(void (^)(NSUInteger added))completion;
 
-- (BTTrack *)trackWithID:(NSString *)trackID;
 - (void)removeTracks:(NSArray *)tracks;
 
 - (void)addPlaylist:(BTPlaylist *)playlist toFolder:(BTPlaylist *)folder;
