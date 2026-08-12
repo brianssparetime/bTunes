@@ -17,6 +17,14 @@ static NSString *const BTTrackPasteboardType = @"com.btunes.tracks";
 static NSString *const BTPlaylistPasteboardType = @"com.btunes.playlist";
 static NSString *const BTLibrarySource = @"Library";
 
+// The source list holds three kinds of row: the library, an attached iPod, and
+// playlists. Anything reaching for a playlist's own members has to ask first,
+// because the other two answer none of them and a bare cast crashes on the
+// first message sent.
+static BTPlaylist *BTPlaylistFromSource(id item) {
+    return [item isKindOfClass:[BTPlaylist class]] ? (BTPlaylist *)item : nil;
+}
+
 // What the window remembers between runs: which folders you closed, what you
 // had selected, and which song was highlighted.
 static NSString *const BTClosedFoldersKey = @"BTClosedFolders";
@@ -163,47 +171,6 @@ static CGFloat BTTitleBarHeight(void) {
 @protocol BTKeyTableDelegate <NSObject>
 - (void)tableViewDeletePressed:(NSTableView *)tableView;
 @end
-
-// Transport keys, shared by every view that can hold focus.
-//
-// Left and right skip tracks, and the option-modified up and down arrows change
-// volume from anywhere. Plain up and down change volume too, except in a list,
-// where they still move the selection and would be missed if taken away.
-static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume) {
-    NSString *characters = [event charactersIgnoringModifiers];
-    if ([characters length] == 0) return NO;
-
-    unichar key = [characters characterAtIndex:0];
-    BOOL option = ([event modifierFlags] & NSAlternateKeyMask) != 0;
-    BOOL command = ([event modifierFlags] & NSCommandKeyMask) != 0;
-    if (command) return NO;
-
-    switch (key) {
-        case NSLeftArrowFunctionKey:
-            [NSApp sendAction:@selector(previousTrack:) to:nil from:sender];
-            return YES;
-        case NSRightArrowFunctionKey:
-            [NSApp sendAction:@selector(nextTrack:) to:nil from:sender];
-            return YES;
-        case NSUpArrowFunctionKey:
-            if (!option && !plainArrowsAreVolume) return NO;
-            [NSApp sendAction:@selector(volumeUp:) to:nil from:sender];
-            return YES;
-        case NSDownArrowFunctionKey:
-            if (!option && !plainArrowsAreVolume) return NO;
-            [NSApp sendAction:@selector(volumeDown:) to:nil from:sender];
-            return YES;
-        case ' ':
-            [NSApp sendAction:@selector(playPause:) to:nil from:sender];
-            return YES;
-        case 'm':
-        case 'M':
-            [NSApp sendAction:@selector(toggleMute:) to:nil from:sender];
-            return YES;
-        default:
-            return NO;
-    }
-}
 
 // The window catches transport keys that no view claimed.
 @interface BTMainWindow : NSWindow
@@ -512,6 +479,9 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     [_searchField setCell:searchCell];
     [_searchField setFocusRingType:NSFocusRingTypeNone];
     [_searchField setAutoresizingMask:NSViewMinXMargin];
+    [_searchField setTarget:self];
+    [_searchField setAction:@selector(searchChanged:)];
+    [_chrome addSubview:_searchField];
 
     _miniButton = [BTRoundButton buttonWithFrame:NSMakeRect(NSWidth(bounds) - 42, 14, 27, 27)
                                            glyph:BTGlyphShrink
@@ -523,10 +493,6 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     __weak BTMainWindowController *weakSelf = self;
     _chrome.layoutHandler = ^{ [weakSelf layoutChrome]; };
     [self layoutChrome];
-    [_searchField setTarget:self];
-    [_searchField setAction:@selector(searchChanged:)];
-    [(NSSearchFieldCell *)[_searchField cell] setSendsWholeSearchString:NO];
-    [_chrome addSubview:_searchField];
 }
 
 - (void)buildBody {
@@ -815,8 +781,7 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
 - (void)ejectIPod:(id)sender {
     if (_iPod == nil) return;
 
-    NSError *error = nil;
-    if (![_iPod eject:&error]) {
+    if (![_iPod eject]) {
         NSAlert *alert = [[NSAlert alloc] init];
         [alert setMessageText:@"The iPod would not eject."];
         [alert setInformativeText:@"Something is still using it. Try again in a moment."];
@@ -850,19 +815,18 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
 
 #pragma mark - Reloading
 
+// The iPod shows a sync pane rather than songs, so it contributes none.
 - (NSArray *)baseTracks {
     BTLibrary *library = [BTLibrary sharedLibrary];
-    if ([_selectedSource isKindOfClass:[BTIPod class]]) return @[];
-    if (_selectedSource == BTLibrarySource || _selectedSource == nil) return library.tracks;
-    return [(BTPlaylist *)_selectedSource resolveTracks:library.tracks];
+    BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
+    if (playlist) return [playlist resolveTracks:library.tracks];
+    return (_selectedSource == BTLibrarySource || _selectedSource == nil) ? library.tracks : @[];
 }
 
-// What a source shows before any column is clicked. A playlist keeps the order
-// it was built in, since that order was chosen; everything else is by track
-// number within its album.
-// A playlist holding one album whole is shown in the album's own order. A
-// playlist that draws from an album without being it, like a disc burned from a
-// selection, keeps the order it was built in: that order was chosen.
+// Whether a playlist is one album, whole. That decides what it shows before any
+// column is clicked: an album keeps the album's own order, while a playlist that
+// merely draws from an album, like a disc burned from a selection, keeps the
+// order it was built in, because that order was chosen.
 - (BOOL)playlistIsAnAlbum:(NSArray *)tracks {
     if ([tracks count] < 2) return NO;
 
@@ -886,12 +850,10 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
 }
 
 - (NSString *)defaultSortColumnForSelectedSource {
-    if ([_selectedSource isKindOfClass:[BTPlaylist class]]) {
-        BTPlaylist *playlist = (BTPlaylist *)_selectedSource;
-        if (playlist.kind == BTPlaylistKindStatic || playlist.kind == BTPlaylistKindFolder) {
-            NSArray *tracks = [playlist resolveTracks:[BTLibrary sharedLibrary].tracks];
-            return [self playlistIsAnAlbum:tracks] ? @"track" : nil;
-        }
+    BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
+    if (playlist && (playlist.kind == BTPlaylistKindStatic || playlist.kind == BTPlaylistKindFolder)) {
+        NSArray *tracks = [playlist resolveTracks:[BTLibrary sharedLibrary].tracks];
+        return [self playlistIsAnAlbum:tracks] ? @"track" : nil;
     }
     return @"track";
 }
@@ -955,26 +917,24 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     for (row = 0; row < [_sourceList numberOfRows]; row++) {
         id item = [_sourceList itemAtRow:row];
         if (item == nil || ![_sourceList isExpandable:item]) continue;
-        if ([item isKindOfClass:[BTPlaylist class]] &&
-            [_closedFolders containsObject:[(BTPlaylist *)item playlistID]]) continue;
+        BTPlaylist *folder = BTPlaylistFromSource(item);
+        if (folder && [_closedFolders containsObject:folder.playlistID]) continue;
         [_sourceList expandItem:item];
     }
 }
 
 - (void)outlineViewItemDidCollapse:(NSNotification *)note {
-    id item = [[note userInfo] objectForKey:@"NSObject"];
-    if ([item isKindOfClass:[BTPlaylist class]]) {
-        [_closedFolders addObject:[(BTPlaylist *)item playlistID]];
-        [self saveSessionState];
-    }
+    BTPlaylist *folder = BTPlaylistFromSource([[note userInfo] objectForKey:@"NSObject"]);
+    if (folder == nil) return;
+    [_closedFolders addObject:folder.playlistID];
+    [self saveSessionState];
 }
 
 - (void)outlineViewItemDidExpand:(NSNotification *)note {
-    id item = [[note userInfo] objectForKey:@"NSObject"];
-    if ([item isKindOfClass:[BTPlaylist class]]) {
-        [_closedFolders removeObject:[(BTPlaylist *)item playlistID]];
-        [self saveSessionState];
-    }
+    BTPlaylist *folder = BTPlaylistFromSource([[note userInfo] objectForKey:@"NSObject"]);
+    if (folder == nil) return;
+    [_closedFolders removeObject:folder.playlistID];
+    [self saveSessionState];
 }
 
 #pragma mark - Session state
@@ -983,11 +943,8 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setObject:[_closedFolders allObjects] forKey:BTClosedFoldersKey];
 
-    NSString *source = @"library";
-    if ([_selectedSource isKindOfClass:[BTPlaylist class]]) {
-        source = [(BTPlaylist *)_selectedSource playlistID];
-    }
-    [defaults setObject:source forKey:BTSelectedSourceKey];
+    BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
+    [defaults setObject:(playlist ? playlist.playlistID : @"library") forKey:BTSelectedSourceKey];
 
     NSInteger row = [_trackTable selectedRow];
     if (row >= 0 && row < (NSInteger)[_visibleTracks count]) {
@@ -1055,13 +1012,20 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     }
 
     [_browser setSourceTracks:base];
-    _visibleTracks = [self sortTracks:[_browser filteredTracks]];
 
     [_sourceList reloadData];
     [self expandFolders];
+    [self reloadTrackList];
+    [self updateTransport];
+}
+
+// What the track list shows is whatever survives the browser columns, in the
+// current sort order. The browser can narrow on its own without the source or
+// the search changing, so this is the smaller of the two reloads.
+- (void)reloadTrackList {
+    _visibleTracks = [self sortTracks:[_browser filteredTracks]];
     [_trackTable reloadData];
     [self updateStatus];
-    [self updateTransport];
 }
 
 - (void)updateStatus {
@@ -1119,9 +1083,8 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
         [roots addObjectsFromArray:[BTLibrary sharedLibrary].playlists];
         return roots;
     }
-    if (item == BTLibrarySource || [item isKindOfClass:[BTIPod class]]) return @[];
-    BTPlaylist *playlist = (BTPlaylist *)item;
-    return (playlist.kind == BTPlaylistKindFolder) ? playlist.children : @[];
+    BTPlaylist *playlist = BTPlaylistFromSource(item);
+    return (playlist && playlist.kind == BTPlaylistKindFolder) ? playlist.children : @[];
 }
 
 - (NSInteger)outlineView:(NSOutlineView *)outlineView numberOfChildrenOfItem:(id)item {
@@ -1148,9 +1111,10 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
      setObjectValue:(id)object
      forTableColumn:(NSTableColumn *)tableColumn
              byItem:(id)item {
-    if (item == BTLibrarySource || [item isKindOfClass:[BTIPod class]]) return;
+    BTPlaylist *playlist = BTPlaylistFromSource(item);
+    if (playlist == nil) return;
     if ([object isKindOfClass:[NSString class]] && [(NSString *)object length] > 0) {
-        [(BTPlaylist *)item setName:object];
+        [playlist setName:object];
         [[BTLibrary sharedLibrary] noteChanged];
     }
 }
@@ -1176,13 +1140,12 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
 - (BOOL)outlineView:(NSOutlineView *)outlineView
 shouldEditTableColumn:(NSTableColumn *)tableColumn
                item:(id)item {
-    return _renameRequested && item != BTLibrarySource;
+    return _renameRequested && BTPlaylistFromSource(item) != nil;
 }
 
 - (void)beginRenamingRow:(NSInteger)row {
     if (row < 0) return;
-    id item = [_sourceList itemAtRow:row];
-    if (item == nil || item == BTLibrarySource) return;
+    if (BTPlaylistFromSource([_sourceList itemAtRow:row]) == nil) return;
 
     _renameRequested = YES;
     [_sourceList editColumn:0 row:row withEvent:nil select:YES];
@@ -1195,6 +1158,13 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     [self beginRenamingRow:row];
 }
 
+// The playlist the source list has selected, or nil when the selection is the
+// library, the iPod, or nothing at all.
+- (BTPlaylist *)selectedPlaylist {
+    NSInteger row = [_sourceList selectedRow];
+    return (row >= 0) ? BTPlaylistFromSource([_sourceList itemAtRow:row]) : nil;
+}
+
 - (void)outlineViewSelectionDidChange:(NSNotification *)notification {
     NSInteger row = [_sourceList selectedRow];
     id item = (row >= 0) ? [_sourceList itemAtRow:row] : BTLibrarySource;
@@ -1204,11 +1174,7 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     _sortAscending = YES;
     [self saveSessionState];
 
-    NSUInteger column;
-    for (column = 0; column < [[_trackTable tableColumns] count]; column++) {
-        [_trackTable setIndicatorImage:nil
-                         inTableColumn:[[_trackTable tableColumns] objectAtIndex:column]];
-    }
+    [self clearSortIndicators];
     [_trackTable setHighlightedTableColumn:nil];
 
     [_browser resetSelection];
@@ -1223,11 +1189,11 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
          writeItems:(NSArray *)items
        toPasteboard:(NSPasteboard *)pasteboard {
     if ([items count] != 1) return NO;
-    id item = [items objectAtIndex:0];
-    if (item == BTLibrarySource) return NO;
+    BTPlaylist *playlist = BTPlaylistFromSource([items objectAtIndex:0]);
+    if (playlist == nil) return NO;
 
     [pasteboard declareTypes:@[BTPlaylistPasteboardType] owner:self];
-    [pasteboard setString:[(BTPlaylist *)item playlistID] forType:BTPlaylistPasteboardType];
+    [pasteboard setString:playlist.playlistID forType:BTPlaylistPasteboardType];
     return YES;
 }
 
@@ -1236,19 +1202,22 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
                   proposedItem:(id)item
             proposedChildIndex:(NSInteger)index {
     NSPasteboard *pasteboard = [info draggingPasteboard];
+    BTPlaylist *target = BTPlaylistFromSource(item);
 
     if ([[pasteboard types] containsObject:BTTrackPasteboardType]) {
-        // Songs land on a static playlist, never on the library or a folder.
-        if (item == nil || item == BTLibrarySource) return NSDragOperationNone;
-        BTPlaylist *target = (BTPlaylist *)item;
-        if (target.kind != BTPlaylistKindStatic) return NSDragOperationNone;
+        // Songs land on a static playlist, never on the library, the iPod, or a
+        // folder.
+        if (target == nil || target.kind != BTPlaylistKindStatic) return NSDragOperationNone;
         if (index != NSOutlineViewDropOnItemIndex) return NSDragOperationNone;
         return NSDragOperationCopy;
     }
 
     if ([[pasteboard types] containsObject:BTPlaylistPasteboardType]) {
-        if (item == BTLibrarySource) return NSDragOperationNone;
-        if (item != nil && [(BTPlaylist *)item kind] != BTPlaylistKindFolder) return NSDragOperationNone;
+        // The top level, or a folder. Dropping onto the library or the iPod
+        // means nothing.
+        if (item != nil && (target == nil || target.kind != BTPlaylistKindFolder)) {
+            return NSDragOperationNone;
+        }
         return NSDragOperationMove;
     }
     return NSDragOperationNone;
@@ -1260,9 +1229,10 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
          childIndex:(NSInteger)index {
     NSPasteboard *pasteboard = [info draggingPasteboard];
     BTLibrary *library = [BTLibrary sharedLibrary];
+    BTPlaylist *target = BTPlaylistFromSource(item);
 
     if ([[pasteboard types] containsObject:BTTrackPasteboardType]) {
-        BTPlaylist *target = (BTPlaylist *)item;
+        if (target == nil) return NO;
         NSArray *ids = [NSKeyedUnarchiver unarchiveObjectWithData:[pasteboard dataForType:BTTrackPasteboardType]];
         NSUInteger i;
         for (i = 0; i < [ids count]; i++) {
@@ -1277,7 +1247,7 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
         NSString *playlistID = [pasteboard stringForType:BTPlaylistPasteboardType];
         BTPlaylist *moving = [library playlistWithID:playlistID];
         if (moving == nil) return NO;
-        [library movePlaylist:moving toFolder:(BTPlaylist *)item atIndex:index];
+        [library movePlaylist:moving toFolder:target atIndex:index];
         return YES;
     }
     return NO;
@@ -1335,21 +1305,25 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     [(NSTextFieldCell *)cell setTextColor:(selected ? [NSColor whiteColor] : color)];
 }
 
+- (void)clearSortIndicators {
+    NSArray *columns = [_trackTable tableColumns];
+    NSUInteger i;
+    for (i = 0; i < [columns count]; i++) {
+        [_trackTable setIndicatorImage:nil inTableColumn:[columns objectAtIndex:i]];
+    }
+}
+
 - (void)tableView:(NSTableView *)tableView
     didClickTableColumn:(NSTableColumn *)tableColumn {
     NSString *identifier = [tableColumn identifier];
-    if ([identifier isEqualToString:@"playing"]) return;
-
     if ([identifier isEqualToString:_sortColumn]) {
         _sortAscending = !_sortAscending;
     } else {
         _sortColumn = identifier;
         _sortAscending = YES;
     }
-    NSUInteger i;
-    for (i = 0; i < [[tableView tableColumns] count]; i++) {
-        [tableView setIndicatorImage:nil inTableColumn:[[tableView tableColumns] objectAtIndex:i]];
-    }
+
+    [self clearSortIndicators];
     [tableView setHighlightedTableColumn:tableColumn];
     [tableView setIndicatorImage:[NSImage imageNamed:(_sortAscending ? @"NSAscendingSortIndicator"
                                                                      : @"NSDescendingSortIndicator")]
@@ -1391,12 +1365,9 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
 }
 
 - (void)deleteSelectedPlaylist {
-    NSInteger row = [_sourceList selectedRow];
-    if (row < 0) return;
-    id item = [_sourceList itemAtRow:row];
-    if (item == nil || item == BTLibrarySource) return;
+    BTPlaylist *playlist = [self selectedPlaylist];
+    if (playlist == nil) return;
 
-    BTPlaylist *playlist = (BTPlaylist *)item;
     NSAlert *alert = [[NSAlert alloc] init];
     [alert setMessageText:[NSString stringWithFormat:@"Delete the playlist \"%@\"?", playlist.name]];
     [alert setInformativeText:@"The songs stay in the library."];
@@ -1420,8 +1391,8 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     }
 
     BTLibrary *library = [BTLibrary sharedLibrary];
-    if (_selectedSource != BTLibrarySource && [(BTPlaylist *)_selectedSource kind] == BTPlaylistKindStatic) {
-        BTPlaylist *playlist = (BTPlaylist *)_selectedSource;
+    BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
+    if (playlist && playlist.kind == BTPlaylistKindStatic) {
         NSUInteger i;
         for (i = 0; i < [tracks count]; i++) {
             [playlist.trackIDs removeObject:[[tracks objectAtIndex:i] trackID]];
@@ -1429,7 +1400,9 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
         [library noteChanged];
         return;
     }
-    if (_selectedSource != BTLibrarySource) return;   // smart playlists have no manual removal
+    // A smart playlist, a folder, and the iPod have no manual removal. Only the
+    // library itself takes songs out.
+    if (_selectedSource != BTLibrarySource) return;
 
     NSAlert *alert = [[NSAlert alloc] init];
     [alert setMessageText:[NSString stringWithFormat:@"Remove %lu song%@ from the library?",
@@ -1508,9 +1481,7 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 #pragma mark - Browser
 
 - (void)browserViewSelectionDidChange:(BTBrowserView *)browser {
-    _visibleTracks = [self sortTracks:[browser filteredTracks]];
-    [_trackTable reloadData];
-    [self updateStatus];
+    [self reloadTrackList];
 }
 
 #pragma mark - Actions
@@ -1580,13 +1551,9 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 }
 
 - (BTPlaylist *)folderForNewPlaylist {
-    NSInteger row = [_sourceList selectedRow];
-    if (row < 0) return nil;
-    id item = [_sourceList itemAtRow:row];
-    if (item == nil || item == BTLibrarySource) return nil;
-    BTPlaylist *selected = (BTPlaylist *)item;
-    if (selected.kind == BTPlaylistKindFolder) return selected;
-    return selected.parent;
+    BTPlaylist *selected = [self selectedPlaylist];
+    if (selected == nil) return nil;
+    return (selected.kind == BTPlaylistKindFolder) ? selected : selected.parent;
 }
 
 - (void)selectPlaylist:(BTPlaylist *)playlist {
@@ -1632,12 +1599,8 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 }
 
 - (void)editSmartPlaylist:(id)sender {
-    NSInteger row = [_sourceList selectedRow];
-    if (row < 0) return;
-    id item = [_sourceList itemAtRow:row];
-    if (item == nil || item == BTLibrarySource) return;
-    BTPlaylist *playlist = (BTPlaylist *)item;
-    if (playlist.kind != BTPlaylistKindSmart) return;
+    BTPlaylist *playlist = [self selectedPlaylist];
+    if (playlist == nil || playlist.kind != BTPlaylistKindSmart) return;
 
     _sheetController = [[BTSmartPlaylistController alloc] initWithPlaylist:playlist];
     [_sheetController beginSheetForWindow:[self window] completion:^(BOOL accepted) {
@@ -1742,11 +1705,8 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 - (BOOL)validateMenuItem:(NSMenuItem *)item {
     SEL action = [item action];
     if (action == @selector(editSmartPlaylist:)) {
-        NSInteger row = [_sourceList selectedRow];
-        if (row < 0) return NO;
-        id selected = [_sourceList itemAtRow:row];
-        return (selected != nil && selected != BTLibrarySource &&
-                [(BTPlaylist *)selected kind] == BTPlaylistKindSmart);
+        BTPlaylist *selected = [self selectedPlaylist];
+        return (selected != nil && selected.kind == BTPlaylistKindSmart);
     }
     return YES;
 }

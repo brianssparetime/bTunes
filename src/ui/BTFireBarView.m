@@ -9,11 +9,8 @@
     CGFloat _peaks[BT_BAR_COUNT];
     CGFloat _capFall[BT_BAR_COUNT];
     NSInteger _capHold[BT_BAR_COUNT];
-    CGFloat _phases[BT_BAR_COUNT];
-    CGFloat _rates[BT_BAR_COUNT];
     CGFloat _ceiling;
     CGFloat _average;
-    double _time;
 }
 
 - (id)initWithFrame:(NSRect)frame {
@@ -25,9 +22,6 @@
         for (i = 0; i < BT_BAR_COUNT; i++) {
             _values[i] = 0;
             _peaks[i] = 0;
-            // Fixed pseudo-random wobble: same every launch, different per bar.
-            _phases[i] = (CGFloat)((i * 37) % 100) / 100.0 * 6.2831853;
-            _rates[i] = 1.7 + (CGFloat)((i * 53) % 70) / 100.0;
         }
     }
     return self;
@@ -79,7 +73,6 @@ static CGFloat BTRandomFraction(void) {
 - (void)step:(NSTimer *)timer {
     BTPlayer *player = [BTPlayer sharedPlayer];
     CGFloat level = [player averageLevel];
-    _time += 1.0 / 25.0;
 
     // A recording's loudness barely moves, so a fixed scale either pegs on a
     // loud track or barely lifts on a quiet one. The bars are measured against

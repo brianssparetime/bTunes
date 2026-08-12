@@ -1,6 +1,7 @@
 #import "BTSmartPlaylistController.h"
 #import "BTPlaylist.h"
 #import "BTStyle.h"
+#import "BTControls.h"
 
 #define BT_SHEET_WIDTH 540.0
 #define BT_ROW_HEIGHT  28.0
@@ -45,13 +46,8 @@
 }
 
 - (NSTextField *)labelWithText:(NSString *)text frame:(NSRect)frame {
-    NSTextField *label = [[NSTextField alloc] initWithFrame:frame];
-    [label setStringValue:text];
-    [label setBezeled:NO];
-    [label setDrawsBackground:NO];
-    [label setEditable:NO];
-    [label setSelectable:NO];
-    [label setFont:[BTStyle uiFont]];
+    NSTextField *label = BTLabelWithText(text, [BTStyle uiFont]);
+    [label setFrame:frame];
     return label;
 }
 

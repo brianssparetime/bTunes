@@ -1,20 +1,22 @@
 #import "BTControls.h"
 #import "BTStyle.h"
 
-static void BTDrawGlyph(BTGlyph glyph, NSRect rect, NSColor *color) {
+void BTDrawGlyph(BTGlyph glyph, NSRect rect, NSColor *color) {
     switch (glyph) {
-        case BTGlyphPlay:      [BTStyle drawPlayGlyphInRect:rect color:color]; break;
-        case BTGlyphPause:     [BTStyle drawPauseGlyphInRect:rect color:color]; break;
-        case BTGlyphPrevious:  [BTStyle drawPreviousGlyphInRect:rect color:color]; break;
-        case BTGlyphNext:      [BTStyle drawNextGlyphInRect:rect color:color]; break;
-        case BTGlyphShuffle:   [BTStyle drawShuffleGlyphInRect:rect color:color]; break;
-        case BTGlyphRepeat:    [BTStyle drawRepeatGlyphInRect:rect one:NO color:color]; break;
-        case BTGlyphRepeatOne: [BTStyle drawRepeatGlyphInRect:rect one:YES color:color]; break;
-        case BTGlyphShrink:    [BTStyle drawShrinkGlyphInRect:rect color:color]; break;
-        case BTGlyphEject:     [BTStyle drawEjectGlyphInRect:rect color:color]; break;
+        case BTGlyphPlay:        [BTStyle drawPlayGlyphInRect:rect color:color]; break;
+        case BTGlyphPause:       [BTStyle drawPauseGlyphInRect:rect color:color]; break;
+        case BTGlyphPrevious:    [BTStyle drawPreviousGlyphInRect:rect color:color]; break;
+        case BTGlyphNext:        [BTStyle drawNextGlyphInRect:rect color:color]; break;
+        case BTGlyphPreviousBar: [BTStyle drawPreviousBarGlyphInRect:rect color:color]; break;
+        case BTGlyphNextBar:     [BTStyle drawNextBarGlyphInRect:rect color:color]; break;
+        case BTGlyphShuffle:     [BTStyle drawShuffleGlyphInRect:rect color:color]; break;
+        case BTGlyphRepeat:      [BTStyle drawRepeatGlyphInRect:rect one:NO color:color]; break;
+        case BTGlyphRepeatOne:   [BTStyle drawRepeatGlyphInRect:rect one:YES color:color]; break;
+        case BTGlyphShrink:      [BTStyle drawShrinkGlyphInRect:rect color:color]; break;
+        case BTGlyphEject:       [BTStyle drawEjectGlyphInRect:rect color:color]; break;
         case BTGlyphStop: {
-            // Sized against the play triangle beside it rather than the button.
-            CGFloat side = NSHeight(rect) * 0.40;
+            // Matched to the play triangle beside it, not to the button.
+            CGFloat side = NSHeight(rect) * 0.46;
             [color set];
             NSRectFill(NSMakeRect(NSMidX(rect) - side / 2, NSMidY(rect) - side / 2, side, side));
             break;
@@ -26,6 +28,52 @@ static void BTDrawGlyph(BTGlyph glyph, NSRect rect, NSColor *color) {
             NSRectFill(NSMakeRect(NSMinX(r), NSMidY(r) - 1, NSWidth(r), 2));
             break;
         }
+    }
+}
+
+NSTextField *BTLabelWithText(NSString *text, NSFont *font) {
+    NSTextField *label = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    [label setStringValue:(text ? text : @"")];
+    [label setFont:font];
+    [label setBezeled:NO];
+    [label setDrawsBackground:NO];
+    [label setEditable:NO];
+    [label setSelectable:NO];
+    return label;
+}
+
+BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume) {
+    NSString *characters = [event charactersIgnoringModifiers];
+    if ([characters length] == 0) return NO;
+
+    unichar key = [characters characterAtIndex:0];
+    BOOL option = ([event modifierFlags] & NSAlternateKeyMask) != 0;
+    if (([event modifierFlags] & NSCommandKeyMask) != 0) return NO;
+
+    switch (key) {
+        case NSLeftArrowFunctionKey:
+            [NSApp sendAction:@selector(previousTrack:) to:nil from:sender];
+            return YES;
+        case NSRightArrowFunctionKey:
+            [NSApp sendAction:@selector(nextTrack:) to:nil from:sender];
+            return YES;
+        case NSUpArrowFunctionKey:
+            if (!option && !plainArrowsAreVolume) return NO;
+            [NSApp sendAction:@selector(volumeUp:) to:nil from:sender];
+            return YES;
+        case NSDownArrowFunctionKey:
+            if (!option && !plainArrowsAreVolume) return NO;
+            [NSApp sendAction:@selector(volumeDown:) to:nil from:sender];
+            return YES;
+        case ' ':
+            [NSApp sendAction:@selector(playPause:) to:nil from:sender];
+            return YES;
+        case 'm':
+        case 'M':
+            [NSApp sendAction:@selector(toggleMute:) to:nil from:sender];
+            return YES;
+        default:
+            return NO;
     }
 }
 
@@ -114,8 +162,6 @@ static void BTDrawGlyph(BTGlyph glyph, NSRect rect, NSColor *color) {
 - (NSRect)searchTextRectForBounds:(NSRect)rect {
     CGFloat left = BT_SEARCH_LEFT + BT_SEARCH_GLYPH + 5.0;
     CGFloat right = 20.0;
-    // Measured from the font rather than fixed, so the line sits on the middle
-    // of the capsule instead of riding high in it.
     // Centred on the line's own middle rather than on the em box. The em box
     // reserves room for descenders that a word like Search never uses, which
     // leaves the text riding high in the capsule.
@@ -275,9 +321,8 @@ static void BTDrawGlyph(BTGlyph glyph, NSRect rect, NSColor *color) {
     NSColor *ink = [NSColor colorWithCalibratedWhite:0.28 alpha:1.0];
     NSRect track = [self trackRect];
 
-    // The two speakers sit on the same centre line as the track, the quiet one
-    // small and the loud one larger with its arcs.
-    // Same speaker at both ends, the same size. Only the arcs differ.
+    // The same speaker at both ends, the same size, on the track's centre line.
+    // Only the arcs differ.
     [BTStyle drawSpeakerGlyphInRect:NSMakeRect(NSMinX(bounds) + 1, NSMidY(bounds) - 5.5, 13, 11)
                               waves:0
                               color:ink];
@@ -288,10 +333,7 @@ static void BTDrawGlyph(BTGlyph glyph, NSRect rect, NSColor *color) {
     CGFloat travel = NSWidth(track) - BT_VOLUME_KNOB;
     CGFloat knobX = NSMinX(track) + travel * (CGFloat)_volume;
 
-    // No colored fill. The 2003 control was a plain recessed channel with a
-    // metal knob riding in it; a flat blue bar belongs to a different toolkit
-    // and reads as pasted in.
-    [BTStyle drawGrooveInRect:track filled:0.0];
+    [BTStyle drawGrooveInRect:track];
 
     NSRect knob = NSMakeRect(knobX, NSMidY(bounds) - BT_VOLUME_KNOB / 2,
                              BT_VOLUME_KNOB, BT_VOLUME_KNOB);

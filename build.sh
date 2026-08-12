@@ -80,7 +80,9 @@ echo "==> Built $APP"
 
 if [ "$BUILD_TOOLS" -eq 1 ]; then
     echo "==> Building command line tools"
-    MODEL_SOURCES="$SCRIPT_DIR/src/model/BTTrack.m $SCRIPT_DIR/src/model/BTPlaylist.m $SCRIPT_DIR/src/model/BTLibrary.m $SCRIPT_DIR/src/model/BTITunesImport.m $SCRIPT_DIR/src/ipod/BTIPodDatabase.m"
+    # The whole model, plus the iPod database reader. Found rather than listed,
+    # so a new model file does not have to be remembered here as well.
+    MODEL_SOURCES="$(find "$SCRIPT_DIR/src/model" -name '*.m' | sort) $SCRIPT_DIR/src/ipod/BTIPodDatabase.m"
 
     # These live in tools/local, which belongs to the machine rather than to the
     # project. Building them is optional and quietly skipped when they are absent.

@@ -28,8 +28,8 @@
 
     _checked = [NSMutableSet set];
 
-    _headline = [self labelWithFont:[BTStyle boldFont]];
-    _detail = [self labelWithFont:[BTStyle uiFont]];
+    _headline = BTLabelWithText(@"", [BTStyle boldFont]);
+    _detail = BTLabelWithText(@"", [BTStyle uiFont]);
     [self addSubview:_headline];
     [self addSubview:_detail];
 
@@ -93,16 +93,6 @@
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
-- (NSTextField *)labelWithFont:(NSFont *)font {
-    NSTextField *label = [[NSTextField alloc] initWithFrame:NSZeroRect];
-    [label setBezeled:NO];
-    [label setDrawsBackground:NO];
-    [label setEditable:NO];
-    [label setSelectable:NO];
-    [label setFont:font];
-    return label;
 }
 
 - (BOOL)isOpaque { return YES; }
@@ -304,7 +294,7 @@
     if ([playlists count] == 0 || self.iPod == nil) return;
 
     [_syncButton setEnabled:NO];
-    [_sync syncPlaylists:playlists tracksBy:nil completion:nil];
+    [_sync syncPlaylists:playlists completion:nil];
 }
 
 - (void)syncFinished:(NSNotification *)note {

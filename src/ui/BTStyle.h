@@ -20,7 +20,6 @@
 + (NSColor *)chromeBottom;
 + (NSColor *)chromeEdge;
 + (NSColor *)listBackground;
-+ (NSColor *)listAlternate;
 + (NSColor *)selection;
 + (NSColor *)inactiveSelection;
 + (NSColor *)displayBackground;
@@ -30,8 +29,10 @@
 + (void)drawVerticalGradientInRect:(NSRect)rect from:(NSColor *)top to:(NSColor *)bottom;
 + (void)drawChromeInRect:(NSRect)rect;
 + (void)drawSunkenBezelInRect:(NSRect)rect radius:(CGFloat)radius fill:(NSColor *)fill;
-// A recessed track with the left portion filled, for the volume control.
-+ (void)drawGrooveInRect:(NSRect)rect filled:(CGFloat)fraction;
+// The recessed channel the volume knob rides in. Left unfilled on purpose: the
+// 2003 control had no colored bar, and one reads as pasted in from a different
+// toolkit.
++ (void)drawGrooveInRect:(NSRect)rect;
 
 // The glossy round transport buttons and the small square toggles.
 + (void)drawAquaCircleInRect:(NSRect)rect pressed:(BOOL)pressed enabled:(BOOL)enabled;

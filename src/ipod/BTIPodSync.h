@@ -25,10 +25,9 @@ extern NSString *const BTIPodSyncDidFinishNotification;
 - (NSSet *)playlistNamesOnDevice;
 
 // Playlists here are BTPlaylist objects, already flattened to leaves: the fifth
-// generation firmware has no folders, so a folder contributes its contents.
-- (void)syncPlaylists:(NSArray *)playlists
-             tracksBy:(NSDictionary *)tracksByID
-           completion:(void (^)(NSError *error))completion;
+// generation firmware has no folders, so a folder contributes its contents. The
+// songs themselves are resolved against the shared library.
+- (void)syncPlaylists:(NSArray *)playlists completion:(void (^)(NSError *error))completion;
 
 @property (nonatomic, readonly) BOOL running;
 

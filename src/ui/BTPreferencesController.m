@@ -2,6 +2,7 @@
 #import "BTPreferences.h"
 #import "BTLibrary.h"
 #import "BTStyle.h"
+#import "BTControls.h"
 
 #define BT_PREFS_WIDTH  520.0
 #define BT_PREFS_HEIGHT 210.0
@@ -49,14 +50,10 @@
     return self;
 }
 
+// The note under each row is the small gray one; the row's own name is not.
 - (NSTextField *)labelWithText:(NSString *)text frame:(NSRect)frame small:(BOOL)small {
-    NSTextField *label = [[NSTextField alloc] initWithFrame:frame];
-    [label setStringValue:text];
-    [label setBezeled:NO];
-    [label setDrawsBackground:NO];
-    [label setEditable:NO];
-    [label setSelectable:NO];
-    [label setFont:(small ? [BTStyle smallFont] : [BTStyle uiFont])];
+    NSTextField *label = BTLabelWithText(text, (small ? [BTStyle smallFont] : [BTStyle uiFont]));
+    [label setFrame:frame];
     if (small) [label setTextColor:[NSColor colorWithCalibratedWhite:0.35 alpha:1.0]];
     [[label cell] setLineBreakMode:NSLineBreakByWordWrapping];
     return label;

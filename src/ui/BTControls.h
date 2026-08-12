@@ -5,6 +5,9 @@ typedef NS_ENUM(NSInteger, BTGlyph) {
     BTGlyphPause,
     BTGlyphPrevious,
     BTGlyphNext,
+    // The same skip marks with the stop bar the mini player's original had.
+    BTGlyphPreviousBar,
+    BTGlyphNextBar,
     BTGlyphShuffle,
     BTGlyphRepeat,
     BTGlyphRepeatOne,
@@ -13,6 +16,23 @@ typedef NS_ENUM(NSInteger, BTGlyph) {
     BTGlyphEject,
     BTGlyphPlus
 };
+
+// Draws a mark inside a rect. Both the round buttons up top and the blocky ones
+// in the mini player come through here, so a change to a mark shows up in both.
+void BTDrawGlyph(BTGlyph glyph, NSRect rect, NSColor *color);
+
+// A caption: a text field with all of its field-ness turned off. The target
+// system has no label class of its own, so every window would otherwise build
+// this the same way six setters at a time.
+NSTextField *BTLabelWithText(NSString *text, NSFont *font);
+
+// Transport keys, shared by every view and window that can hold focus.
+//
+// Left and right skip tracks, space plays and pauses, M mutes, and the
+// option-modified up and down arrows change volume. Plain up and down change
+// volume too, except in a list, where they still move the selection and would
+// be missed if taken away. Returns YES when the key was claimed.
+BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume);
 
 // Round Aqua transport button. Draws itself; no image files involved.
 @interface BTRoundButton : NSButton

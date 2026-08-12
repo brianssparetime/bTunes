@@ -75,7 +75,7 @@ NSString *const BTIPodDidChangeNotification = @"BTIPodDidChange";
             stringByAppendingPathComponent:@"iTunesDB"];
 }
 
-- (BOOL)eject:(NSError **)error {
+- (BOOL)eject {
     return [[NSWorkspace sharedWorkspace] unmountAndEjectDeviceAtPath:self.mountPath];
 }
 

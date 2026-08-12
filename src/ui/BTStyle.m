@@ -14,14 +14,14 @@ static NSFont *BTFontNamed(NSString *name, CGFloat size, BOOL bold) {
 + (NSFont *)displayFont   { return BTFontNamed(@"Lucida Grande", 10.0, NO); }
 + (NSFont *)displayBoldFont { return BTFontNamed(@"Lucida Grande Bold", 10.0, YES); }
 
-// Weighted toward the older gray chrome rather than the near-white the current
-// system draws, so the window reads as something from a few releases back.
 // #8400FF, with the same lit edge and shadow the logo is drawn from. Change
 // these alongside the palette at the top of tools/make_logo.py.
 + (NSColor *)accent      { return [NSColor colorWithCalibratedRed:0.518 green:0.000 blue:1.000 alpha:1.0]; }
 + (NSColor *)accentLight { return [NSColor colorWithCalibratedRed:0.729 green:0.478 blue:1.000 alpha:1.0]; }
 + (NSColor *)accentDark  { return [NSColor colorWithCalibratedRed:0.196 green:0.000 blue:0.549 alpha:1.0]; }
 
+// Weighted toward the older gray chrome rather than the near-white the current
+// system draws, so the window reads as something from a few releases back.
 + (NSColor *)windowBackground { return [NSColor colorWithCalibratedWhite:0.671 alpha:1.0]; }
 + (NSColor *)chromeTop       { return [NSColor colorWithCalibratedWhite:0.741 alpha:1.0]; }
 + (NSColor *)chromeBottom    { return [NSColor colorWithCalibratedWhite:0.549 alpha:1.0]; }
@@ -29,7 +29,6 @@ static NSFont *BTFontNamed(NSString *name, CGFloat size, BOOL bold) {
 // cut through the window rather than as the edge of the bar.
 + (NSColor *)chromeEdge      { return [NSColor colorWithCalibratedWhite:0.588 alpha:1.0]; }
 + (NSColor *)listBackground  { return [NSColor whiteColor]; }
-+ (NSColor *)listAlternate   { return [NSColor colorWithCalibratedRed:0.929 green:0.953 blue:0.996 alpha:1.0]; }
 + (NSColor *)selection       { return [NSColor colorWithCalibratedRed:0.220 green:0.459 blue:0.843 alpha:1.0]; }
 + (NSColor *)inactiveSelection { return [NSColor colorWithCalibratedWhite:0.702 alpha:1.0]; }
 // The readout carries a faint green cast so it reads as a small screen rather
@@ -115,7 +114,7 @@ static NSImage *BTSteelGrain(void) {
     [path stroke];
 }
 
-+ (void)drawGrooveInRect:(NSRect)rect filled:(CGFloat)fraction {
++ (void)drawGrooveInRect:(NSRect)rect {
     CGFloat radius = NSHeight(rect) / 2.0;
     NSRect inner = NSInsetRect(rect, 0.5, 0.5);
     NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:inner xRadius:radius yRadius:radius];
@@ -131,14 +130,6 @@ static NSImage *BTSteelGrain(void) {
         initWithStartingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:0.55]
                   endingColor:[NSColor colorWithCalibratedWhite:0.0 alpha:0.30]];
     [shade drawInRect:inner angle:90.0];
-
-    if (fraction > 0.0) {
-        NSRect filled = inner;
-        filled.size.width = NSWidth(inner) * MIN(1.0, fraction);
-        [self drawVerticalGradientInRect:filled
-                                    from:[NSColor colorWithCalibratedRed:0.45 green:0.63 blue:0.90 alpha:1.0]
-                                      to:[NSColor colorWithCalibratedRed:0.24 green:0.45 blue:0.80 alpha:1.0]];
-    }
     [NSGraphicsContext restoreGraphicsState];
 
     [[NSColor colorWithCalibratedWhite:0.48 alpha:1.0] set];
@@ -390,6 +381,7 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
 + (void)drawShrinkGlyphInRect:(NSRect)rect color:(NSColor *)color {
     // Two arrows meeting in the middle, each with a solid head. Four thin
     // barbed arrows read as an X at this size, and the barbs vanish.
+    //
     // The arrows run corner to corner of a square inside the button, and the
     // button is round: at an inset much under a sixth, those corners fall
     // outside the circle.
@@ -412,11 +404,9 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
         dx /= length;
         dy /= length;
 
-        // Proportions taken from the usual collapse mark: a broad head with a
-        // shaft about half its width running back to the corner, the two tips
-        // nearly meeting in the middle.
-        // A thin shaft with a broad head. The head carries the meaning at this
-        // size, so it stays large while the shaft stays quiet.
+        // A thin shaft with a broad head, the two tips nearly meeting in the
+        // middle. The head carries the meaning at this size, so it stays large
+        // while the shaft stays quiet.
         CGFloat headLength = length * 0.52;
         CGFloat headHalf = length * 0.42;
         NSPoint tip = NSMakePoint(corner.x + dx * length * 0.88,

@@ -1,6 +1,7 @@
 #import "BTLibrary.h"
 #import "BTTrack.h"
 #import "BTPlaylist.h"
+#import "BTPreferences.h"
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
 #import <AudioToolbox/AudioToolbox.h>
@@ -42,12 +43,24 @@ NSString *const BTLibraryImportProgressNotification = @"BTLibraryImportProgress"
 
 #pragma mark - Storage
 
-+ (NSString *)unconfiguredSupportDirectory {
+// BTUNES_LIBRARY_DIR is what the command line tools and the checks point at a
+// throwaway library. Setting HOME does not work for this, since the search path
+// below comes from the user record rather than the environment.
+static NSString *BTEnvironmentLibraryDirectory(void) {
     const char *override = getenv("BTUNES_LIBRARY_DIR");
-    if (override != NULL && strlen(override) > 0) {
-        return [[NSFileManager defaultManager] stringWithFileSystemRepresentation:override
-                                                                           length:strlen(override)];
-    }
+    if (override == NULL || strlen(override) == 0) return nil;
+    return [[NSFileManager defaultManager] stringWithFileSystemRepresentation:override
+                                                                       length:strlen(override)];
+}
+
+// Where the library sits with nothing chosen: the environment variable, a
+// library folder beside the application, then the usual Application Support
+// location. The folder beside the application is for running a copy on another
+// machine without disturbing the library already there, and follows the same
+// layout as the other Mac applications here.
++ (NSString *)unconfiguredSupportDirectory {
+    NSString *override = BTEnvironmentLibraryDirectory();
+    if (override) return override;
 
     NSString *beside = [[[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent]
                         stringByAppendingPathComponent:@"BTunes Library"];
@@ -62,31 +75,13 @@ NSString *const BTLibraryImportProgressNotification = @"BTLibraryImportProgress"
 }
 
 - (NSString *)supportDirectory {
-    NSString *dir;
+    // The environment wins over the setting, so a test run cannot be sent at a
+    // real library by whatever happens to be saved in preferences. Everything
+    // below that is the setting's business, and it falls back to the
+    // unconfigured location on its own.
+    NSString *dir = BTEnvironmentLibraryDirectory();
+    if (dir == nil) dir = [[BTPreferences sharedPreferences] databaseFolder];
 
-    // Three places, in order: the environment variable, a library folder
-    // sitting next to the application, then the usual Application Support
-    // location.
-    //
-    // BTUNES_LIBRARY_DIR is what the command line tools and the checks use.
-    // Setting HOME does not work for this, since the search path comes from the
-    // user record rather than the environment. The folder beside the
-    // application is for running a copy on another machine without disturbing
-    // the library already there, and follows the same layout as the other Mac
-    // applications here.
-    const char *override = getenv("BTUNES_LIBRARY_DIR");
-    NSString *chosen = [[NSUserDefaults standardUserDefaults] stringForKey:@"BTDatabaseFolder"];
-
-    if (override != NULL && strlen(override) > 0) {
-        // The environment wins, so a test run cannot be sent at a real library
-        // by whatever happens to be saved in the settings.
-        dir = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:override
-                                                                          length:strlen(override)];
-    } else if ([chosen length] > 0) {
-        dir = chosen;
-    } else {
-        dir = [BTLibrary unconfiguredSupportDirectory];
-    }
     [[NSFileManager defaultManager] createDirectoryAtPath:dir
                              withIntermediateDirectories:YES
                                               attributes:nil

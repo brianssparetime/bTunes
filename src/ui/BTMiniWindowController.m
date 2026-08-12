@@ -125,10 +125,9 @@ static NSFont *BTMiniFixedFont(CGFloat size) {
     NSRect inner = NSInsetRect(bounds, 3, 3);
 
     if (self.showsLamp) {
-        // A small lamp in the top left corner, lit in purple when the setting
-        // is on. The original marked its toggles the same way.
-        // Amber when on. The purple lamp disappeared against the purple chrome;
-        // this one is unmistakable at a glance.
+        // A small lamp in the top left corner, the way the original marked its
+        // toggles. Lit in the analyzer's hot orange: a purple lamp disappeared
+        // against the purple chrome, and amber sat too close to it as well.
         NSRect lamp = NSMakeRect(NSMinX(bounds) + 3, NSMaxY(bounds) - 8, 6, 5);
         [self.on ? BTMiniLamp() : [NSColor colorWithCalibratedWhite:0.42 alpha:1.0] set];
         NSRectFill(lamp);
@@ -137,25 +136,7 @@ static NSFont *BTMiniFixedFont(CGFloat size) {
         inner.size.width -= 2;
     }
 
-    switch (self.glyph) {
-        case BTGlyphPlay:     [BTStyle drawPlayGlyphInRect:inner color:ink]; break;
-        case BTGlyphPause:    [BTStyle drawPauseGlyphInRect:inner color:ink]; break;
-        case BTGlyphPrevious: [BTStyle drawPreviousBarGlyphInRect:inner color:ink]; break;
-        case BTGlyphNext:     [BTStyle drawNextBarGlyphInRect:inner color:ink]; break;
-        case BTGlyphShuffle:  [BTStyle drawShuffleGlyphInRect:inner color:ink]; break;
-        case BTGlyphRepeat:   [BTStyle drawRepeatGlyphInRect:inner one:NO color:ink]; break;
-        case BTGlyphRepeatOne:[BTStyle drawRepeatGlyphInRect:inner one:YES color:ink]; break;
-        case BTGlyphStop: {
-            // Matched to the play triangle beside it, not to the button.
-            CGFloat side = NSHeight(inner) * 0.46;
-            [ink set];
-            NSRectFill(NSMakeRect(NSMidX(inner) - side / 2, NSMidY(inner) - side / 2, side, side));
-            break;
-        }
-        case BTGlyphShrink: [BTStyle drawShrinkGlyphInRect:inner color:ink]; break;
-        case BTGlyphEject:  [BTStyle drawEjectGlyphInRect:inner color:ink]; break;
-        case BTGlyphPlus: break;
-    }
+    BTDrawGlyph(self.glyph, inner, ink);
 }
 
 @end
@@ -410,37 +391,9 @@ static NSFont *BTMiniFixedFont(CGFloat size) {
 - (BOOL)canBecomeKeyWindow { return YES; }
 - (BOOL)canBecomeMainWindow { return YES; }
 
+// Nothing here takes an arrow key for itself, so the plain ones are volume.
 - (void)keyDown:(NSEvent *)event {
-    NSString *characters = [event charactersIgnoringModifiers];
-    if ([characters length] == 0) {
-        [super keyDown:event];
-        return;
-    }
-
-    unichar key = [characters characterAtIndex:0];
-    switch (key) {
-        case ' ':
-            [NSApp sendAction:@selector(playPause:) to:nil from:self];
-            return;
-        case NSLeftArrowFunctionKey:
-            [NSApp sendAction:@selector(previousTrack:) to:nil from:self];
-            return;
-        case NSRightArrowFunctionKey:
-            [NSApp sendAction:@selector(nextTrack:) to:nil from:self];
-            return;
-        case NSUpArrowFunctionKey:
-            [NSApp sendAction:@selector(volumeUp:) to:nil from:self];
-            return;
-        case NSDownArrowFunctionKey:
-            [NSApp sendAction:@selector(volumeDown:) to:nil from:self];
-            return;
-        case 'm':
-        case 'M':
-            [NSApp sendAction:@selector(toggleMute:) to:nil from:self];
-            return;
-        default:
-            break;
-    }
+    if (BTHandleTransportKey(event, self, YES)) return;
     [super keyDown:event];
 }
 
@@ -542,13 +495,13 @@ static NSFont *BTMiniFixedFont(CGFloat size) {
     CGFloat step = width + 3.0;
 
     [self buttonWithFrame:NSMakeRect(BT_MINI_MARGIN, buttonY, width, height)
-                    glyph:BTGlyphPrevious action:@selector(previous:)];
+                    glyph:BTGlyphPreviousBar action:@selector(previous:)];
     _playButton = [self buttonWithFrame:NSMakeRect(BT_MINI_MARGIN + step, buttonY, width, height)
                                   glyph:BTGlyphPlay action:@selector(miniPlayPause:)];
     [self buttonWithFrame:NSMakeRect(BT_MINI_MARGIN + step * 2, buttonY, width, height)
                     glyph:BTGlyphStop action:@selector(stop:)];
     [self buttonWithFrame:NSMakeRect(BT_MINI_MARGIN + step * 3, buttonY, width, height)
-                    glyph:BTGlyphNext action:@selector(next:)];
+                    glyph:BTGlyphNextBar action:@selector(next:)];
 
     CGFloat toggleWidth = 31.0;
     _shuffleButton = [self buttonWithFrame:NSMakeRect(BT_TOGGLE_RIGHT - toggleWidth * 2 - 4, buttonY,
@@ -628,7 +581,6 @@ static NSFont *BTMiniFixedFont(CGFloat size) {
 - (void)miniPlayPause:(id)sender {
     [NSApp sendAction:@selector(playPause:) to:nil from:self];
 }
-- (void)pause:(id)sender { [[BTPlayer sharedPlayer] pause]; }
 - (void)stop:(id)sender { [[BTPlayer sharedPlayer] stop]; }
 - (void)next:(id)sender { [[BTPlayer sharedPlayer] next]; }
 - (void)previous:(id)sender { [[BTPlayer sharedPlayer] previous]; }

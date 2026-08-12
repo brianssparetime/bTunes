@@ -19,6 +19,9 @@ extern NSString *const BTIPodDidChangeNotification;
 
 + (BTIPod *)attachedIPod;       // nil when none is mounted
 + (void)startWatching;          // posts the change notification on mount and unmount
-- (BOOL)eject:(NSError **)error;
+
+// Unmounts the device. The workspace reports only success or failure, with no
+// reason attached, so there is nothing more to hand back than a flag.
+- (BOOL)eject;
 
 @end

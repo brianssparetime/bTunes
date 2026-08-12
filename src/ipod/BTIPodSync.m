@@ -77,15 +77,13 @@ NSString *const BTIPodSyncDidFinishNotification = @"BTIPodSyncDidFinish";
     return relative;
 }
 
-- (void)syncPlaylists:(NSArray *)playlists
-             tracksBy:(NSDictionary *)tracksByID
-           completion:(void (^)(NSError *error))completion {
+- (void)syncPlaylists:(NSArray *)playlists completion:(void (^)(NSError *error))completion {
     if (self.running) return;
     self.running = YES;
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSError *error = nil;
-        [self runSyncOfPlaylists:playlists tracksBy:tracksByID error:&error];
+        [self runSyncOfPlaylists:playlists error:&error];
 
         dispatch_async(dispatch_get_main_queue(), ^{
             self.running = NO;
@@ -98,9 +96,7 @@ NSString *const BTIPodSyncDidFinishNotification = @"BTIPodSyncDidFinish";
     });
 }
 
-- (BOOL)runSyncOfPlaylists:(NSArray *)playlists
-                  tracksBy:(NSDictionary *)tracksByID
-                     error:(NSError **)outError {
+- (BOOL)runSyncOfPlaylists:(NSArray *)playlists error:(NSError **)outError {
     NSFileManager *fm = [NSFileManager defaultManager];
     BTLibrary *library = [BTLibrary sharedLibrary];
     NSUInteger i, j;
