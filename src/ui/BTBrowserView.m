@@ -40,7 +40,10 @@
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 100, NSHeight([self bounds]))];
     [scroll setHasVerticalScroller:YES];
     [scroll setAutohidesScrollers:YES];
-    [scroll setBorderType:NSBezelBorder];
+    // No bezel. A bezel draws a dark line on all four sides, and the top one
+    // lands directly under the toolbar where it reads as a black seam across
+    // the window. The columns are separated by drawn lines instead.
+    [scroll setBorderType:NSNoBorder];
     [scroll setFocusRingType:NSFocusRingTypeNone];
 
     NSTableView *table = [[BTListTableView alloc] initWithFrame:[[scroll contentView] bounds]];
@@ -86,6 +89,20 @@
 - (void)resizeSubviewsWithOldSize:(NSSize)oldSize {
     [super resizeSubviewsWithOldSize:oldSize];
     [self layoutColumns];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    // Hairlines between the columns and one along the bottom, in the gray the
+    // rest of the window uses for divisions.
+    NSRect bounds = [self bounds];
+    [[NSColor colorWithCalibratedWhite:0.68 alpha:1.0] set];
+
+    CGFloat width = NSWidth(bounds) / 3.0;
+    NSUInteger i;
+    for (i = 1; i < 3; i++) {
+        NSRectFill(NSMakeRect(floor(width * i), NSMinY(bounds), 1.0, NSHeight(bounds)));
+    }
+    NSRectFill(NSMakeRect(NSMinX(bounds), NSMinY(bounds), NSWidth(bounds), 1.0));
 }
 
 - (NSView *)firstColumnView { return _genreTable; }

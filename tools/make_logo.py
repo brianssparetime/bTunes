@@ -365,13 +365,19 @@ def angular_profile(steps, seed):
                  for i in range(steps)]
     coarse = [(rng.random() - 0.5) for _ in range(48)]
     # Narrow specular sweeps, as a spun surface throws under a single source.
+    # The light runs along the same lean as the glyphs rather than across the
+    # mark at a diagonal, so the bright axis passes between the letter and the
+    # note instead of cutting through both. The angle is the italic slant
+    # itself: a stem sheared by this much stands that far off vertical.
+    axis = 90.0 - math.degrees(math.atan(ITALIC_SHEAR))
+
     # Stronger, narrower sweeps read as polished rather than brushed flat.
-    sweeps = [(-45.0, 54.0, 0.17), (135.0, 46.0, 0.19),
-              (40.0, 22.0, 0.12), (215.0, 19.0, 0.13)]
+    sweeps = [(axis, 54.0, 0.17), (axis + 180.0, 46.0, 0.19),
+              (axis + 46.0, 22.0, 0.12), (axis + 226.0, 19.0, 0.13)]
     values = []
     for i in range(steps):
         a = 2.0 * math.pi * i / steps
-        v = 21.0 * math.cos(2.0 * (a - math.radians(-45.0)))
+        v = 21.0 * math.cos(2.0 * (a - math.radians(axis)))
         for centre, amp, width in sweeps:
             da = (a - math.radians(centre) + math.pi) % (2.0 * math.pi) - math.pi
             v += amp * math.exp(-(da / width) ** 2)
@@ -538,6 +544,21 @@ def engrave(metal, lum, mark, size):
     return Image.composite(floor, surface, mark)
 
 
+# A compact disc is 120mm across with a 15mm hole, so the hole is an eighth of
+# the diameter.
+HOLE_FRACTION = 0.125
+
+
+def hole_alpha(size, supersample=3):
+    big = size * supersample
+    a = Image.new("L", (big, big), 0)
+    radius = big * HOLE_FRACTION / 2.0
+    centre = big / 2.0
+    ImageDraw.Draw(a).ellipse([centre - radius, centre - radius,
+                               centre + radius, centre + radius], fill=255)
+    return a.resize((size, size), Image.LANCZOS)
+
+
 def disc_alpha(size, supersample=3):
     big = size * supersample
     a = Image.new("L", (big, big), 0)
@@ -569,6 +590,17 @@ def build(size, seed):
 
     alpha = ImageChops.lighter(disc, mark)
     alpha = ImageChops.lighter(alpha, scaled(rim, 0.85))
+
+    # Punch the spindle hole clean through, and darken the metal just around it
+    # so the edge reads as thickness rather than as a sticker.
+    # The hole goes through the disc only. Where the letter or the note crosses
+    # it, the glyph stays whole and the hole gives way.
+    hole = ImageChops.subtract(hole_alpha(size), mark)
+    lip = ImageChops.subtract(hole.filter(ImageFilter.GaussianBlur(size * 0.010)), hole)
+    lip = ImageChops.subtract(lip, mark)
+    art = Image.composite(solid(size, (96, 98, 104)), art, scaled(lip, 0.55))
+    alpha = ImageChops.subtract(alpha, hole)
+
     art.putalpha(alpha)
     return art
 

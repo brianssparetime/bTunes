@@ -27,7 +27,7 @@ static NSFont *BTFontNamed(NSString *name, CGFloat size, BOOL bold) {
 + (NSColor *)chromeBottom    { return [NSColor colorWithCalibratedWhite:0.549 alpha:1.0]; }
 // The line under the chrome. Kept mid gray: at near black it reads as a slot
 // cut through the window rather than as the edge of the bar.
-+ (NSColor *)chromeEdge      { return [NSColor colorWithCalibratedWhite:0.502 alpha:1.0]; }
++ (NSColor *)chromeEdge      { return [NSColor colorWithCalibratedWhite:0.588 alpha:1.0]; }
 + (NSColor *)listBackground  { return [NSColor whiteColor]; }
 + (NSColor *)listAlternate   { return [NSColor colorWithCalibratedRed:0.929 green:0.953 blue:0.996 alpha:1.0]; }
 + (NSColor *)selection       { return [NSColor colorWithCalibratedRed:0.220 green:0.459 blue:0.843 alpha:1.0]; }
@@ -85,13 +85,9 @@ static NSImage *BTSteelGrain(void) {
     NSRectFillUsingOperation(rect, NSCompositeSourceOver);
     [NSGraphicsContext restoreGraphicsState];
 
-    // Only the bottom edge is drawn. A light line along the top shows up as a
-    // seam against the title bar, which is meant to run into this without a
-    // join.
-    [[self chromeEdge] set];
-    NSRectFill(NSMakeRect(NSMinX(rect), NSMinY(rect), NSWidth(rect), 1.0));
-    [[NSColor colorWithCalibratedWhite:1.0 alpha:0.30] set];
-    NSRectFill(NSMakeRect(NSMinX(rect), NSMinY(rect) + 1.0, NSWidth(rect), 1.0));
+    // No drawn line at either edge. The step from the gradient's dark end to
+    // the content below is separation enough, and any line across a boundary
+    // this wide reads as a seam however light it is made.
 }
 
 + (void)drawSunkenBezelInRect:(NSRect)rect radius:(CGFloat)radius fill:(NSColor *)fill {

@@ -7,8 +7,11 @@
     NSTimer *_timer;
     CGFloat _values[BT_BAR_COUNT];
     CGFloat _peaks[BT_BAR_COUNT];
+    CGFloat _capFall[BT_BAR_COUNT];
+    NSInteger _capHold[BT_BAR_COUNT];
     CGFloat _phases[BT_BAR_COUNT];
     CGFloat _rates[BT_BAR_COUNT];
+    CGFloat _ceiling;
     double _time;
 }
 
@@ -61,24 +64,41 @@ static CGFloat BTBandShape(NSInteger index) {
     CGFloat peak = [player peakLevel];
     _time += 1.0 / 25.0;
 
-    // Loudness sits high and varies little, so driving the bars from it
-    // directly pegs them. Bending the curve pulls the middle down and leaves
-    // the top of the range for the loud moments.
-    CGFloat shaped = powf(level, 1.8f);
+    // A recording's loudness barely moves, so a fixed scale either pegs on a
+    // loud track or barely lifts on a quiet one. The bars are measured against
+    // a ceiling that follows the loudest recent moment and sags back down,
+    // which is what keeps the display using its whole range on any material.
+    if (level > _ceiling) {
+        _ceiling = level;
+    } else {
+        _ceiling = _ceiling * 0.995f + level * 0.005f;
+    }
+    if (_ceiling < 0.12f) _ceiling = 0.12f;
+
+    CGFloat relative = level / _ceiling;
+    if (relative > 1.0f) relative = 1.0f;
+    CGFloat shaped = powf(relative, 1.5f);
 
     NSInteger i;
     for (i = 0; i < BT_BAR_COUNT; i++) {
         CGFloat wobble = 0.45f + 0.55f * (CGFloat)((sin(_time * _rates[i] + _phases[i]) + 1.0) / 2.0);
-        CGFloat target = shaped * BTBandShape(i) * wobble * 1.70f;
-        if (i < 4) target += powf(peak, 2.0f) * 0.22f * wobble;
+        CGFloat target = shaped * BTBandShape(i) * wobble * 1.25f;
+        if (i < 4) target += powf(peak / _ceiling > 1.0f ? 1.0f : peak / _ceiling, 2.0f) * 0.18f * wobble;
         if (target > 1.0f) target = 1.0f;
 
-        // Falls faster than before, so the bars move rather than sitting full.
         _values[i] = (target > _values[i]) ? target : (_values[i] * 0.62f + target * 0.38f);
-        if (_values[i] > _peaks[i]) {
+
+        // The cap holds where the bar last reached, waits, then falls away
+        // picking up speed, the way the original analyzer's markers did.
+        if (_values[i] >= _peaks[i]) {
             _peaks[i] = _values[i];
+            _capHold[i] = 12;
+            _capFall[i] = 0.0f;
+        } else if (_capHold[i] > 0) {
+            _capHold[i]--;
         } else {
-            _peaks[i] -= 0.018f;
+            _capFall[i] += 0.0016f;
+            _peaks[i] -= _capFall[i];
             if (_peaks[i] < _values[i]) _peaks[i] = _values[i];
             if (_peaks[i] < 0) _peaks[i] = 0;
         }
@@ -136,10 +156,14 @@ static CGFloat BTBandShape(NSInteger index) {
             NSRectFill(NSMakeRect(x, 1 + (CGFloat)b * (blockHeight + blockGap), barWidth, blockHeight));
         }
 
+        // The cap floats a block clear of the bar so it reads as a marker
+        // rather than as the top of the bar itself.
         NSInteger peakBlock = (NSInteger)(_peaks[i] * (CGFloat)blocks + 0.5f) - 1;
+        if (peakBlock > lit - 1) peakBlock = lit;
         if (peakBlock > 0 && peakBlock < blocks) {
-            [[NSColor colorWithCalibratedWhite:0.85 alpha:1.0] set];
-            NSRectFill(NSMakeRect(x, 1 + (CGFloat)peakBlock * (blockHeight + blockGap), barWidth, 1.0));
+            [[NSColor colorWithCalibratedWhite:0.90 alpha:1.0] set];
+            NSRectFill(NSMakeRect(x, 1 + (CGFloat)peakBlock * (blockHeight + blockGap),
+                                  barWidth, blockHeight));
         }
     }
 }

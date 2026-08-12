@@ -272,7 +272,8 @@ static void BTDrawGlyph(BTGlyph glyph, NSRect rect, NSColor *color) {
 
     // The two speakers sit on the same centre line as the track, the quiet one
     // small and the loud one larger with its arcs.
-    [BTStyle drawSpeakerGlyphInRect:NSMakeRect(NSMinX(bounds) + 1, NSMidY(bounds) - 4, 10, 8)
+    // Same speaker at both ends, the same size. Only the arcs differ.
+    [BTStyle drawSpeakerGlyphInRect:NSMakeRect(NSMinX(bounds) + 1, NSMidY(bounds) - 5.5, 13, 11)
                               waves:0
                               color:ink];
     [BTStyle drawSpeakerGlyphInRect:NSMakeRect(NSMaxX(bounds) - 16, NSMidY(bounds) - 5.5, 13, 11)

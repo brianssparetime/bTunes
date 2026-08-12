@@ -300,11 +300,25 @@ static NSFont *BTMiniFixedFont(CGFloat size) {
 
     [NSGraphicsContext saveGraphicsState];
     NSRectClip(clip);
+    // Too long a title travels to the end, rests there, comes back, and rests
+    // again before setting off. Sliding back and forth without pausing gives
+    // the eye nowhere to read from.
     CGFloat offset = 0;
     if (headlineSize.width > NSWidth(clip)) {
-        CGFloat span = headlineSize.width - NSWidth(clip) + 16;
-        CGFloat phase = fmod(self.scrollOffset, span * 2);
-        offset = (phase < span) ? phase : (span * 2 - phase);
+        CGFloat span = headlineSize.width - NSWidth(clip) + 12;
+        CGFloat rest = 26.0;
+        CGFloat cycle = (span + rest) * 2.0;
+        CGFloat phase = fmod(self.scrollOffset, cycle);
+
+        if (phase < span) {
+            offset = phase;                                   // travelling out
+        } else if (phase < span + rest) {
+            offset = span;                                    // holding at the end
+        } else if (phase < span * 2.0 + rest) {
+            offset = span - (phase - span - rest);             // coming back
+        } else {
+            offset = 0;                                       // holding at the start
+        }
     }
     [headline drawAtPoint:NSMakePoint(NSMinX(clip) - offset, NSMidY(readout) - headlineSize.height / 2)
            withAttributes:headlineAttrs];

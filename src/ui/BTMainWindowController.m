@@ -19,6 +19,18 @@ static NSString *const BTLibrarySource = @"Library";
 // Tall enough for two lines of text above the scrub bar without them meeting.
 #define BT_CHROME_HEIGHT 54.0
 #define BT_BOTTOM_HEIGHT 24.0
+// Air above the first row, taken inside the list rather than between the panels.
+// A gap between them exposes the window's own background as a band of flat gray
+// running across the window.
+#define BT_SOURCE_TOP_INSET 6.0
+
+// How much of the window the title bar covers. Asked of AppKit rather than
+// assumed, since the content view now runs underneath it.
+static CGFloat BTTitleBarHeight(void) {
+    NSRect content = NSMakeRect(0, 0, 100, 100);
+    NSRect frame = [NSWindow frameRectForContentRect:content styleMask:NSTitledWindowMask];
+    return NSHeight(frame) - NSHeight(content);
+}
 
 #pragma mark - Chrome
 
@@ -292,12 +304,14 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
 
 - (instancetype)initMainWindow {
     NSRect frame = NSMakeRect(0, 0, 860, 560);
-    // A textured window is the one that actually hands the title bar over to
-    // the window's own background. Marking the title bar transparent by itself
-    // left the system still painting its lighter gradient there.
+    // A textured window hands the title bar over to the window's own
+    // background, and a full size content view lets the chrome be drawn behind
+    // it, so the gradient and the grain carry all the way to the top of the
+    // window instead of stopping at a flat gray band.
     NSUInteger style = NSTitledWindowMask | NSClosableWindowMask |
                        NSMiniaturizableWindowMask | NSResizableWindowMask |
-                       NSTexturedBackgroundWindowMask;
+                       NSTexturedBackgroundWindowMask |
+                       NSFullSizeContentViewWindowMask;
     NSWindow *window = [[BTMainWindow alloc] initWithContentRect:frame
                                                        styleMask:style
                                                          backing:NSBackingStoreBuffered
@@ -418,8 +432,9 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     NSView *content = [[self window] contentView];
     NSRect bounds = [content bounds];
 
-    _chrome = [[BTChromeView alloc] initWithFrame:NSMakeRect(0, NSMaxY(bounds) - BT_CHROME_HEIGHT,
-                                                             NSWidth(bounds), BT_CHROME_HEIGHT)];
+    CGFloat chromeHeight = BT_CHROME_HEIGHT + BTTitleBarHeight();
+    _chrome = [[BTChromeView alloc] initWithFrame:NSMakeRect(0, NSMaxY(bounds) - chromeHeight,
+                                                             NSWidth(bounds), chromeHeight)];
     [_chrome setAutoresizingMask:(NSViewWidthSizable | NSViewMinYMargin)];
     [content addSubview:_chrome];
 
@@ -504,6 +519,8 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     [sourceScroll setDrawsBackground:YES];
     [sourceScroll setBackgroundColor:[BTStyle listBackground]];
     [sourceScroll setFocusRingType:NSFocusRingTypeNone];
+    [sourceScroll setAutomaticallyAdjustsContentInsets:NO];
+    [sourceScroll setContentInsets:NSEdgeInsetsMake(BT_SOURCE_TOP_INSET, 0, 0, 0)];
 
     _sourceList = [[BTKeyOutlineView alloc] initWithFrame:[[sourceScroll contentView] bounds]];
     [_sourceList setFocusRingType:NSFocusRingTypeNone];
@@ -679,10 +696,14 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
 
 - (void)layoutContent {
     NSRect bounds = [[[self window] contentView] bounds];
-    [_chrome setFrame:NSMakeRect(0, NSMaxY(bounds) - BT_CHROME_HEIGHT, NSWidth(bounds), BT_CHROME_HEIGHT)];
+    CGFloat chromeHeight = BT_CHROME_HEIGHT + BTTitleBarHeight();
+
+    // The chrome reaches up under the title bar. Its controls are positioned
+    // from its bottom edge, so they stay where they were.
+    [_chrome setFrame:NSMakeRect(0, NSMaxY(bounds) - chromeHeight, NSWidth(bounds), chromeHeight)];
     [_bottomBar setFrame:NSMakeRect(0, 0, NSWidth(bounds), BT_BOTTOM_HEIGHT)];
     [_outerSplit setFrame:NSMakeRect(0, BT_BOTTOM_HEIGHT, NSWidth(bounds),
-                                     NSHeight(bounds) - BT_CHROME_HEIGHT - BT_BOTTOM_HEIGHT)];
+                                     NSHeight(bounds) - chromeHeight - BT_BOTTOM_HEIGHT)];
 
     [_outerSplit setPosition:170 ofDividerAtIndex:0];
     [_innerSplit setPosition:150 ofDividerAtIndex:0];
