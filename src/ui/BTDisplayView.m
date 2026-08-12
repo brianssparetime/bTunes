@@ -4,12 +4,21 @@
 #import "BTTrack.h"
 #import "BTIPodSync.h"
 
+// A line too long for the panel sits still for a while, travels far enough to
+// show its tail, rests, and comes back. The wait matters: a line that starts
+// moving immediately is unreadable at the moment you most want to read it.
+#define BT_MARQUEE_WAIT   5.0
+#define BT_MARQUEE_SPEED 26.0   // points per second
+#define BT_MARQUEE_REST   2.0
+
 @implementation BTDisplayView {
     BOOL _showRemaining;
     BOOL _scrubbing;
     BOOL _syncing;
     double _syncFraction;
     NSString *_syncMessage;
+    NSDate *_lineShownAt;
+    NSString *_lineTrackID;
 }
 
 - (id)initWithFrame:(NSRect)frame {
@@ -87,6 +96,50 @@
 #define BT_DISPLAY_TITLE_HEIGHT  12.0
 #define BT_DISPLAY_FOOT_HEIGHT   14.0
 
+// Centred while it fits; once it does not, it scrolls on the cycle above.
+- (void)drawLine:(NSString *)line
+          inRect:(NSRect)rect
+      attributes:(NSDictionary *)attributes
+         elapsed:(NSTimeInterval)elapsed {
+    NSSize size = [line sizeWithAttributes:attributes];
+    if (size.width <= NSWidth(rect)) {
+        [line drawInRect:rect withAttributes:attributes];
+        return;
+    }
+
+    CGFloat span = size.width - NSWidth(rect) + 6.0;
+    CGFloat travel = span / BT_MARQUEE_SPEED;
+    CGFloat offset = 0.0;
+
+    if (elapsed > BT_MARQUEE_WAIT) {
+        CGFloat t = elapsed - BT_MARQUEE_WAIT;
+        CGFloat cycle = travel * 2.0 + BT_MARQUEE_REST + BT_MARQUEE_WAIT;
+        CGFloat phase = fmod(t, cycle);
+
+        if (phase < travel) {
+            offset = span * (phase / travel);
+        } else if (phase < travel + BT_MARQUEE_REST) {
+            offset = span;
+        } else if (phase < travel * 2.0 + BT_MARQUEE_REST) {
+            offset = span * (1.0 - (phase - travel - BT_MARQUEE_REST) / travel);
+        }
+    }
+
+    // Left aligned while scrolling, so the text starts where it can be read
+    // rather than sliding in from the middle.
+    NSMutableParagraphStyle *left = [[NSMutableParagraphStyle alloc] init];
+    [left setAlignment:NSLeftTextAlignment];
+    [left setLineBreakMode:NSLineBreakByClipping];
+    NSMutableDictionary *scrolling = [NSMutableDictionary dictionaryWithDictionary:attributes];
+    [scrolling setObject:left forKey:NSParagraphStyleAttributeName];
+
+    [NSGraphicsContext saveGraphicsState];
+    NSRectClip(rect);
+    [line drawInRect:NSMakeRect(NSMinX(rect) - offset, NSMinY(rect), size.width + 8.0, NSHeight(rect))
+      withAttributes:scrolling];
+    [NSGraphicsContext restoreGraphicsState];
+}
+
 - (NSRect)progressRect {
     // Inset past the rounded ends so the groove does not run into them.
     NSRect b = [self bounds];
@@ -111,6 +164,9 @@
     NSMutableParagraphStyle *centered = [[NSMutableParagraphStyle alloc] init];
     [centered setAlignment:NSCenterTextAlignment];
     [centered setLineBreakMode:NSLineBreakByTruncatingTail];
+    // Without this, a line that does not fit is squeezed until the spaces
+    // disappear before anything is truncated, which is unreadable.
+    [centered setTighteningFactorForTruncation:0.0];
 
     NSDictionary *titleAttrs = @{NSFontAttributeName: [BTStyle displayBoldFont],
                                  NSForegroundColorAttributeName: [BTStyle displayText],
@@ -125,18 +181,29 @@
         return;
     }
 
+    // The clock restarts with each song, so every one gets its still moment
+    // before anything moves.
+    if (![_lineTrackID isEqualToString:track.trackID]) {
+        _lineTrackID = track.trackID;
+        _lineShownAt = [NSDate date];
+    }
+    NSTimeInterval shown = _lineShownAt ? -[_lineShownAt timeIntervalSinceNow] : 0.0;
+
     NSRect titleRect = NSMakeRect(NSMinX(bounds) + 6,
                                   NSMaxY(bounds) - BT_DISPLAY_TITLE_HEIGHT - 3,
                                   NSWidth(bounds) - 12,
                                   BT_DISPLAY_TITLE_HEIGHT);
-    [[track displayTitle] drawInRect:titleRect withAttributes:titleAttrs];
+    [self drawLine:[track displayTitle] inRect:titleRect attributes:titleAttrs elapsed:shown];
 
-    NSString *second = [NSString stringWithFormat:@"%@ - %@", [track displayArtist], [track displayAlbum]];
+    // The whole line is kept even when it does not fit: it scrolls rather than
+    // being cut down.
+    NSString *second = [NSString stringWithFormat:@"%@ - %@",
+                        [track displayArtist], [track displayAlbum]];
     NSRect secondRect = NSMakeRect(NSMinX(bounds) + 6,
                                    NSMinY(titleRect) - BT_DISPLAY_TITLE_HEIGHT,
                                    NSWidth(bounds) - 12,
                                    BT_DISPLAY_TITLE_HEIGHT);
-    [second drawInRect:secondRect withAttributes:lineAttrs];
+    [self drawLine:second inRect:secondRect attributes:lineAttrs elapsed:shown];
 
     NSTimeInterval elapsed = [player currentTime];
     NSTimeInterval duration = [player duration];

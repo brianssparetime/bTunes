@@ -17,6 +17,12 @@ static NSString *const BTTrackPasteboardType = @"com.btunes.tracks";
 static NSString *const BTPlaylistPasteboardType = @"com.btunes.playlist";
 static NSString *const BTLibrarySource = @"Library";
 
+// What the window remembers between runs: which folders you closed, what you
+// had selected, and which song was highlighted.
+static NSString *const BTClosedFoldersKey = @"BTClosedFolders";
+static NSString *const BTSelectedSourceKey = @"BTSelectedSource";
+static NSString *const BTSelectedTrackKey = @"BTSelectedTrack";
+
 // Tall enough for two lines of text above the scrub bar without them meeting.
 #define BT_CHROME_HEIGHT 54.0
 #define BT_BOTTOM_HEIGHT 24.0
@@ -261,6 +267,22 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
             return;
         }
     }
+
+    // On a folder, the arrows open and close it. Everywhere else in this list
+    // they skip tracks, which is what they do in the rest of the window.
+    if (key == NSLeftArrowFunctionKey || key == NSRightArrowFunctionKey) {
+        NSInteger row = [self selectedRow];
+        id item = (row >= 0) ? [self itemAtRow:row] : nil;
+        if (item && [self isExpandable:item]) {
+            if (key == NSRightArrowFunctionKey) {
+                [self expandItem:item];
+            } else {
+                [self collapseItem:item];
+            }
+            return;
+        }
+    }
+
     if (BTHandleTransportKey(event, self, NO)) return;
     [super keyDown:event];
 }
@@ -303,6 +325,7 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     BOOL _renameRequested;
     BTIPod *_iPod;
     BTSyncView *_syncView;
+    NSMutableSet *_closedFolders;
     NSImage *_speakerImage;
     BTSmartPlaylistController *_sheetController;
 }
@@ -338,8 +361,9 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     if (self == nil) return nil;
 
     _selectedSource = BTLibrarySource;
-    _sortColumn = @"artist";
+    _sortColumn = @"track";
     _sortAscending = YES;
+    _closedFolders = [NSMutableSet set];
     _visibleTracks = @[];
     _speakerImage = [self buildSpeakerImage];
 
@@ -535,6 +559,7 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     [sourceColumn setWidth:150];
     BTSourceCell *sourceCell = [[BTSourceCell alloc] init];
     [sourceCell setFont:[BTStyle uiFont]];
+    [sourceCell setLineBreakMode:NSLineBreakByTruncatingTail];
     [sourceCell setEditable:YES];
     [sourceColumn setDataCell:sourceCell];
     [_sourceList addTableColumn:sourceColumn];
@@ -613,6 +638,9 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
         } else {
             NSTextFieldCell *cell = [[NSTextFieldCell alloc] init];
             [cell setFont:[BTStyle uiFont]];
+            // Truncated with an ellipsis rather than clipped: a clipped cell
+            // cuts mid-word and reads as though the tag itself is broken.
+            [cell setLineBreakMode:NSLineBreakByTruncatingTail];
             if ([[spec objectAtIndex:0] isEqualToString:@"time"] ||
                 [[spec objectAtIndex:0] isEqualToString:@"playCount"]) {
                 [cell setAlignment:NSRightTextAlignment];
@@ -677,7 +705,10 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     NSRect bounds = [_chrome bounds];
     CGFloat rightMargin = 15.0;
     CGFloat miniWidth = 27.0;
-    CGFloat minimumSearch = 110.0;
+    // The readout carries the song, so it gives up width last. The search field
+    // gets small before the readout does.
+    CGFloat minimumSearch = 88.0;
+    CGFloat minimumDisplay = 260.0;
 
     // The space either side of the readout is the same: whatever sits between
     // the volume control and the readout on the left is repeated on the right.
@@ -693,7 +724,7 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
 
     CGFloat searchLeft = displayLeft + displayWidth + gap;
     if (searchRight - searchLeft < minimumSearch) {
-        displayWidth = MAX(160.0, searchRight - minimumSearch - gap - displayLeft);
+        displayWidth = MAX(minimumDisplay, searchRight - minimumSearch - gap - displayLeft);
         searchLeft = displayLeft + displayWidth + gap;
     }
 
@@ -726,6 +757,7 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     [super showWindow:sender];
     // The window may have been resized from its saved frame before it appeared.
     [self layoutContent];
+    [self restoreSessionState];
 }
 
 // Tab moves between the panes in a fixed order: search, sources, the three
@@ -825,8 +857,48 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     return [(BTPlaylist *)_selectedSource resolveTracks:library.tracks];
 }
 
+// What a source shows before any column is clicked. A playlist keeps the order
+// it was built in, since that order was chosen; everything else is by track
+// number within its album.
+// A playlist holding one album whole is shown in the album's own order. A
+// playlist that draws from an album without being it, like a disc burned from a
+// selection, keeps the order it was built in: that order was chosen.
+- (BOOL)playlistIsAnAlbum:(NSArray *)tracks {
+    if ([tracks count] < 2) return NO;
+
+    NSString *album = [[tracks objectAtIndex:0] displayAlbum];
+    NSInteger disc = [[tracks objectAtIndex:0] discNumber];
+    NSMutableIndexSet *numbers = [NSMutableIndexSet indexSet];
+
+    NSUInteger i;
+    for (i = 0; i < [tracks count]; i++) {
+        BTTrack *track = [tracks objectAtIndex:i];
+        if (![[track displayAlbum] isEqualToString:album]) return NO;
+        if (track.discNumber != disc) return NO;
+        if (track.trackNumber < 1) return NO;
+        if ([numbers containsIndex:(NSUInteger)track.trackNumber]) return NO;
+        [numbers addIndex:(NSUInteger)track.trackNumber];
+    }
+
+    // One unbroken run from the first track: the album as pressed, not a
+    // selection out of it.
+    return [numbers firstIndex] == 1 && [numbers lastIndex] == [tracks count];
+}
+
+- (NSString *)defaultSortColumnForSelectedSource {
+    if ([_selectedSource isKindOfClass:[BTPlaylist class]]) {
+        BTPlaylist *playlist = (BTPlaylist *)_selectedSource;
+        if (playlist.kind == BTPlaylistKindStatic || playlist.kind == BTPlaylistKindFolder) {
+            NSArray *tracks = [playlist resolveTracks:[BTLibrary sharedLibrary].tracks];
+            return [self playlistIsAnAlbum:tracks] ? @"track" : nil;
+        }
+    }
+    return @"track";
+}
+
 - (NSArray *)sortTracks:(NSArray *)tracks {
     NSString *key = _sortColumn;
+    if (key == nil) return tracks;   // the source's own order
     BOOL ascending = _sortAscending;
     return [tracks sortedArrayUsingComparator:^NSComparisonResult(id a, id b) {
         BTTrack *left = a, *right = b;
@@ -875,6 +947,99 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     }];
 }
 
+// Folders come up open, since a closed one hides the playlists it holds. One
+// you have closed yourself stays closed: the list is rebuilt on every library
+// change, and without remembering that, playing a song would open it again.
+- (void)expandFolders {
+    NSInteger row;
+    for (row = 0; row < [_sourceList numberOfRows]; row++) {
+        id item = [_sourceList itemAtRow:row];
+        if (item == nil || ![_sourceList isExpandable:item]) continue;
+        if ([item isKindOfClass:[BTPlaylist class]] &&
+            [_closedFolders containsObject:[(BTPlaylist *)item playlistID]]) continue;
+        [_sourceList expandItem:item];
+    }
+}
+
+- (void)outlineViewItemDidCollapse:(NSNotification *)note {
+    id item = [[note userInfo] objectForKey:@"NSObject"];
+    if ([item isKindOfClass:[BTPlaylist class]]) {
+        [_closedFolders addObject:[(BTPlaylist *)item playlistID]];
+        [self saveSessionState];
+    }
+}
+
+- (void)outlineViewItemDidExpand:(NSNotification *)note {
+    id item = [[note userInfo] objectForKey:@"NSObject"];
+    if ([item isKindOfClass:[BTPlaylist class]]) {
+        [_closedFolders removeObject:[(BTPlaylist *)item playlistID]];
+        [self saveSessionState];
+    }
+}
+
+#pragma mark - Session state
+
+- (void)saveSessionState {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setObject:[_closedFolders allObjects] forKey:BTClosedFoldersKey];
+
+    NSString *source = @"library";
+    if ([_selectedSource isKindOfClass:[BTPlaylist class]]) {
+        source = [(BTPlaylist *)_selectedSource playlistID];
+    }
+    [defaults setObject:source forKey:BTSelectedSourceKey];
+
+    NSInteger row = [_trackTable selectedRow];
+    if (row >= 0 && row < (NSInteger)[_visibleTracks count]) {
+        [defaults setObject:[[_visibleTracks objectAtIndex:(NSUInteger)row] trackID]
+                     forKey:BTSelectedTrackKey];
+    } else {
+        [defaults removeObjectForKey:BTSelectedTrackKey];
+    }
+}
+
+- (void)restoreSessionState {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+
+    NSArray *closed = [defaults arrayForKey:BTClosedFoldersKey];
+    if (closed) [_closedFolders addObjectsFromArray:closed];
+
+    NSString *source = [defaults stringForKey:BTSelectedSourceKey];
+    if ([source length] > 0 && ![source isEqualToString:@"library"]) {
+        BTPlaylist *playlist = [[BTLibrary sharedLibrary] playlistWithID:source];
+        if (playlist) {
+            _selectedSource = playlist;
+            _sortColumn = [self defaultSortColumnForSelectedSource];
+            [self updateBrowserVisibility];
+            [self updateRightPane];
+        }
+    }
+    [self reloadEverything];
+
+    NSInteger row = [_sourceList rowForItem:_selectedSource];
+    if (row >= 0) {
+        [_sourceList selectRowIndexes:[NSIndexSet indexSetWithIndex:(NSUInteger)row]
+                 byExtendingSelection:NO];
+    }
+
+    NSString *trackID = [defaults stringForKey:BTSelectedTrackKey];
+    if ([trackID length] > 0) {
+        NSUInteger i;
+        for (i = 0; i < [_visibleTracks count]; i++) {
+            if ([[[_visibleTracks objectAtIndex:i] trackID] isEqualToString:trackID]) {
+                [_trackTable selectRowIndexes:[NSIndexSet indexSetWithIndex:i]
+                         byExtendingSelection:NO];
+                [_trackTable scrollRowToVisible:(NSInteger)i];
+                break;
+            }
+        }
+    }
+}
+
+- (void)tableViewSelectionDidChange:(NSNotification *)note {
+    if ([note object] == _trackTable) [self saveSessionState];
+}
+
 - (void)reloadEverything {
     NSArray *base = [self baseTracks];
 
@@ -893,6 +1058,7 @@ static BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreV
     _visibleTracks = [self sortTracks:[_browser filteredTracks]];
 
     [_sourceList reloadData];
+    [self expandFolders];
     [_trackTable reloadData];
     [self updateStatus];
     [self updateTransport];
@@ -1034,6 +1200,17 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     id item = (row >= 0) ? [_sourceList itemAtRow:row] : BTLibrarySource;
     if (item == nil) item = BTLibrarySource;
     _selectedSource = item;
+    _sortColumn = [self defaultSortColumnForSelectedSource];
+    _sortAscending = YES;
+    [self saveSessionState];
+
+    NSUInteger column;
+    for (column = 0; column < [[_trackTable tableColumns] count]; column++) {
+        [_trackTable setIndicatorImage:nil
+                         inTableColumn:[[_trackTable tableColumns] objectAtIndex:column]];
+    }
+    [_trackTable setHighlightedTableColumn:nil];
+
     [_browser resetSelection];
     [self updateBrowserVisibility];
     [self updateRightPane];
@@ -1352,12 +1529,17 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 
 - (void)playPause:(id)sender {
     BTPlayer *player = [BTPlayer sharedPlayer];
-    if ([player currentTrack] == nil) {
+
+    // Starting play uses what is on screen: whatever source is selected on the
+    // left, filtered by the browser and the search field. That list is also
+    // what next and previous walk, so a playlist plays its own songs and stops
+    // at the end of them rather than running on into the library.
+    if ([player currentTrack] == nil || ![_visibleTracks containsObject:[player currentTrack]]) {
         NSInteger row = [_trackTable selectedRow];
-        if (row < 0 && [_visibleTracks count] > 0) row = 0;
-        if (row >= 0 && row < (NSInteger)[_visibleTracks count]) {
-            [player playTrack:[_visibleTracks objectAtIndex:(NSUInteger)row] inList:_visibleTracks];
-        }
+        if (row < 0 || row >= (NSInteger)[_visibleTracks count]) row = 0;
+        if ([_visibleTracks count] == 0) return;
+
+        [player playTrack:[_visibleTracks objectAtIndex:(NSUInteger)row] inList:_visibleTracks];
         return;
     }
     [player togglePlayPause];

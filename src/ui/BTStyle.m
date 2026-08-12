@@ -163,9 +163,12 @@ static NSImage *BTSteelGrain(void) {
     NSBezierPath *rim = [NSBezierPath bezierPathWithOvalInRect:box];
     [NSGraphicsContext saveGraphicsState];
     [rim addClip];
+    // Almost as light as the face at the top, so the edge disappears where the
+    // button is brightest and only shows along the sides and underneath. A rim
+    // darker than the face reads as a ring drawn across the top.
     [self drawVerticalGradientInRect:box
-                                from:[NSColor colorWithCalibratedWhite:0.74 alpha:1.0]
-                                  to:[NSColor colorWithCalibratedWhite:0.46 alpha:1.0]];
+                                from:[NSColor colorWithCalibratedWhite:0.93 alpha:1.0]
+                                  to:[NSColor colorWithCalibratedWhite:0.42 alpha:1.0]];
     [NSGraphicsContext restoreGraphicsState];
 
     box = NSInsetRect(box, 1.0, 1.0);

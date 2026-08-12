@@ -31,7 +31,9 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
 - (id)init {
     self = [super init];
     if (self) {
-        _volume = 0.75f;
+        // Volume carries over between runs.
+        NSNumber *saved = [[NSUserDefaults standardUserDefaults] objectForKey:@"BTVolume"];
+        _volume = saved ? [saved floatValue] : 0.75f;
         _order = [NSMutableArray array];
         _orderPosition = -1;
     }
@@ -236,6 +238,7 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
 - (void)setVolume:(float)volume {
     _volume = volume;
     self.audio.volume = volume;
+    [[NSUserDefaults standardUserDefaults] setFloat:volume forKey:@"BTVolume"];
     // Moving the volume off zero by any route ends the mute.
     if (volume > 0.0f) _muted = NO;
     [self postChange];

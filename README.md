@@ -42,13 +42,16 @@ an Intel build.
 ## Checks
 
 ```
-./tools/smoke_test.sh          # generates test audio, then checks the library
-./tools/smoke_test.sh <folder> # checks against a folder of real audio
 ./tools/check-1011.sh          # flags anything newer than the target system
 ```
 
-The checks run headless and write to a throwaway home directory, so a test run
-never touches a real library.
+Enum constants compile away and are safe; classes, methods, and named constants
+are not. Run this before handing a build to the Xcode 8 machine.
+
+The library and iPod database checks run from a harness that is kept outside
+this repository, along with the tools that seed a test library: they are not
+needed to build the application, and the track lists they read describe one
+particular collection.
 
 ## Using it
 

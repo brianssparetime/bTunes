@@ -116,11 +116,16 @@ static void BTDrawGlyph(BTGlyph glyph, NSRect rect, NSColor *color) {
     CGFloat right = 20.0;
     // Measured from the font rather than fixed, so the line sits on the middle
     // of the capsule instead of riding high in it.
-    CGFloat height = ceil([[self font] ascender] - [[self font] descender]) + 2.0;
-    return NSMakeRect(NSMinX(rect) + left,
-                      floor(NSMidY(rect) - height / 2.0),
-                      NSWidth(rect) - left - right,
-                      height);
+    // Centred on the line's own middle rather than on the em box. The em box
+    // reserves room for descenders that a word like Search never uses, which
+    // leaves the text riding high in the capsule.
+    NSFont *font = [self font];
+    CGFloat height = ceil([font ascender] - [font descender]) + 2.0;
+    CGFloat visualCentre = ([font ascender] + [font descender]) / 2.0;
+    // Added rather than subtracted: the cell draws in a flipped context, so the
+    // correction that lifts the line on paper pushes it down here.
+    CGFloat origin = NSMidY(rect) - height / 2.0 + visualCentre / 2.0;
+    return NSMakeRect(NSMinX(rect) + left, floor(origin), NSWidth(rect) - left - right, height);
 }
 
 // The field editor has to be given the same rect the text is drawn in, or the

@@ -52,6 +52,7 @@
     [[column headerCell] setStringValue:title];
     [[column headerCell] setFont:[BTStyle uiFont]];
     [[column dataCell] setFont:[BTStyle uiFont]];
+    [[column dataCell] setLineBreakMode:NSLineBreakByTruncatingTail];
     [column setWidth:120];
     [column setEditable:NO];
     [table addTableColumn:column];

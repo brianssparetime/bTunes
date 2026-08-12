@@ -69,6 +69,10 @@ B_LEFT, B_TOP, B_CAP = 0.130, CAP_TOP, (BASELINE - CAP_TOP)
 # below. Sitting it down at forty five reads as the tail of a letter.
 STEM_RIGHT = None   # solved below, against the ball
 STEM_WIDTH_FALLBACK = 0.250
+
+# The upright follows the letter's measured stroke, narrowed: at full weight it
+# is as wide as half the ball and the note reads as a blob rather than notation.
+STEM_WEIGHT_OF_LETTER = 0.80
 HEAD_CX, HEAD_CY = 1.214, 0.700
 HEAD_RX, HEAD_RY = 0.270, 0.176
 HEAD_ANGLE = -15.0  # tilted down toward the right
@@ -245,7 +249,7 @@ def build_mark_mask(size, font_path):
     draw = ImageDraw.Draw(canvas)
 
     letter = render_letter_b(size, font_path)
-    stem_weight = measure_stem(letter) / float(size)
+    stem_weight = measure_stem(letter) / float(size) * STEM_WEIGHT_OF_LETTER
     _MEASURED_STEM[0] = stem_weight
     _MEASURED_LETTER_WIDTH[0] = letter.size[0] / float(size)
 
@@ -547,12 +551,15 @@ def engrave(metal, lum, mark, size):
 # A compact disc is 120mm across with a 15mm hole, so the hole is an eighth of
 # the diameter.
 HOLE_FRACTION = 0.125
+# The clear plastic ring a disc has around its hole, before the recorded area
+# starts. On a real one that band runs out to about a third of the diameter.
+CLAMP_FRACTION = 0.235
 
 
-def hole_alpha(size, supersample=3):
+def hole_alpha(size, supersample=3, fraction=None):
     big = size * supersample
     a = Image.new("L", (big, big), 0)
-    radius = big * HOLE_FRACTION / 2.0
+    radius = big * (fraction if fraction else HOLE_FRACTION) / 2.0
     centre = big / 2.0
     ImageDraw.Draw(a).ellipse([centre - radius, centre - radius,
                                centre + radius, centre + radius], fill=255)
@@ -595,6 +602,19 @@ def build(size, seed):
     # so the edge reads as thickness rather than as a sticker.
     # The hole goes through the disc only. Where the letter or the note crosses
     # it, the glyph stays whole and the hole gives way.
+    # The pale clamping ring around the hole, laid on the metal and cut short
+    # wherever a glyph crosses it.
+    clamp = ImageChops.subtract(hole_alpha(size, fraction=CLAMP_FRACTION),
+                                hole_alpha(size, fraction=HOLE_FRACTION))
+    clamp = ImageChops.subtract(clamp, mark)
+    art = Image.composite(solid(size, (232, 233, 238)), art, scaled(clamp, 0.75))
+
+    clamp_edge = ImageChops.subtract(
+        hole_alpha(size, fraction=CLAMP_FRACTION).filter(ImageFilter.GaussianBlur(size * 0.004)),
+        hole_alpha(size, fraction=CLAMP_FRACTION))
+    clamp_edge = ImageChops.subtract(clamp_edge, mark)
+    art = Image.composite(solid(size, (150, 152, 158)), art, scaled(clamp_edge, 0.50))
+
     hole = ImageChops.subtract(hole_alpha(size), mark)
     lip = ImageChops.subtract(hole.filter(ImageFilter.GaussianBlur(size * 0.010)), hole)
     lip = ImageChops.subtract(lip, mark)
