@@ -30,6 +30,15 @@ static BTPlaylist *BTPlaylistFromSource(id item) {
 static NSString *const BTClosedFoldersKey = @"BTClosedFolders";
 static NSString *const BTSelectedSourceKey = @"BTSelectedSource";
 static NSString *const BTSelectedTrackKey = @"BTSelectedTrack";
+// A playlist keeps its own sort, since that belongs to the playlist. The
+// library has nowhere of its own to keep one, so it goes here.
+static NSString *const BTLibrarySortKey = @"BTLibrarySort";
+static NSString *const BTLibrarySortAscendingKey = @"BTLibrarySortAscending";
+
+// How the selected source is written down. A playlist uses its own id, so these
+// two only have to avoid looking like one.
+static NSString *const BTLibraryWasSelected = @"library";
+static NSString *const BTIPodWasSelected = @"ipod";
 
 // Tall enough for two lines of text above the scrub bar without them meeting.
 #define BT_CHROME_HEIGHT 54.0
@@ -580,7 +589,11 @@ static CGFloat BTTitleBarHeight(void) {
     // two-digit numbers to fill the window looks like a mistake. The numeric
     // columns are capped, so the words take the space.
     [_trackTable setColumnAutoresizingStyle:NSTableViewUniformColumnAutoresizingStyle];
-    [_trackTable setDraggingSourceOperationMask:NSDragOperationCopy forLocal:YES];
+    // Copy carries songs out to another playlist; move rearranges them within
+    // the one being shown.
+    [_trackTable setDraggingSourceOperationMask:(NSDragOperationCopy | NSDragOperationMove)
+                                       forLocal:YES];
+    [_trackTable registerForDraggedTypes:@[BTTrackPasteboardType]];
     [trackScroll setDocumentView:_trackTable];
     [_innerSplit addSubview:trackScroll];
 
@@ -913,6 +926,38 @@ static CGFloat BTTitleBarHeight(void) {
     return [numbers firstIndex] == 1 && [numbers lastIndex] == [tracks count];
 }
 
+// A source opens the way it was last left. Until it has been sorted by hand it
+// opens the way its kind suggests.
+- (void)adoptSortForSelectedSource {
+    BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+
+    NSString *remembered = playlist ? playlist.sortColumn
+                                    : [defaults stringForKey:BTLibrarySortKey];
+    if ([remembered length] > 0) {
+        _sortColumn = remembered;
+        _sortAscending = playlist ? playlist.sortAscending
+                                  : [defaults boolForKey:BTLibrarySortAscendingKey];
+        return;
+    }
+
+    _sortColumn = [self defaultSortColumnForSelectedSource];
+    _sortAscending = YES;
+}
+
+- (void)rememberSortForSelectedSource {
+    BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
+    if (playlist) {
+        playlist.sortColumn = _sortColumn;
+        playlist.sortAscending = _sortAscending;
+        [[BTLibrary sharedLibrary] noteChanged];
+        return;
+    }
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setObject:(_sortColumn ? _sortColumn : @"") forKey:BTLibrarySortKey];
+    [defaults setBool:_sortAscending forKey:BTLibrarySortAscendingKey];
+}
+
 // A playlist opens in its own order, which is the order it was built in. An
 // album, and anything that is not a playlist, opens by track number.
 - (NSString *)defaultSortColumnForSelectedSource {
@@ -1015,7 +1060,13 @@ static CGFloat BTTitleBarHeight(void) {
     [defaults setObject:[_closedFolders allObjects] forKey:BTClosedFoldersKey];
 
     BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
-    [defaults setObject:(playlist ? playlist.playlistID : @"library") forKey:BTSelectedSourceKey];
+    NSString *source = BTLibraryWasSelected;
+    if (playlist) {
+        source = playlist.playlistID;
+    } else if ([_selectedSource isKindOfClass:[BTIPod class]]) {
+        source = BTIPodWasSelected;
+    }
+    [defaults setObject:source forKey:BTSelectedSourceKey];
 
     NSInteger row = [_trackTable selectedRow];
     if (row >= 0 && row < (NSInteger)[_visibleTracks count]) {
@@ -1032,17 +1083,30 @@ static CGFloat BTTitleBarHeight(void) {
     NSArray *closed = [defaults arrayForKey:BTClosedFoldersKey];
     if (closed) [_closedFolders addObjectsFromArray:closed];
 
+    // Whatever was open last time comes back, so long as it still exists. A
+    // playlist may have been deleted since, and the iPod may simply not be
+    // plugged in this time; either way the library is what is left.
     NSString *source = [defaults stringForKey:BTSelectedSourceKey];
-    if ([source length] > 0 && ![source isEqualToString:@"library"]) {
+    if ([source isEqualToString:BTIPodWasSelected]) {
+        if (_iPod) _selectedSource = _iPod;
+    } else if ([source length] > 0 && ![source isEqualToString:BTLibraryWasSelected]) {
         BTPlaylist *playlist = [[BTLibrary sharedLibrary] playlistWithID:source];
-        if (playlist) {
-            _selectedSource = playlist;
-            _sortColumn = [self defaultSortColumnForSelectedSource];
-            [self updateBrowserVisibility];
-            [self updateRightPane];
-        }
+        if (playlist) _selectedSource = playlist;
     }
+
+    if (_selectedSource != BTLibrarySource) {
+        [self updateBrowserVisibility];
+        [self updateRightPane];
+    }
+    [self adoptSortForSelectedSource];
     [self reloadEverything];
+    [self showSortIndicator];
+
+    // The left pane has to agree with what the right one is showing. A playlist
+    // sitting in a folder that was left closed would otherwise leave nothing
+    // highlighted beside a track list full of its songs.
+    BTPlaylist *restored = BTPlaylistFromSource(_selectedSource);
+    if (restored) [self revealPlaylist:restored];
 
     NSInteger row = [_sourceList rowForItem:_selectedSource];
     if (row >= 0) {
@@ -1242,12 +1306,10 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     id item = (row >= 0) ? [_sourceList itemAtRow:row] : BTLibrarySource;
     if (item == nil) item = BTLibrarySource;
     _selectedSource = item;
-    _sortColumn = [self defaultSortColumnForSelectedSource];
-    _sortAscending = YES;
+    [self adoptSortForSelectedSource];
     [self saveSessionState];
 
-    [self clearSortIndicators];
-    [_trackTable setHighlightedTableColumn:nil];
+    [self showSortIndicator];
 
     [_browser resetSelection];
     [self updateBrowserVisibility];
@@ -1386,12 +1448,23 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     [(NSTextFieldCell *)cell setTextColor:(selected ? [NSColor whiteColor] : color)];
 }
 
-- (void)clearSortIndicators {
+// Marks the column the list is sorted by, so a source that opened the way it
+// was left says so rather than leaving the arrangement unexplained.
+- (void)showSortIndicator {
     NSArray *columns = [_trackTable tableColumns];
     NSUInteger i;
     for (i = 0; i < [columns count]; i++) {
         [_trackTable setIndicatorImage:nil inTableColumn:[columns objectAtIndex:i]];
     }
+
+    NSTableColumn *sorted = [_sortColumn length] > 0
+        ? [_trackTable tableColumnWithIdentifier:_sortColumn] : nil;
+    [_trackTable setHighlightedTableColumn:sorted];
+    if (sorted == nil) return;
+
+    [_trackTable setIndicatorImage:[NSImage imageNamed:(_sortAscending ? @"NSAscendingSortIndicator"
+                                                                      : @"NSDescendingSortIndicator")]
+                     inTableColumn:sorted];
 }
 
 - (void)tableView:(NSTableView *)tableView
@@ -1404,11 +1477,8 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
         _sortAscending = YES;
     }
 
-    [self clearSortIndicators];
-    [tableView setHighlightedTableColumn:tableColumn];
-    [tableView setIndicatorImage:[NSImage imageNamed:(_sortAscending ? @"NSAscendingSortIndicator"
-                                                                     : @"NSDescendingSortIndicator")]
-                   inTableColumn:tableColumn];
+    [self showSortIndicator];
+    [self rememberSortForSelectedSource];
     [self reloadEverything];
 }
 
@@ -1426,6 +1496,77 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     [pasteboard declareTypes:@[BTTrackPasteboardType] owner:self];
     [pasteboard setData:[NSKeyedArchiver archivedDataWithRootObject:ids] forType:BTTrackPasteboardType];
     return YES;
+}
+
+#pragma mark - Rearranging a playlist
+
+// A playlist can be rearranged only while it is showing its own order. Sorted
+// by title, "put this between these two rows" says nothing about where the song
+// belongs in the playlist, because those two rows are not neighbours there.
+//
+// Only a playlist someone arranged by hand has an order to change. A folder
+// takes its order from its children, and a smart playlist from its rules.
+- (BTPlaylist *)rearrangeablePlaylist {
+    BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
+    if (playlist == nil || playlist.kind != BTPlaylistKindStatic) return nil;
+    if (![_sortColumn isEqualToString:@"order"] || !_sortAscending) return nil;
+    return playlist;
+}
+
+- (NSDragOperation)tableView:(NSTableView *)tableView
+                validateDrop:(id<NSDraggingInfo>)info
+                 proposedRow:(NSInteger)row
+       proposedDropOperation:(NSTableViewDropOperation)operation {
+    if ([info draggingSource] != _trackTable) return NSDragOperationNone;
+    if ([self rearrangeablePlaylist] == nil) return NSDragOperationNone;
+
+    // Between two songs, never onto one. A song dropped onto another song has
+    // no meaning here.
+    [tableView setDropRow:row dropOperation:NSTableViewDropAbove];
+    return NSDragOperationMove;
+}
+
+- (BOOL)tableView:(NSTableView *)tableView
+       acceptDrop:(id<NSDraggingInfo>)info
+              row:(NSInteger)row
+    dropOperation:(NSTableViewDropOperation)operation {
+    BTPlaylist *playlist = [self rearrangeablePlaylist];
+    if (playlist == nil) return NO;
+
+    NSData *data = [[info draggingPasteboard] dataForType:BTTrackPasteboardType];
+    NSArray *dragged = data ? [NSKeyedUnarchiver unarchiveObjectWithData:data] : nil;
+    if ([dragged count] == 0) return NO;
+
+    // Where the drop lands, named by the song it lands above rather than by a
+    // row number. A list narrowed by the search field shows only some of the
+    // playlist, and a row number would mean the wrong place in it.
+    NSInteger target = (NSInteger)[playlist.trackIDs count];
+    if (row >= 0 && row < (NSInteger)[_visibleTracks count]) {
+        NSString *below = [[_visibleTracks objectAtIndex:(NSUInteger)row] trackID];
+        NSUInteger found = [playlist.trackIDs indexOfObject:below];
+        if (found != NSNotFound) target = (NSInteger)found;
+    }
+
+    [playlist moveTrackIDs:dragged toIndex:target];
+
+    // The library reloads the window as it changes, so the numbers are already
+    // the new ones by the time the songs are picked out again.
+    [[BTLibrary sharedLibrary] noteChanged];
+    [self selectTracksWithIDs:dragged];
+    return YES;
+}
+
+// The songs that were just moved stay selected, so a second drag carries on
+// from where the first left off instead of starting from nothing.
+- (void)selectTracksWithIDs:(NSArray *)trackIDs {
+    NSMutableIndexSet *rows = [NSMutableIndexSet indexSet];
+    NSUInteger i;
+    for (i = 0; i < [_visibleTracks count]; i++) {
+        if ([trackIDs containsObject:[[_visibleTracks objectAtIndex:i] trackID]]) [rows addIndex:i];
+    }
+    if ([rows count] == 0) return;
+    [_trackTable selectRowIndexes:rows byExtendingSelection:NO];
+    [_trackTable scrollRowToVisible:(NSInteger)[rows firstIndex]];
 }
 
 - (void)playSelectedTrack:(id)sender {
@@ -1637,12 +1778,25 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     return (selected.kind == BTPlaylistKindFolder) ? selected : selected.parent;
 }
 
-- (void)selectPlaylist:(BTPlaylist *)playlist {
+// Opens whatever folders it takes to bring a playlist into view, outermost
+// first, since the source list can only place a row whose folders are all open.
+// A folder that was closed by hand is reopened, because a selection nothing can
+// see is worse than a folder that did not stay shut.
+- (void)revealPlaylist:(BTPlaylist *)playlist {
+    NSMutableArray *ancestors = [NSMutableArray array];
     BTPlaylist *parent = playlist.parent;
     while (parent) {
-        [_sourceList expandItem:parent];
+        [ancestors insertObject:parent atIndex:0];
         parent = parent.parent;
     }
+    NSUInteger i;
+    for (i = 0; i < [ancestors count]; i++) {
+        [_sourceList expandItem:[ancestors objectAtIndex:i]];
+    }
+}
+
+- (void)selectPlaylist:(BTPlaylist *)playlist {
+    [self revealPlaylist:playlist];
     NSInteger row = [_sourceList rowForItem:playlist];
     if (row >= 0) {
         [_sourceList selectRowIndexes:[NSIndexSet indexSetWithIndex:(NSUInteger)row] byExtendingSelection:NO];

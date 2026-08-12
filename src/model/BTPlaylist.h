@@ -69,12 +69,25 @@ typedef NS_ENUM(NSInteger, BTRuleOperator) {
 @property (nonatomic, assign) NSInteger limit;            // smart: 0 means no limit
 @property (nonatomic, weak) BTPlaylist *parent;
 
+// How this playlist was last sorted, so it opens the way it was left rather
+// than snapping back to a default every time. Kept with the playlist rather
+// than in this machine's settings, so the arrangement follows the library.
+// Nil means it has never been sorted by hand.
+@property (nonatomic, copy) NSString *sortColumn;
+@property (nonatomic, assign) BOOL sortAscending;
+
 + (instancetype)playlistWithName:(NSString *)name kind:(BTPlaylistKind)kind;
 + (instancetype)playlistWithDictionary:(NSDictionary *)dict;
 - (NSDictionary *)dictionaryRepresentation;
 
 // Tracks this playlist resolves to, given the whole library.
 - (NSArray *)resolveTracks:(NSArray *)allTracks;
+
+// Moves songs so they come to sit where the song at the given index sits now,
+// keeping whatever order they already had relative to each other. The index
+// names a place in the playlist as it stands before the move, and a count of
+// the songs means the end. Songs not in this playlist are ignored.
+- (void)moveTrackIDs:(NSArray *)trackIDs toIndex:(NSInteger)index;
 
 - (BOOL)isDescendantOf:(BTPlaylist *)other;
 

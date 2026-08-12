@@ -160,6 +160,7 @@
     p.rules = [NSMutableArray array];
     p.matchAll = YES;
     p.limit = 0;
+    p.sortAscending = YES;
     return p;
 }
 
@@ -171,6 +172,14 @@
     p.sourcePersistentID = [dict objectForKey:@"sourcePersistentID"];
     p.matchAll = [[dict objectForKey:@"matchAll"] boolValue];
     p.limit = [[dict objectForKey:@"limit"] integerValue];
+
+    id sort = [dict objectForKey:@"sortColumn"];
+    if ([sort isKindOfClass:[NSString class]] && [sort length] > 0) {
+        p.sortColumn = sort;
+        // A playlist saved before the direction was recorded was ascending.
+        id ascending = [dict objectForKey:@"sortAscending"];
+        p.sortAscending = ascending ? [ascending boolValue] : YES;
+    }
 
     NSArray *ids = [dict objectForKey:@"trackIDs"];
     if ([ids isKindOfClass:[NSArray class]]) [p.trackIDs addObjectsFromArray:ids];
@@ -203,6 +212,12 @@
     [d setObject:@(self.matchAll) forKey:@"matchAll"];
     [d setObject:@(self.limit) forKey:@"limit"];
     [d setObject:self.trackIDs forKey:@"trackIDs"];
+    // Left out entirely until the playlist has been sorted by hand, so an
+    // untouched playlist keeps opening the way its kind suggests.
+    if ([self.sortColumn length] > 0) {
+        [d setObject:self.sortColumn forKey:@"sortColumn"];
+        [d setObject:@(self.sortAscending) forKey:@"sortAscending"];
+    }
 
     NSMutableArray *ruleDicts = [NSMutableArray array];
     NSUInteger i;
@@ -270,6 +285,34 @@
         if (t) [out addObject:t];
     }
     return out;
+}
+
+- (void)moveTrackIDs:(NSArray *)trackIDs toIndex:(NSInteger)index {
+    if ([trackIDs count] == 0) return;
+
+    // Gathered in the order this playlist already holds them, so songs moved
+    // together keep their arrangement relative to each other rather than taking
+    // the order they happened to be picked in.
+    NSMutableArray *moving = [NSMutableArray array];
+    NSUInteger i, liftedFromAbove = 0;
+    for (i = 0; i < [self.trackIDs count]; i++) {
+        NSString *trackID = [self.trackIDs objectAtIndex:i];
+        if (![trackIDs containsObject:trackID]) continue;
+        [moving addObject:trackID];
+        if ((NSInteger)i < index) liftedFromAbove++;
+    }
+    if ([moving count] == 0) return;
+
+    // Songs taken from above the destination close the gap behind them, so the
+    // place they are going moves back by however many those were.
+    [self.trackIDs removeObjectsInArray:moving];
+    index -= (NSInteger)liftedFromAbove;
+    if (index < 0) index = 0;
+    if (index > (NSInteger)[self.trackIDs count]) index = (NSInteger)[self.trackIDs count];
+
+    [self.trackIDs insertObjects:moving
+                       atIndexes:[NSIndexSet indexSetWithIndexesInRange:
+                                  NSMakeRange((NSUInteger)index, [moving count])]];
 }
 
 - (BOOL)isDescendantOf:(BTPlaylist *)other {
