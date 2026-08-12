@@ -1,0 +1,66 @@
+# Only the application itself belongs in this repository: sources, the build
+# script, resources, and the tools that build or check them. Everything below
+# either identifies a machine, is scaffolding for moving builds around, or is
+# generated.
+
+# Assistant tooling and notes
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.claude/
+.claude.json
+.claude.local.json
+.mcp.json
+
+# Private notes and specifications. These name machines and describe the
+# household setup, so they stay out.
+design_docs/
+*.plan.md
+handoff*.md
+
+# Anything naming a machine, an account, or a path on one
+env.local.sh
+*.local.sh
+deploy.sh
+bin/deploy*
+sync-to-*
+push-to-*
+known_hosts
+*.pem
+*.key
+
+# Build output and staging
+build/
+DerivedData/
+staging/
+*.app
+*.dSYM
+*.o
+*.iconset
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.moved-aside
+
+# Libraries, listening history, and anything holding music
+library.json
+BTunesSync.plist
+*.mp3
+*.m4a
+*.m4p
+*.aac
+*.aif
+*.aiff
+*.wav
+*.caf
+*.flac
+*.itl
+iTunes*.xml
+iTunesDB*
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
