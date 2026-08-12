@@ -6,16 +6,28 @@ shaped like classic Winamp.
 ## What it does
 
 Sources sit on the left: the whole library, playlists, and folders of playlists.
-Three browser columns across the top narrow by genre, then artist, then album.
-The track list sorts by any column. Search is in the upper right, transport and
-volume in the upper left, and the readout between them. Shuffle and repeat are
-at the bottom right.
+Three browser columns across the top narrow by genre, then artist, then album,
+and appear for the library only. The track list sorts by any column. Search is
+in the upper right, transport and volume in the upper left, and the readout
+between them. New playlist, shuffle and repeat sit at the bottom left.
 
 Smart playlists build themselves from rules. Playlist folders group playlists,
 which iTunes 4 could not do.
 
-Mini mode is a compact dark panel with the analyzer bars. Leaving it returns to
-the full window.
+Playing starts from whatever the left pane has selected and stays inside it, so
+a playlist plays its own songs and stops at the end of them. Sorting follows
+what a source is: the library and smart playlists by track number within album,
+a playlist that is an album in the album's order, and any other playlist in the
+order it was built, because that order was chosen.
+
+Mini mode is a compact dark panel with an analyzer, floating above other windows
+and over full screen spaces. Clicking its logo returns to the full window.
+
+An attached iPod appears under the library with an eject mark beside its name.
+Selecting it opens a pane listing the playlists with a checkbox each, folders
+reflecting what is inside them, and the ones already on the device checked, so
+what you are looking at is the difference. Syncing copies only what is missing
+and rewrites the device's database, keeping songs it did not put there.
 
 ## Requirements
 
@@ -39,24 +51,33 @@ thing an Xcode 8 machine and a current toolchain both understand.
 The architecture follows the machine doing the build. Set `ARCH=x86_64` to force
 an Intel build.
 
-## Checks
-
 ```
-./tools/check-1011.sh          # flags anything newer than the target system
+./tools/check-1011.sh   # flags anything newer than the target system
+./tools/make-logo.sh    # redraws the artwork in resources/logo
 ```
 
 Enum constants compile away and are safe; classes, methods, and named constants
-are not. Run this before handing a build to the Xcode 8 machine.
+are not. Run the first before handing a build to the Xcode 8 machine.
 
-The library and iPod database checks run from a harness that is kept outside
-this repository, along with the tools that seed a test library: they are not
-needed to build the application, and the track lists they read describe one
-particular collection.
+## Settings
+
+Preferences, at Command-comma, holds two locations, kept apart because they move
+independently:
+
+- **Music** is where the audio files live. It seeds the panel that adds songs.
+- **Library** is where BTunes keeps its own database: ratings, play counts, and
+  playlists. Songs are not moved when it changes.
+
+The database is `library.json`. Without a setting it sits in a `BTunes Library`
+folder beside the application if there is one, and otherwise in
+`~/Library/Application Support/BTunes`. `BTUNES_LIBRARY_DIR` overrides both.
+
+Volume, the open state of each folder, the selected source and the highlighted
+track carry over between runs.
 
 ## Using it
 
-The library file lives in `~/Library/Application Support/BTunes/library.json`.
-Audio files are read and never modified.
+Audio files are read and never modified, and nothing on disk is ever deleted.
 
 - Add to Library, Command-O, adds files or folders.
 - Import iTunes Library reads an iTunes XML file, never writes it, and rebuilds
@@ -64,10 +85,13 @@ Audio files are read and never modified.
   A smart playlist arrives as an ordinary playlist holding the songs it resolved
   to, because iTunes stores the rules themselves in an undocumented form.
 - New Playlist is Command-N, new smart playlist adds Option, new folder adds
-  Shift.
-- Space plays or pauses. Command-S toggles shuffle, Command-R cycles repeat.
-- Shift-Command-M switches to mini mode, and so does double-clicking its panel.
+  Shift. Double-click a playlist to rename it.
+- Space plays or pauses. Left and right skip tracks, up and down change volume,
+  M mutes. On a folder in the source list, left and right close and open it.
+- Command-S toggles shuffle, Command-R cycles repeat, Command-F jumps to search.
+- Shift-Command-M switches to mini mode, as does the round button at the top
+  right and a double click on the mini panel.
 - Drag songs onto a playlist to add them. Drag playlists into a folder to group
   them.
 - Delete removes songs from a playlist, or from the library when the library is
-  selected. Files on disk are never deleted.
+  selected.

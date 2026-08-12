@@ -81,7 +81,14 @@ echo "==> Built $APP"
 if [ "$BUILD_TOOLS" -eq 1 ]; then
     echo "==> Building command line tools"
     MODEL_SOURCES="$SCRIPT_DIR/src/model/BTTrack.m $SCRIPT_DIR/src/model/BTPlaylist.m $SCRIPT_DIR/src/model/BTLibrary.m $SCRIPT_DIR/src/model/BTITunesImport.m $SCRIPT_DIR/src/ipod/BTIPodDatabase.m"
+
+    # These live in tools/local, which belongs to the machine rather than to the
+    # project. Building them is optional and quietly skipped when they are absent.
     for tool in bt-import smoke_test; do
+        if [ ! -f "$SCRIPT_DIR/tools/local/$tool.m" ]; then
+            echo "    skipping $tool, not present"
+            continue
+        fi
         clang \
             -arch "$ARCH" \
             -mmacosx-version-min="$DEPLOYMENT_TARGET" \
@@ -96,7 +103,7 @@ if [ "$BUILD_TOOLS" -eq 1 ]; then
             -framework CoreMedia \
             -framework AudioToolbox \
             -o "$BUILD_DIR/$tool" \
-            "$SCRIPT_DIR/tools/$tool.m" $MODEL_SOURCES
+            "$SCRIPT_DIR/tools/local/$tool.m" $MODEL_SOURCES
         echo "    $BUILD_DIR/$tool"
     done
 fi

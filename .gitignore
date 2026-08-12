@@ -12,14 +12,11 @@ AGENTS.md
 .claude.local.json
 .mcp.json
 
-# Test scaffolding: the harness, the tools that seed a library, and the track
-# lists they read. None of it is needed to build the application, and the track
-# lists describe one particular collection.
-tools/make-test-library.sh
-tools/philip-glass-cd.txt
-tools/bt-import.m
-tools/smoke_test.m
-tools/smoke_test.sh
+# Scaffolding that belongs to this machine rather than to the project: the test
+# harness, the tools that seed a library, and the track lists they read. None of
+# it is needed to build the application, and the lists describe one particular
+# collection.
+tools/local/
 
 # Private notes and specifications. These name machines and describe the
 # household setup, so they stay out.
