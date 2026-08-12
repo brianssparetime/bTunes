@@ -6,7 +6,6 @@ NSString *const BTIPodDidChangeNotification = @"BTIPodDidChange";
 @interface BTIPod ()
 @property (nonatomic, copy) NSString *mountPath;
 @property (nonatomic, copy) NSString *name;
-@property (nonatomic, assign) BOOL usesFAT;
 @property (nonatomic, assign) long long capacity;
 @property (nonatomic, assign) long long freeSpace;
 @end
@@ -27,11 +26,8 @@ NSString *const BTIPodDidChangeNotification = @"BTIPodDidChange";
     pod.capacity = [[attrs objectForKey:NSFileSystemSize] longLongValue];
     pod.freeSpace = [[attrs objectForKey:NSFileSystemFreeSize] longLongValue];
 
-    // A Windows formatted iPod has no HFS+ metadata folder at the root. The
-    // distinction decides how file names have to be written later.
-    NSString *hfsMarker = [path stringByAppendingPathComponent:@".HFS+ Private Directory Data\r"];
-    pod.usesFAT = ![fm fileExistsAtPath:hfsMarker];
-
+    // Whether the device is Mac or Windows formatted does not come up. The sync
+    // writes names like BT0A1F3C.mp3, which fit either filesystem.
     return pod;
 }
 

@@ -14,7 +14,6 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
 @property (nonatomic, assign) NSInteger orderPosition;
 @property (nonatomic, strong) NSTimer *tick;
 @property (nonatomic, assign) float smoothedAverage;
-@property (nonatomic, assign) float smoothedPeak;
 @property (nonatomic, assign) BOOL muted;
 @property (nonatomic, assign) float volumeBeforeMute;
 @end
@@ -193,7 +192,6 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
     self.currentTrack = nil;
     [self stopTick];
     self.smoothedAverage = 0;
-    self.smoothedPeak = 0;
     [self postChange];
 }
 
@@ -258,7 +256,6 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
 }
 
 - (float)averageLevel { return self.smoothedAverage; }
-- (float)peakLevel { return self.smoothedPeak; }
 
 #pragma mark - Timer
 
@@ -288,20 +285,16 @@ static float BTLevelFromDecibels(float db) {
     if (self.audio) {
         [self.audio updateMeters];
         NSUInteger channels = [self.audio numberOfChannels];
-        float averageSum = 0, peakMax = 0;
+        float averageSum = 0;
         NSUInteger c;
         for (c = 0; c < channels; c++) {
             averageSum += BTLevelFromDecibels([self.audio averagePowerForChannel:c]);
-            float p = BTLevelFromDecibels([self.audio peakPowerForChannel:c]);
-            if (p > peakMax) peakMax = p;
         }
         float average = channels > 0 ? averageSum / channels : 0;
 
         // Rise quickly, fall slowly, the way an analyzer reads.
         self.smoothedAverage = (average > self.smoothedAverage)
             ? average : self.smoothedAverage * 0.75f + average * 0.25f;
-        self.smoothedPeak = (peakMax > self.smoothedPeak)
-            ? peakMax : self.smoothedPeak * 0.85f + peakMax * 0.15f;
     }
     [self postTime];
 }

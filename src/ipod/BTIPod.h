@@ -9,7 +9,6 @@ extern NSString *const BTIPodDidChangeNotification;
 
 @property (nonatomic, readonly) NSString *mountPath;    // /Volumes/Name
 @property (nonatomic, readonly) NSString *name;         // volume name
-@property (nonatomic, readonly) BOOL usesFAT;           // Windows formatted
 @property (nonatomic, readonly) long long capacity;
 @property (nonatomic, readonly) long long freeSpace;
 

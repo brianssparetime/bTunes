@@ -37,8 +37,8 @@ extern NSString *const BTPlayerTimeDidChangeNotification;
 - (void)previous;      // restarts the track if more than three seconds in
 - (void)seekToTime:(NSTimeInterval)time;
 
-// Playback level, smoothed, in the range 0 to 1. Drives the mini-mode bars.
+// Playback level, smoothed, in the range 0 to 1. Drives the mini-mode bars,
+// which derive their own per-band peaks from it rather than asking for one.
 - (float)averageLevel;
-- (float)peakLevel;
 
 @end
