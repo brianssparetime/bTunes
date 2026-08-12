@@ -286,6 +286,11 @@ static CGFloat BTTitleBarHeight(void) {
 
     id _selectedSource;              // BTLibrarySource or a BTPlaylist
     NSArray *_visibleTracks;
+    // Track id to the song's place in the selected playlist, counted from one.
+    // Held rather than derived from the row, so the number stays with the song
+    // when the list is sorted by something else.
+    NSDictionary *_sourceOrder;
+    BOOL _showsPlaylistOrder;
     NSString *_sortColumn;
     BOOL _sortAscending;
     BOOL _browserHidden;
@@ -570,7 +575,11 @@ static CGFloat BTTitleBarHeight(void) {
     [_trackTable setDelegate:self];
     [_trackTable setTarget:self];
     [_trackTable setDoubleAction:@selector(playSelectedTrack:)];
-    [_trackTable setColumnAutoresizingStyle:NSTableViewLastColumnOnlyAutoresizingStyle];
+    // Slack is spread across the columns rather than dumped on the last one.
+    // The last one is the track number in a playlist, and widening a column of
+    // two-digit numbers to fill the window looks like a mistake. The numeric
+    // columns are capped, so the words take the space.
+    [_trackTable setColumnAutoresizingStyle:NSTableViewUniformColumnAutoresizingStyle];
     [_trackTable setDraggingSourceOperationMask:NSDragOperationCopy forLocal:YES];
     [trackScroll setDocumentView:_trackTable];
     [_innerSplit addSubview:trackScroll];
@@ -578,44 +587,79 @@ static CGFloat BTTitleBarHeight(void) {
     [_outerSplit addSubview:_innerSplit];
 }
 
+// Two numbers that are easy to confuse, so they are two columns.
+//
+// Track is the song's place on its album. It belongs to the song and is the
+// same wherever the song appears.
+//
+// Order is the song's place in the playlist. It belongs to the playlist, and
+// the same song sits at a different number in every playlist that holds it.
+//
+// Both are made here and one is hidden at a time. Making them once keeps any
+// width the columns have been dragged to, which rebuilding them on every change
+// of source would throw away.
+//
+// identifier, heading, width, smallest, largest
 - (void)addTrackColumns {
-    NSArray *specs = @[@[@"track", @"#", @34],
-                       @[@"title", @"Song Name", @240],
-                       @[@"time", @"Time", @52],
-                       @[@"artist", @"Artist", @160],
-                       @[@"album", @"Album", @160],
-                       @[@"genre", @"Genre", @110],
-                       @[@"playCount", @"Play Count", @80]];
+    NSArray *specs = @[@[@"order",     @"#",          @38,  @30,  @54],
+                       @[@"track",     @"Track",      @46,  @38,  @62],
+                       @[@"title",     @"Song Name",  @240, @80,  @900],
+                       @[@"time",      @"Time",       @52,  @44,  @72],
+                       @[@"artist",    @"Artist",     @160, @70,  @600],
+                       @[@"album",     @"Album",      @160, @70,  @600],
+                       @[@"genre",     @"Genre",      @110, @60,  @400],
+                       @[@"playCount", @"Play Count", @80,  @66,  @110]];
+
+    NSArray *numeric = @[@"order", @"track", @"time", @"playCount"];
     NSUInteger i;
     for (i = 0; i < [specs count]; i++) {
         NSArray *spec = [specs objectAtIndex:i];
-        NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:[spec objectAtIndex:0]];
+        NSString *identifier = [spec objectAtIndex:0];
+
+        NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:identifier];
         [[column headerCell] setStringValue:[spec objectAtIndex:1]];
         [[column headerCell] setFont:[BTStyle uiFont]];
         [column setWidth:[[spec objectAtIndex:2] doubleValue]];
+        [column setMinWidth:[[spec objectAtIndex:3] doubleValue]];
+        [column setMaxWidth:[[spec objectAtIndex:4] doubleValue]];
         [column setEditable:NO];
 
-        if ([[spec objectAtIndex:0] isEqualToString:@"track"]) {
-            BTTrackNumberCell *cell = [[BTTrackNumberCell alloc] init];
-            [cell setFont:[BTStyle uiFont]];
+        // The two numbers carry the speaker for the row that is playing, so
+        // whichever of them leads the row can show it.
+        BOOL countsSomething = [numeric containsObject:identifier];
+        BOOL isPosition = ([identifier isEqualToString:@"order"] ||
+                           [identifier isEqualToString:@"track"]);
+
+        NSTextFieldCell *cell = isPosition ? [[BTTrackNumberCell alloc] init]
+                                           : [[NSTextFieldCell alloc] init];
+        [cell setFont:[BTStyle uiFont]];
+        // Truncated with an ellipsis rather than clipped: a clipped cell cuts
+        // mid-word and reads as though the tag itself is broken.
+        if (!isPosition) [cell setLineBreakMode:NSLineBreakByTruncatingTail];
+        if (countsSomething) {
             [cell setAlignment:NSRightTextAlignment];
             [[column headerCell] setAlignment:NSRightTextAlignment];
-            [column setDataCell:cell];
-        } else {
-            NSTextFieldCell *cell = [[NSTextFieldCell alloc] init];
-            [cell setFont:[BTStyle uiFont]];
-            // Truncated with an ellipsis rather than clipped: a clipped cell
-            // cuts mid-word and reads as though the tag itself is broken.
-            [cell setLineBreakMode:NSLineBreakByTruncatingTail];
-            if ([[spec objectAtIndex:0] isEqualToString:@"time"] ||
-                [[spec objectAtIndex:0] isEqualToString:@"playCount"]) {
-                [cell setAlignment:NSRightTextAlignment];
-                [[column headerCell] setAlignment:NSRightTextAlignment];
-            }
-            [column setDataCell:cell];
         }
+        [column setDataCell:cell];
         [_trackTable addTableColumn:column];
     }
+}
+
+// A playlist leads with its own order and puts the album number out of the way
+// at the end. Everything else leads with the album number and has no playlist
+// order to show.
+- (void)updateColumnLayout {
+    NSTableColumn *order = [_trackTable tableColumnWithIdentifier:@"order"];
+    NSTableColumn *track = [_trackTable tableColumnWithIdentifier:@"track"];
+    if (order == nil || track == nil) return;
+
+    [order setHidden:!_showsPlaylistOrder];
+
+    // A hidden column still occupies a place in the list, so the track number
+    // sits just past it to come out leftmost on screen.
+    NSInteger wanted = _showsPlaylistOrder ? (NSInteger)[[_trackTable tableColumns] count] - 1 : 1;
+    NSInteger current = [_trackTable columnWithIdentifier:@"track"];
+    if (current >= 0 && current != wanted) [_trackTable moveColumn:current toColumn:wanted];
 }
 
 - (void)buildBottomBar {
@@ -715,8 +759,9 @@ static CGFloat BTTitleBarHeight(void) {
     [_innerSplit adjustSubviews];
 
     // Same reason as the browser columns: no gap between the last column and
-    // the edge of the table.
-    [_trackTable sizeLastColumnToFit];
+    // the edge of the table. Spread across the columns rather than given to the
+    // last, which is a number column in a playlist.
+    [_trackTable sizeToFit];
 }
 
 - (void)showWindow:(id)sender {
@@ -816,11 +861,30 @@ static CGFloat BTTitleBarHeight(void) {
 #pragma mark - Reloading
 
 // The iPod shows a sync pane rather than songs, so it contributes none.
+//
+// A playlist's own order is captured here, where its songs are resolved, rather
+// than worked out again later. A playlist that holds one album whole leads with
+// the album's numbering instead, and a smart playlist has no order of its own
+// since the rules decide what is in it.
 - (NSArray *)baseTracks {
     BTLibrary *library = [BTLibrary sharedLibrary];
     BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
-    if (playlist) return [playlist resolveTracks:library.tracks];
-    return (_selectedSource == BTLibrarySource || _selectedSource == nil) ? library.tracks : @[];
+
+    if (playlist == nil) {
+        _sourceOrder = nil;
+        _showsPlaylistOrder = NO;
+        return (_selectedSource == BTLibrarySource || _selectedSource == nil) ? library.tracks : @[];
+    }
+
+    NSArray *tracks = [playlist resolveTracks:library.tracks];
+    NSMutableDictionary *order = [NSMutableDictionary dictionaryWithCapacity:[tracks count]];
+    NSUInteger i;
+    for (i = 0; i < [tracks count]; i++) {
+        [order setObject:@(i + 1) forKey:[[tracks objectAtIndex:i] trackID]];
+    }
+    _sourceOrder = order;
+    _showsPlaylistOrder = (playlist.kind != BTPlaylistKindSmart) && ![self playlistIsAnAlbum:tracks];
+    return tracks;
 }
 
 // Whether a playlist is one album, whole. That decides what it shows before any
@@ -849,11 +913,13 @@ static CGFloat BTTitleBarHeight(void) {
     return [numbers firstIndex] == 1 && [numbers lastIndex] == [tracks count];
 }
 
+// A playlist opens in its own order, which is the order it was built in. An
+// album, and anything that is not a playlist, opens by track number.
 - (NSString *)defaultSortColumnForSelectedSource {
     BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
     if (playlist && (playlist.kind == BTPlaylistKindStatic || playlist.kind == BTPlaylistKindFolder)) {
         NSArray *tracks = [playlist resolveTracks:[BTLibrary sharedLibrary].tracks];
-        return [self playlistIsAnAlbum:tracks] ? @"track" : nil;
+        return [self playlistIsAnAlbum:tracks] ? @"track" : @"order";
     }
     return @"track";
 }
@@ -866,7 +932,12 @@ static CGFloat BTTitleBarHeight(void) {
         BTTrack *left = a, *right = b;
         NSComparisonResult result = NSOrderedSame;
 
-        if ([key isEqualToString:@"track"]) {
+        if ([key isEqualToString:@"order"]) {
+            // The playlist's own order, which is the order it was built in.
+            NSInteger l = [[self->_sourceOrder objectForKey:left.trackID] integerValue];
+            NSInteger r = [[self->_sourceOrder objectForKey:right.trackID] integerValue];
+            result = (l < r) ? NSOrderedAscending : (l > r) ? NSOrderedDescending : NSOrderedSame;
+        } else if ([key isEqualToString:@"track"]) {
             // Sorting by number only makes sense within an album, so keep
             // albums together and order by disc and track inside them.
             result = [[left displayAlbum] caseInsensitiveCompare:[right displayAlbum]];
@@ -999,6 +1070,7 @@ static CGFloat BTTitleBarHeight(void) {
 
 - (void)reloadEverything {
     NSArray *base = [self baseTracks];
+    [self updateColumnLayout];
 
     NSString *search = [_searchField stringValue];
     if ([search length] > 0) {
@@ -1266,6 +1338,10 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     BTTrack *track = [_visibleTracks objectAtIndex:(NSUInteger)row];
     NSString *identifier = [tableColumn identifier];
 
+    if ([identifier isEqualToString:@"order"]) {
+        NSNumber *place = [_sourceOrder objectForKey:track.trackID];
+        return place ? [NSString stringWithFormat:@"%ld", (long)[place integerValue]] : @"";
+    }
     if ([identifier isEqualToString:@"track"]) {
         return track.trackNumber > 0 ? [NSString stringWithFormat:@"%ld", (long)track.trackNumber] : @"";
     }
@@ -1297,8 +1373,13 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     BTTrack *track = [_visibleTracks objectAtIndex:(NSUInteger)row];
 
     if ([cell isKindOfClass:[BTTrackNumberCell class]]) {
+        // The speaker replaces the number that leads the row, which is the
+        // playlist order when there is one and the track number otherwise. On
+        // the far right it would not read as marking the row at all.
+        NSString *leading = _showsPlaylistOrder ? @"order" : @"track";
         BOOL playing = (track == [[BTPlayer sharedPlayer] currentTrack]);
-        [(BTTrackNumberCell *)cell setIndicator:(playing ? _speakerImage : nil)];
+        BOOL leads = [[tableColumn identifier] isEqualToString:leading];
+        [(BTTrackNumberCell *)cell setIndicator:((playing && leads) ? _speakerImage : nil)];
     }
     NSColor *color = track.isProtected ? [NSColor colorWithCalibratedWhite:0.55 alpha:1.0]
                                        : [NSColor blackColor];
