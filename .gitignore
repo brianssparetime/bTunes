@@ -28,6 +28,9 @@ handoff*.md
 env.local.sh
 *.local.sh
 deploy.sh
+# tools/deploy.sh is the exception: it reads every host from env.local.sh and
+# names none itself, so it carries nothing private and belongs in the history.
+!tools/deploy.sh
 bin/deploy*
 sync-to-*
 push-to-*

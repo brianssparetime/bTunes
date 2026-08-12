@@ -59,6 +59,34 @@ an Intel build.
 Enum constants compile away and are safe; classes, methods, and named constants
 are not. Run the first before handing a build to the Xcode 8 machine.
 
+## Deploying
+
+Three machines have three jobs. One edits and commits. `BUILD` compiles, because
+it is the only one with an Xcode old enough to produce a binary the target will
+load. `TARGET` plays music, and is the only place the app is ever run: a clean
+launch on a modern system says nothing about the one it was built for.
+
+```
+./tools/deploy.sh             # copy source to BUILD, compile, install on TARGET, start it
+./tools/deploy.sh --no-run    # install it but leave it stopped
+./tools/deploy.sh --no-sync   # rebuild what is already on BUILD
+./tools/deploy.sh --stop      # stop whatever is running on TARGET
+```
+
+Host names live in `env.local.sh`, which is not tracked. Copy `env.example.sh`
+to it and fill in the two machines:
+
+```
+cp env.example.sh env.local.sh
+```
+
+The app travels through this machine rather than straight from `BUILD` to
+`TARGET`, so those two need no credentials for each other. Installing replaces
+only the bundle. The `BTunes Library` folder beside it holds the ratings and
+play counts and is never touched. Any copy already running on `TARGET` is
+stopped first, because two of them share one `library.json` and would overwrite
+each other's play counts.
+
 ## Settings
 
 Preferences, at Command-comma, holds two locations, kept apart because they move
