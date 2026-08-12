@@ -5,9 +5,9 @@
 #import "BTPlayer.h"
 #import "BTTrack.h"
 
-// The classic small-player proportions, kept exactly: a 275 by 116 panel with a
-// 14 point title bar.
-#define BT_MINI_WIDTH  275.0
+// The classic small-player proportions, widened: the analyzer wanted more room
+// and the extra width buys more bars rather than fatter ones.
+#define BT_MINI_WIDTH  310.0
 #define BT_MINI_HEIGHT 116.0
 
 // Positions are quoted from the top edge, the way the original skin measured
@@ -36,12 +36,12 @@ static NSColor *BTMiniLamp(void)        { return [NSColor colorWithCalibratedRed
 
 // Layout, measured from the top edge the way the original skin was.
 #define BT_MINI_MARGIN       10.0
-#define BT_MINI_RIGHT        266.0
+#define BT_MINI_RIGHT        301.0
 #define BT_LCD_X             10.0
-#define BT_LCD_W             96.0
+#define BT_LCD_W             131.0
 #define BT_LCD_Y             24.0
 #define BT_LCD_H             49.0     // reaches down level with the volume knob
-#define BT_READOUT_X         112.0
+#define BT_READOUT_X         147.0
 #define BT_INFO_Y            42.0
 #define BT_INFO_H            14.0
 #define BT_VOLUME_Y          60.0
@@ -50,7 +50,7 @@ static NSColor *BTMiniLamp(void)        { return [NSColor colorWithCalibratedRed
 #define BT_POSITION_H        11.0
 #define BT_BUTTON_Y          93.0
 #define BT_BUTTON_H          18.0
-#define BT_TOGGLE_RIGHT      220.0    // the position bar ends level with this
+#define BT_TOGGLE_RIGHT      255.0    // the position bar ends level with this
 // Small enough that its top edge clears the volume row above it.
 #define BT_LOGO_SIDE         34.0
 
@@ -275,8 +275,12 @@ static NSFont *BTMiniFixedFont(CGFloat size) {
     [time drawAtPoint:NSMakePoint(NSMaxX(lcd) - timeSize.width - 4, NSMaxY(lcd) - timeSize.height - 1)
        withAttributes:digitAttrs];
 
-    // Play or pause marker to the left of the digits.
-    NSRect marker = NSMakeRect(NSMinX(lcd) + 4, NSMaxY(lcd) - 13, 9, 9);
+    // Play or pause marker to the left of the digits, drawn at the height of
+    // the digits themselves rather than as a small mark beside them.
+    CGFloat markerSide = timeSize.height * 0.66;
+    NSRect marker = NSMakeRect(NSMinX(lcd) + 5,
+                               NSMaxY(lcd) - 1 - timeSize.height / 2.0 - markerSide / 2.0,
+                               markerSide, markerSide);
     if (track) {
         if ([player isPlaying]) {
             [BTStyle drawPlayGlyphInRect:NSInsetRect(marker, -1, -1) color:BTMiniLCD()];
@@ -482,7 +486,14 @@ static NSFont *BTMiniFixedFont(CGFloat size) {
                                                        styleMask:NSBorderlessWindowMask
                                                          backing:NSBackingStoreBuffered
                                                            defer:NO];
-    [window setLevel:NSNormalWindowLevel];
+    // The mini player stays on top of everything, including whatever is running
+    // full screen on another space. The full window is an ordinary window and
+    // is deliberately left alone.
+    [window setLevel:NSFloatingWindowLevel];
+    [window setCollectionBehavior:(NSWindowCollectionBehaviorCanJoinAllSpaces |
+                                   NSWindowCollectionBehaviorFullScreenAuxiliary |
+                                   NSWindowCollectionBehaviorStationary)];
+    [window setHidesOnDeactivate:NO];
     [window setHasShadow:YES];
     [window setTitle:@"BTunes"];
 

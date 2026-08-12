@@ -189,7 +189,12 @@
         [[NSColor colorWithCalibratedRed:0.36 green:0.55 blue:0.86 alpha:1.0] set];
         [filledPath fill];
 
-        NSRect knob = NSMakeRect(NSMinX(groove) + NSWidth(groove) * fraction - 4, NSMinY(groove) - 3, 8, 12);
+        // A round knob centred on the groove, rather than a tall oval whose
+        // weight sits above the line it runs along.
+        CGFloat side = 11.0;
+        NSRect knob = NSMakeRect(NSMinX(groove) + NSWidth(groove) * fraction - side / 2.0,
+                                 NSMidY(groove) - side / 2.0,
+                                 side, side);
         [BTStyle drawAquaCircleInRect:knob pressed:NO enabled:YES];
     }
 }

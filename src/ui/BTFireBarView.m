@@ -1,7 +1,7 @@
 #import "BTFireBarView.h"
 #import "BTPlayer.h"
 
-#define BT_BAR_COUNT 19
+#define BT_BAR_COUNT 31
 
 @implementation BTFireBarView {
     NSTimer *_timer;
@@ -12,6 +12,7 @@
     CGFloat _phases[BT_BAR_COUNT];
     CGFloat _rates[BT_BAR_COUNT];
     CGFloat _ceiling;
+    CGFloat _average;
     double _time;
 }
 
@@ -51,17 +52,33 @@
     _timer = nil;
 }
 
-// Loudness alone would move every bar together, so each band gets a fixed
-// weight (bass louder than treble) and its own slow oscillator.
-static CGFloat BTBandShape(NSInteger index) {
+// How loud a band gets when it fires. Bass carries most of the energy in most
+// recordings, so the left of the display sits higher than the right.
+static CGFloat BTBandGain(NSInteger index) {
     CGFloat t = (CGFloat)index / (CGFloat)(BT_BAR_COUNT - 1);
-    return 1.05f - 0.62f * t * t;
+    return 1.02f - 0.55f * t * t;
+}
+
+// How often a band fires. Treble is busy and constant, bass is occasional and
+// tied to the beat, which is what gives an analyzer its texture.
+static CGFloat BTBandActivity(NSInteger index) {
+    CGFloat t = (CGFloat)index / (CGFloat)(BT_BAR_COUNT - 1);
+    return 0.16f + 0.62f * t;
+}
+
+// And how fast it falls away afterwards. Bass hangs, treble snaps back.
+static CGFloat BTBandDecay(NSInteger index) {
+    CGFloat t = (CGFloat)index / (CGFloat)(BT_BAR_COUNT - 1);
+    return 0.86f - 0.16f * t;
+}
+
+static CGFloat BTRandomFraction(void) {
+    return (CGFloat)arc4random_uniform(10000) / 10000.0f;
 }
 
 - (void)step:(NSTimer *)timer {
     BTPlayer *player = [BTPlayer sharedPlayer];
     CGFloat level = [player averageLevel];
-    CGFloat peak = [player peakLevel];
     _time += 1.0 / 25.0;
 
     // A recording's loudness barely moves, so a fixed scale either pegs on a
@@ -77,16 +94,30 @@ static CGFloat BTBandShape(NSInteger index) {
 
     CGFloat relative = level / _ceiling;
     if (relative > 1.0f) relative = 1.0f;
-    CGFloat shaped = powf(relative, 1.5f);
+
+    // A transient is loudness above where it has been sitting, and that is what
+    // an analyzer is really showing. Tracked separately from the ceiling, which
+    // moves too slowly to notice a beat.
+    _average = _average * 0.90f + relative * 0.10f;
+    CGFloat transient = relative - _average;
+    if (transient < 0) transient = 0;
 
     NSInteger i;
     for (i = 0; i < BT_BAR_COUNT; i++) {
-        CGFloat wobble = 0.45f + 0.55f * (CGFloat)((sin(_time * _rates[i] + _phases[i]) + 1.0) / 2.0);
-        CGFloat target = shaped * BTBandShape(i) * wobble * 1.25f;
-        if (i < 4) target += powf(peak / _ceiling > 1.0f ? 1.0f : peak / _ceiling, 2.0f) * 0.18f * wobble;
-        if (target > 1.0f) target = 1.0f;
+        // Each band fires on its own, with its own chance and its own height.
+        // Driving every bar from one number is what made the display move as a
+        // block and sit full: with nothing falling, the caps rest on the bars
+        // and are never seen.
+        CGFloat chance = relative * BTBandActivity(i) + transient * 1.6f * (1.0f - BTBandActivity(i));
+        if (BTRandomFraction() < chance) {
+            CGFloat height = relative * BTBandGain(i) * (0.45f + 0.75f * BTRandomFraction());
+            if (transient > 0.02f && i < BT_BAR_COUNT / 3) height += transient * 1.4f;
+            if (height > _values[i]) _values[i] = height;
+        }
 
-        _values[i] = (target > _values[i]) ? target : (_values[i] * 0.62f + target * 0.38f);
+        _values[i] *= BTBandDecay(i);
+        if (_values[i] > 1.0f) _values[i] = 1.0f;
+        if (_values[i] < 0.0f) _values[i] = 0.0f;
 
         // The cap holds where the bar last reached, waits, then falls away
         // picking up speed, the way the original analyzer's markers did.
@@ -97,7 +128,7 @@ static CGFloat BTBandShape(NSInteger index) {
         } else if (_capHold[i] > 0) {
             _capHold[i]--;
         } else {
-            _capFall[i] += 0.0016f;
+            _capFall[i] += 0.0011f;
             _peaks[i] -= _capFall[i];
             if (_peaks[i] < _values[i]) _peaks[i] = _values[i];
             if (_peaks[i] < 0) _peaks[i] = 0;

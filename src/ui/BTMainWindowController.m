@@ -9,6 +9,7 @@
 #import "BTPlaylist.h"
 #import "BTIPod.h"
 #import "BTSyncView.h"
+#import "BTPreferences.h"
 #import "BTTrack.h"
 #import "BTPlayer.h"
 
@@ -99,10 +100,16 @@ static CGFloat BTTitleBarHeight(void) {
                                 color:[NSColor colorWithCalibratedWhite:0.30 alpha:1.0]];
     }
 
-    NSRect textFrame = frame;
+    // A few points of air on the left, so the icon does not sit against the
+    // disclosure triangle on rows that have one.
+    NSRect content = frame;
+    content.origin.x += 5.0;
+    content.size.width -= 5.0;
+
+    NSRect textFrame = content;
     if (self.showsEject) textFrame.size.width -= 20;
     if (self.icon) {
-        NSRect iconFrame = NSMakeRect(NSMinX(frame), NSMidY(frame) - 7, 14, 14);
+        NSRect iconFrame = NSMakeRect(NSMinX(content), NSMidY(content) - 7, 14, 14);
         [self.icon drawInRect:iconFrame
                      fromRect:NSZeroRect
                     operation:NSCompositeSourceOver
@@ -1467,6 +1474,12 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     [panel setAllowedFileTypes:[BTLibrary supportedExtensions]];
     [panel setPrompt:@"Add"];
     [panel setMessage:@"Choose songs or folders to add to the library."];
+
+    // Starts where the music is kept, rather than wherever the panel last was.
+    NSString *musicFolder = [[BTPreferences sharedPreferences] musicFolder];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:musicFolder]) {
+        [panel setDirectoryURL:[NSURL fileURLWithPath:musicFolder]];
+    }
 
     if ([panel runModal] != NSFileHandlingPanelOKButton) return;
 

@@ -2,6 +2,7 @@
 #import "BTMainWindowController.h"
 #import "BTMiniWindowController.h"
 #import "BTSplashWindowController.h"
+#import "BTPreferencesController.h"
 #import "BTLibrary.h"
 #import "BTPlayer.h"
 #import "BTIPod.h"
@@ -122,6 +123,11 @@
 - (void)importITunesLibrary:(id)sender { [_main importITunesLibrary:sender]; }
 - (void)focusSearch:(id)sender { [_main focusSearch:sender]; }
 
+- (void)showPreferences:(id)sender {
+    [[BTPreferencesController sharedController] showWindow:nil];
+    [[[BTPreferencesController sharedController] window] makeKeyAndOrderFront:nil];
+}
+
 #pragma mark - Menus
 
 - (NSMenuItem *)itemWithTitle:(NSString *)title
@@ -144,6 +150,12 @@
     [appMenu addItem:[self itemWithTitle:@"About BTunes"
                                   action:@selector(orderFrontStandardAboutPanel:)
                                      key:@"" modifiers:0 target:NSApp]];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+    [appMenu addItem:[self itemWithTitle:@"Preferences..."
+                                  action:@selector(showPreferences:)
+                                     key:@","
+                               modifiers:NSCommandKeyMask
+                                  target:self]];
     [appMenu addItem:[NSMenuItem separatorItem]];
     [appMenu addItem:[self itemWithTitle:@"Hide BTunes" action:@selector(hide:) key:@"h" modifiers:0 target:NSApp]];
     [appMenu addItem:[self itemWithTitle:@"Quit BTunes" action:@selector(terminate:) key:@"q" modifiers:0 target:NSApp]];

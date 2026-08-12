@@ -17,6 +17,9 @@ extern NSString *const BTLibraryImportProgressNotification;
 @property (nonatomic, readonly) BOOL importing;
 
 - (NSString *)libraryFilePath;
+// Where the library would sit with no setting chosen: the environment
+// override, a folder beside the application, or Application Support.
++ (NSString *)unconfiguredSupportDirectory;
 - (void)loadFromDisk;
 - (void)saveToDisk;
 

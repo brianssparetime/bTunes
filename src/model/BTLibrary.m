@@ -42,6 +42,25 @@ NSString *const BTLibraryImportProgressNotification = @"BTLibraryImportProgress"
 
 #pragma mark - Storage
 
++ (NSString *)unconfiguredSupportDirectory {
+    const char *override = getenv("BTUNES_LIBRARY_DIR");
+    if (override != NULL && strlen(override) > 0) {
+        return [[NSFileManager defaultManager] stringWithFileSystemRepresentation:override
+                                                                           length:strlen(override)];
+    }
+
+    NSString *beside = [[[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent]
+                        stringByAppendingPathComponent:@"BTunes Library"];
+    BOOL isDirectory = NO;
+    if ([[NSFileManager defaultManager] fileExistsAtPath:beside isDirectory:&isDirectory] && isDirectory) {
+        return beside;
+    }
+
+    NSArray *dirs = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
+    NSString *base = [dirs count] > 0 ? [dirs objectAtIndex:0] : NSTemporaryDirectory();
+    return [base stringByAppendingPathComponent:@"BTunes"];
+}
+
 - (NSString *)supportDirectory {
     NSString *dir;
 
@@ -56,21 +75,17 @@ NSString *const BTLibraryImportProgressNotification = @"BTLibraryImportProgress"
     // the library already there, and follows the same layout as the other Mac
     // applications here.
     const char *override = getenv("BTUNES_LIBRARY_DIR");
-    NSString *beside = [[[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent]
-                        stringByAppendingPathComponent:@"BTunes Library"];
-    BOOL besideIsDirectory = NO;
-    BOOL besideExists = [[NSFileManager defaultManager] fileExistsAtPath:beside
-                                                             isDirectory:&besideIsDirectory];
+    NSString *chosen = [[NSUserDefaults standardUserDefaults] stringForKey:@"BTDatabaseFolder"];
 
     if (override != NULL && strlen(override) > 0) {
+        // The environment wins, so a test run cannot be sent at a real library
+        // by whatever happens to be saved in the settings.
         dir = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:override
                                                                           length:strlen(override)];
-    } else if (besideExists && besideIsDirectory) {
-        dir = beside;
+    } else if ([chosen length] > 0) {
+        dir = chosen;
     } else {
-        NSArray *dirs = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
-        NSString *base = [dirs count] > 0 ? [dirs objectAtIndex:0] : NSTemporaryDirectory();
-        dir = [base stringByAppendingPathComponent:@"BTunes"];
+        dir = [BTLibrary unconfiguredSupportDirectory];
     }
     [[NSFileManager defaultManager] createDirectoryAtPath:dir
                              withIntermediateDirectories:YES
