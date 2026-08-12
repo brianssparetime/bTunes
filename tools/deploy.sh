@@ -1,11 +1,20 @@
 #!/bin/bash
 # Build BTunes on BUILD and put it on TARGET.
 #
-# Usage: ./tools/deploy.sh [--no-run] [--no-sync] [--stop]
+# Usage: ./tools/deploy.sh [--no-run] [--no-sync] [--stop] [--applications]
 #
-#   --no-run    install it but leave it stopped
-#   --no-sync   build whatever is already on BUILD, skip the source copy
-#   --stop      stop whatever is running on TARGET and do nothing else
+#   --no-run        install it but leave it stopped
+#   --no-sync       build whatever is already on BUILD, skip the source copy
+#   --stop          stop whatever is running on TARGET and do nothing else
+#   --applications  also put a copy in /Applications on TARGET, and start that
+#                   one. Needs sudo without a password there; if sudo asks for
+#                   one, this is reported and skipped rather than left hanging.
+#
+# Two copies are only safe because the database location is a setting rather
+# than a guess. With nothing chosen, BTunes takes a BTunes Library folder
+# beside the application, so a copy in /Applications would open a different
+# library from the one in the home folder and each would collect its own play
+# counts. Set the location once, in Preferences, and every copy agrees.
 #
 # Three machines, three jobs. This one edits and commits; it never runs the app,
 # because the system here is not the system BTunes is built for and a clean
@@ -40,12 +49,14 @@ done
 RUN_AFTER=1
 DO_SYNC=1
 STOP_ONLY=0
+INSTALL_APPLICATIONS=0
 
 for arg in "$@"; do
     case "$arg" in
-        --no-run)  RUN_AFTER=0 ;;
-        --no-sync) DO_SYNC=0 ;;
-        --stop)    STOP_ONLY=1 ;;
+        --no-run)       RUN_AFTER=0 ;;
+        --no-sync)      DO_SYNC=0 ;;
+        --stop)         STOP_ONLY=1 ;;
+        --applications) INSTALL_APPLICATIONS=1 ;;
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -116,13 +127,35 @@ $SSH "$BT_TARGET_HOST" "
     xattr -dr com.apple.quarantine '$BT_TARGET_DIR/BTunes.app' 2>/dev/null || true
 "
 
+LAUNCH_PATH="$BT_TARGET_DIR/BTunes.app"
+
+if [ "$INSTALL_APPLICATIONS" -eq 1 ]; then
+    echo "==> Installing to /Applications on TARGET"
+    # Asked without a password first. A sudo that prompts would sit forever on
+    # the far end of an ssh with no terminal attached.
+    if $SSH "$BT_TARGET_HOST" 'sudo -n true' 2>/dev/null; then
+        $SSH "$BT_TARGET_HOST" "
+            set -e
+            sudo rm -rf /Applications/BTunes.app
+            sudo cp -R \"\$HOME/$BT_TARGET_DIR/BTunes.app\" /Applications/BTunes.app
+            sudo xattr -dr com.apple.quarantine /Applications/BTunes.app 2>/dev/null || true
+        "
+        LAUNCH_PATH="/Applications/BTunes.app"
+        echo "    installed"
+    else
+        echo "    sudo on TARGET wants a password, so /Applications was left alone." >&2
+        echo "    Run this on TARGET yourself:" >&2
+        echo "        sudo cp -R ~/$BT_TARGET_DIR/BTunes.app /Applications/" >&2
+    fi
+fi
+
 if [ "$RUN_AFTER" -eq 0 ]; then
     echo "==> Installed, left stopped"
     exit 0
 fi
 
 echo "==> Starting it on TARGET"
-$SSH "$BT_TARGET_HOST" "open '$BT_TARGET_DIR/BTunes.app'"
+$SSH "$BT_TARGET_HOST" "open '$LAUNCH_PATH'"
 sleep 4
 
 if $SSH "$BT_TARGET_HOST" 'pgrep -x BTunes > /dev/null'; then

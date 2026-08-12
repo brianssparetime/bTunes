@@ -67,11 +67,16 @@ load. `TARGET` plays music, and is the only place the app is ever run: a clean
 launch on a modern system says nothing about the one it was built for.
 
 ```
-./tools/deploy.sh             # copy source to BUILD, compile, install on TARGET, start it
-./tools/deploy.sh --no-run    # install it but leave it stopped
-./tools/deploy.sh --no-sync   # rebuild what is already on BUILD
-./tools/deploy.sh --stop      # stop whatever is running on TARGET
+./tools/deploy.sh                 # copy source to BUILD, compile, install on TARGET, start it
+./tools/deploy.sh --no-run        # install it but leave it stopped
+./tools/deploy.sh --no-sync       # rebuild what is already on BUILD
+./tools/deploy.sh --stop          # stop whatever is running on TARGET
+./tools/deploy.sh --applications  # also install into /Applications, and start that copy
 ```
+
+`--applications` needs sudo without a password on the target. If sudo asks for
+one the copy is skipped and the command to run by hand is printed, rather than
+the script hanging on a prompt no one can answer.
 
 Host names live in `env.local.sh`, which is not tracked. Copy `env.example.sh`
 to it and fill in the two machines:
@@ -99,6 +104,12 @@ independently:
 The database is `library.json`. Without a setting it sits in a `BTunes Library`
 folder beside the application if there is one, and otherwise in
 `~/Library/Application Support/BTunes`. `BTUNES_LIBRARY_DIR` overrides both.
+
+Set the Library location explicitly if the app is installed in more than one
+place. It is a per-user setting rather than a per-copy one, so once chosen,
+every copy opens the same database. Left unchosen, each copy falls back to
+whatever sits beside it, which means two of them collecting separate play
+counts against separate libraries and no sign that anything is wrong.
 
 Volume, the open state of each folder, the selected source and the highlighted
 track carry over between runs.
