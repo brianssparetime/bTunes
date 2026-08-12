@@ -169,25 +169,27 @@ static NSImage *BTSteelGrain(void) {
     [circle addClip];
     [self drawVerticalGradientInRect:box from:top to:bottom];
 
-    // The cap: a wide white highlight over the top half, fading to nothing
-    // before it reaches the middle. This is what made those buttons read as
-    // polished rather than as flat discs.
-    NSRect cap = NSInsetRect(box, NSWidth(box) * 0.14, 0);
-    cap.origin.y = NSMinY(box) + NSHeight(box) * 0.40;
-    cap.size.height = NSHeight(box) * 0.54;
+    // The cap: light gathering near the top of the dome and falling away from
+    // there. This is what made those buttons read as polished rather than as
+    // flat discs.
+    //
+    // Drawn as a radial fade, which reaches nothing in every direction at the
+    // ellipse's edge. A vertical gradient clipped to the same ellipse fades at
+    // the top and the bottom but stops dead at the sides, and peaking it
+    // partway down leaves the surface dimmest between the top edge and the
+    // highlight. Brightness that falls and then rises again reads as a crease
+    // across something that should be smooth.
+    NSRect cap = NSInsetRect(box, NSWidth(box) * 0.10, 0);
+    cap.origin.y = NSMinY(box) + NSHeight(box) * 0.34;
+    cap.size.height = NSHeight(box) * 0.66;
 
-    // The highlight fades out at both ends, not just the bottom. Running it up
-    // to full strength at the top of the cap leaves a visible arc where that
-    // ellipse ends, up around one o'clock.
-    NSGradient *capGradient = [[NSGradient alloc] initWithColorsAndLocations:
-        [NSColor colorWithCalibratedWhite:1.0 alpha:0.0], 0.0,
-        [NSColor colorWithCalibratedWhite:1.0 alpha:(pressed ? 0.24 : 0.78)], 0.62,
-        [NSColor colorWithCalibratedWhite:1.0 alpha:0.0], 1.0,
-        nil];
-    [NSGraphicsContext saveGraphicsState];
-    [[NSBezierPath bezierPathWithOvalInRect:cap] addClip];
-    [capGradient drawInRect:cap angle:90.0];
-    [NSGraphicsContext restoreGraphicsState];
+    NSGradient *capGradient = [[NSGradient alloc]
+        initWithStartingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:(pressed ? 0.24 : 0.78)]
+                  endingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:0.0]];
+    // Off centre toward the top, so the brightest point sits high on the dome
+    // rather than in the middle of it.
+    [capGradient drawInBezierPath:[NSBezierPath bezierPathWithOvalInRect:cap]
+           relativeCenterPosition:NSMakePoint(0.0, 0.45)];
 
     // Light bouncing back up off the surface the button sits on.
     NSGradient *bounce = [[NSGradient alloc]
