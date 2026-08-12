@@ -49,7 +49,7 @@ NSString *const BTIPodSyncDidFinishNotification = @"BTIPodSyncDidFinish";
 // is what the device expects; it is not a hashing scheme.
 - (NSString *)destinationForTrack:(BTTrack *)track index:(NSUInteger)index {
     NSString *folder = [NSString stringWithFormat:@"F%02lu", (unsigned long)(index % 50)];
-    NSString *extension = [[track.path pathExtension] lowercaseString];
+    NSString *extension = [[[track resolvedPath] pathExtension] lowercaseString];
     if ([extension length] == 0) extension = @"mp3";
 
     NSString *directory = [[self.iPod musicPath] stringByAppendingPathComponent:folder];
@@ -155,7 +155,7 @@ NSString *const BTIPodSyncDidFinishNotification = @"BTIPodSyncDidFinish";
         NSString *destination = [self destinationForTrack:track index:[self.database.tracks count] + i];
 
         NSError *copyError = nil;
-        if (![fm copyItemAtPath:track.path toPath:destination error:&copyError]) {
+        if (![fm copyItemAtPath:[track resolvedPath] toPath:destination error:&copyError]) {
             if (outError) *outError = copyError;
             return NO;
         }

@@ -111,7 +111,7 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
             BTTrack *t = [BTTrack trackWithDictionary:[trackDicts objectAtIndex:i]];
             if (t) {
                 [self.tracks addObject:t];
-                [self.knownPaths addObject:t.path];
+                [self.knownPaths addObject:[t resolvedPath]];
             }
         }
     }
@@ -152,7 +152,7 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
     NSUInteger i;
     for (i = 0; i < [tracks count]; i++) {
         BTTrack *t = [tracks objectAtIndex:i];
-        [self.knownPaths removeObject:t.path];
+        [self.knownPaths removeObject:[t resolvedPath]];
         [self.tracks removeObject:t];
     }
     NSMutableArray *stack = [NSMutableArray arrayWithArray:self.playlists];
@@ -389,7 +389,7 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
             for (j = 0; j < [newTracks count]; j++) {
                 BTTrack *t = [newTracks objectAtIndex:j];
                 [self.tracks addObject:t];
-                [self.knownPaths addObject:t.path];
+                [self.knownPaths addObject:[t resolvedPath]];
             }
             self.importing = NO;
             [self noteChanged];

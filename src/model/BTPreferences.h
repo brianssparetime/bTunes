@@ -6,9 +6,11 @@ extern NSString *const BTPreferencesDidChangeNotification;
 
 // The two locations BTunes cares about, kept apart on purpose.
 //
-// The music folder is where the audio files live. It is a starting point for
-// adding songs today, and the thing to change when the library moves to
-// converted files.
+// The music folder is the root every track's path is stored against. A track
+// records the part of its path below this folder, so moving the setting points
+// the whole library at the same music somewhere else: another disk, a mounted
+// share, or the converted files when detune finishes with them. It is also
+// where the panel that adds songs starts.
 //
 // The database folder holds library.json, the ratings, play counts and
 // playlists. Those are the irreplaceable part, so they are allowed to live

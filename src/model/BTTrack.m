@@ -1,4 +1,29 @@
 #import "BTTrack.h"
+#import "BTPreferences.h"
+
+// The music root, asked of the settings each time rather than held, so pointing
+// the setting somewhere else takes effect without anything having to be told.
+static NSString *BTMusicRoot(void) {
+    NSString *root = [[BTPreferences sharedPreferences] musicFolder];
+    return [root length] > 0 ? [root stringByStandardizingPath] : nil;
+}
+
+// A full path under the music root becomes the part below it. Anything else is
+// returned unchanged, which covers both a path already stored relative and a
+// file that sits outside the root entirely.
+static NSString *BTPathBelowMusicRoot(NSString *path) {
+    if (![path hasPrefix:@"/"]) return path;
+
+    NSString *standard = [path stringByStandardizingPath];
+    NSString *root = BTMusicRoot();
+    if ([root length] == 0) return standard;
+
+    NSString *prefix = [root hasSuffix:@"/"] ? root : [root stringByAppendingString:@"/"];
+    if (![standard hasPrefix:prefix]) return standard;
+
+    NSString *below = [standard substringFromIndex:[prefix length]];
+    return [below length] > 0 ? below : standard;
+}
 
 static NSString *BTString(NSDictionary *d, NSString *key) {
     id v = [d objectForKey:key];
@@ -23,6 +48,15 @@ static NSDate *BTDate(NSDictionary *d, NSString *key) {
 }
 
 @implementation BTTrack
+
+@synthesize path = _path;
+
+// Every assignment is normalized, so a caller handing over a full path gets it
+// stored below the root without having to know that is the rule. A library
+// written before the root existed converts itself the first time it is loaded.
+- (void)setPath:(NSString *)path {
+    _path = [BTPathBelowMusicRoot(path) copy];
+}
 
 + (instancetype)trackWithDictionary:(NSDictionary *)dict {
     BTTrack *t = [[BTTrack alloc] init];
@@ -75,8 +109,17 @@ static NSDate *BTDate(NSDictionary *d, NSString *key) {
     return d;
 }
 
+- (NSString *)resolvedPath {
+    if ([self.path length] == 0) return nil;
+    if ([self.path hasPrefix:@"/"]) return self.path;
+
+    NSString *root = BTMusicRoot();
+    return root ? [root stringByAppendingPathComponent:self.path] : self.path;
+}
+
 - (NSURL *)fileURL {
-    return self.path ? [NSURL fileURLWithPath:self.path] : nil;
+    NSString *resolved = [self resolvedPath];
+    return [resolved length] > 0 ? [NSURL fileURLWithPath:resolved] : nil;
 }
 
 - (NSString *)displayTitle {

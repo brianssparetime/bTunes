@@ -97,7 +97,11 @@ each other's play counts.
 Preferences, at Command-comma, holds two locations, kept apart because they move
 independently:
 
-- **Music** is where the audio files live. It seeds the panel that adds songs.
+- **Music** is the folder the audio sits in, and the root every track's path is
+  stored against. A song is recorded as its place below this folder rather than
+  in full, so pointing the setting at the same music on another machine opens
+  the same library there. A file outside the folder keeps its full path and
+  still works. Existing libraries convert themselves the first time they load.
 - **Library** is where BTunes keeps its own database: ratings, play counts, and
   playlists. Songs are not moved when it changes.
 
@@ -117,6 +121,8 @@ track carry over between runs.
 ## Using it
 
 Audio files are read and never modified, and nothing on disk is ever deleted.
+BTunes never copies them either: a song is played where it already lives, so
+the music stays where it is and BTunes owns only the database.
 
 - Add to Library, Command-O, adds files or folders.
 - Import iTunes Library reads an iTunes XML file, never writes it, and rebuilds

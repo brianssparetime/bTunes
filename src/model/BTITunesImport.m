@@ -90,7 +90,7 @@ static NSDate *BTDateFor(NSDictionary *d, NSString *key) {
     NSUInteger i, j;
     for (i = 0; i < [self.tracks count]; i++) {
         BTTrack *t = [self.tracks objectAtIndex:i];
-        [byExistingPath setObject:t forKey:t.path];
+        [byExistingPath setObject:t forKey:[t resolvedPath]];
     }
 
     // iTunes track id (as a string) to the BTunes track it became, so playlist
@@ -124,7 +124,7 @@ static NSDate *BTDateFor(NSDictionary *d, NSString *key) {
         if (track == nil) { skipped++; continue; }
 
         [self.tracks addObject:track];
-        [byExistingPath setObject:track forKey:track.path];
+        [byExistingPath setObject:track forKey:[track resolvedPath]];
         [byITunesID setObject:track forKey:key];
         added++;
         if (isProtected) protectedCount++;

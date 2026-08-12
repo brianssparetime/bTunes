@@ -36,7 +36,7 @@
 
     _musicField = [self addRowAtY:&y
                             label:@"Music:"
-                             note:@"Where the audio files live. Adding songs starts here, and this is what changes when the library moves to converted files."
+                             note:@"The folder the music sits in. Songs are recorded as their place below it, so pointing this at the same music on another machine opens the same library there."
                            action:@selector(chooseMusicFolder:)
                           inView:content];
 

@@ -117,7 +117,7 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
     NSError *error = nil;
     AVAudioPlayer *player = [[AVAudioPlayer alloc] initWithContentsOfURL:[track fileURL] error:&error];
     if (player == nil) {
-        NSLog(@"BTunes: cannot open %@ (%@)", track.path, [error localizedDescription]);
+        NSLog(@"BTunes: cannot open %@ (%@)", [track resolvedPath], [error localizedDescription]);
         // A missing or unreadable file should not stall the queue.
         self.orderPosition = position;
         return [self advanceBy:1 allowRepeat:NO];
