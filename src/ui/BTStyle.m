@@ -201,18 +201,15 @@ static NSImage *BTSteelGrain(void) {
     [NSGraphicsContext restoreGraphicsState];
 }
 
-+ (void)drawToggleBackgroundInRect:(NSRect)rect on:(BOOL)on pressed:(BOOL)pressed {
-    if (!on && !pressed) return;
+// Only while the mouse is down. A toggle that is on says so by the color of its
+// mark, not by a filled tile behind it: a solid block of blue in the gray at the
+// bottom of the window pulls the eye away from the song list for a setting that
+// is not the point of the window.
++ (void)drawTogglePressedInRect:(NSRect)rect {
     NSRect box = NSInsetRect(rect, 0.5, 0.5);
     NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:box xRadius:3.0 yRadius:3.0];
-    if (on) {
-        [self drawVerticalGradientInRect:box
-                                    from:[NSColor colorWithCalibratedRed:0.60 green:0.74 blue:0.94 alpha:1.0]
-                                      to:[NSColor colorWithCalibratedRed:0.36 green:0.55 blue:0.86 alpha:1.0]];
-    } else {
-        [[NSColor colorWithCalibratedWhite:0.72 alpha:1.0] set];
-        [path fill];
-    }
+    [[NSColor colorWithCalibratedWhite:0.72 alpha:1.0] set];
+    [path fill];
     [[NSColor colorWithCalibratedWhite:0.42 alpha:1.0] set];
     [path stroke];
 }

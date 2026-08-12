@@ -139,8 +139,11 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume) 
 
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = [self bounds];
-    [BTStyle drawToggleBackgroundInRect:bounds on:self.on pressed:[self isHighlighted]];
-    NSColor *ink = self.on ? [NSColor whiteColor] : [NSColor colorWithCalibratedWhite:0.25 alpha:1.0];
+    if ([self isHighlighted]) [BTStyle drawTogglePressedInRect:bounds];
+
+    // On is carried by the mark itself, in the blue the window already uses for
+    // a selected row, so the two agree about what blue means here.
+    NSColor *ink = self.on ? [BTStyle selection] : [NSColor colorWithCalibratedWhite:0.25 alpha:1.0];
     BTDrawGlyph(self.glyph, bounds, ink);
 }
 

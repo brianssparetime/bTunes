@@ -36,7 +36,9 @@
 
 // The glossy round transport buttons and the small square toggles.
 + (void)drawAquaCircleInRect:(NSRect)rect pressed:(BOOL)pressed enabled:(BOOL)enabled;
-+ (void)drawToggleBackgroundInRect:(NSRect)rect on:(BOOL)on pressed:(BOOL)pressed;
+// The dent under a toggle while the mouse is down. A toggle that is on shows it
+// by the color of its mark instead.
++ (void)drawTogglePressedInRect:(NSRect)rect;
 
 // Glyphs, drawn as paths so they stay crisp at any size and need no image files.
 + (void)drawPlayGlyphInRect:(NSRect)rect color:(NSColor *)color;
