@@ -149,6 +149,20 @@ if [ "$INSTALL_APPLICATIONS" -eq 1 ]; then
     fi
 fi
 
+# A copy in /Applications that this deploy could not reach is worse than no copy
+# at all, because it looks current and is not. Say so every time rather than
+# leaving it to be discovered by testing the wrong build for an hour.
+if $SSH "$BT_TARGET_HOST" "
+    [ -d /Applications/BTunes.app ] || exit 1
+    here=\$(md5 -q /Applications/BTunes.app/Contents/MacOS/BTunes 2>/dev/null)
+    fresh=\$(md5 -q \"\$HOME/$BT_TARGET_DIR/BTunes.app/Contents/MacOS/BTunes\" 2>/dev/null)
+    [ \"\$here\" != \"\$fresh\" ]
+" 2>/dev/null; then
+    echo "==> WARNING: /Applications on TARGET holds a different build" >&2
+    echo "    Update it with:" >&2
+    echo "        sudo cp -R ~/$BT_TARGET_DIR/BTunes.app /Applications/" >&2
+fi
+
 if [ "$RUN_AFTER" -eq 0 ]; then
     echo "==> Installed, left stopped"
     exit 0
