@@ -177,7 +177,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     // the two are easy to confuse when they are not kept apart.
     _chosenSummary = BTLabelWithText(@"", [BTStyle uiFont]);
     [_chosenSummary setAlignment:NSRightTextAlignment];
-    [_chosenSummary setTextColor:[NSColor colorWithCalibratedWhite:0.35 alpha:1.0]];
+    [_chosenSummary setTextColor:[BTStyle secondaryText]];
     [self addSubview:_chosenSummary];
 
     [self showComparingState];
@@ -201,18 +201,17 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     return box;
 }
 
-// identifier, heading, width. The first is always the tick.
+// A list in a bordered scroll view, with its columns. The two lists differ in
+// almost nothing, so the difference is the argument: the caller makes the list
+// it wants and this does the rest.
+//
+// Each column is an identifier, a heading and a width. One called "check" gets
+// a tick box and can be edited; every other column shows words and cannot.
 //
 // The scroll view is what comes back, not the table. Handing back the table and
 // finding its scroll view again only works while something else is holding the
 // scroll view up; nothing was, so it went as soon as this returned and the list
 // never appeared.
-// A list in a bordered scroll view, with its columns. The two lists differ in
-// almost nothing, so the difference is the argument: the caller makes the list
-// it wants and this does the rest.
-//
-// identifier, heading, width. A column called "check" gets a tick box and can be
-// edited; every other column shows words and cannot.
 - (NSScrollView *)scrollHolding:(NSTableView *)list columns:(NSArray *)specs {
     [list setFocusRingType:NSFocusRingTypeNone];
     [list setRowHeight:17.0];

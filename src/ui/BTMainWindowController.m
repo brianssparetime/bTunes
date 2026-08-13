@@ -9,6 +9,7 @@
 #import "BTTrackInfoController.h"
 #import "BTLibrary.h"
 #import "BTITunesImport.h"
+#import "BTITunesEntry.h"
 #import "BTPlaylist.h"
 #import "BTIPod.h"
 #import "BTSyncView.h"
@@ -1804,8 +1805,12 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
         BOOL isTheMark = [[tableColumn identifier] isEqualToString:@"playing"];
         [(BTTrackNumberCell *)cell setIndicator:((playing && isTheMark) ? _speakerImage : nil)];
     }
-    NSColor *color = track.isProtected ? [NSColor colorWithCalibratedWhite:0.55 alpha:1.0]
-                                       : [NSColor blackColor];
+    // The same gray the sync pane draws a locked purchase in, asked for by the
+    // same name. Written out here, giving one of them its own colour later
+    // would change one list and not the other.
+    NSColor *color = track.isProtected
+        ? [BTStyle ineligibleTextForReason:BTITunesBlockProtected]
+        : [NSColor blackColor];
     [(NSTextFieldCell *)cell setTextColor:((selected && BTListHasFocus(tableView)) ? [NSColor whiteColor]
                                                                                    : color)];
 }

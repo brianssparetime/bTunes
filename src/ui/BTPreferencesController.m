@@ -93,7 +93,7 @@
 - (NSTextField *)labelWithText:(NSString *)text frame:(NSRect)frame small:(BOOL)small {
     NSTextField *label = BTLabelWithText(text, (small ? [BTStyle smallFont] : [BTStyle uiFont]));
     [label setFrame:frame];
-    if (small) [label setTextColor:[NSColor colorWithCalibratedWhite:0.35 alpha:1.0]];
+    if (small) [label setTextColor:[BTStyle secondaryText]];
     [[label cell] setLineBreakMode:NSLineBreakByWordWrapping];
     return label;
 }

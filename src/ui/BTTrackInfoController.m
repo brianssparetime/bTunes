@@ -42,14 +42,14 @@
     NSTextField *by = BTLabelWithText([NSString stringWithFormat:@"%@ — %@",
                                        [_track displayArtist], [_track displayAlbum]],
                                       [BTStyle uiFont]);
-    [by setTextColor:[NSColor colorWithCalibratedWhite:0.35 alpha:1.0]];
+    [by setTextColor:[BTStyle secondaryText]];
     [by setFrame:NSMakeRect(20, y, BT_INFO_WIDTH - 40, 15)];
     [content addSubview:by];
 
     y -= 20;
     NSTextField *length = BTLabelWithText([NSString stringWithFormat:@"Length %@",
                                            [_track durationString]], [BTStyle smallFont]);
-    [length setTextColor:[NSColor colorWithCalibratedWhite:0.35 alpha:1.0]];
+    [length setTextColor:[BTStyle secondaryText]];
     [length setFrame:NSMakeRect(20, y, BT_INFO_WIDTH - 40, 14)];
     [content addSubview:length];
 
@@ -71,7 +71,7 @@
 
     y -= 24;
     NSTextField *hint = BTLabelWithText(@"Written as 90, 1:30, or 1m30s.", [BTStyle smallFont]);
-    [hint setTextColor:[NSColor colorWithCalibratedWhite:0.42 alpha:1.0]];
+    [hint setTextColor:[BTStyle secondaryText]];
     [hint setFrame:NSMakeRect(160, y, BT_INFO_WIDTH - 180, 14)];
     [content addSubview:hint];
 

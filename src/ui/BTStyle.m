@@ -51,6 +51,8 @@ static NSColor *BTShiftColor(NSColor *color, CGFloat saturationScale, CGFloat br
 // Locked, not downloaded, holding one of those, or smart: one gray for all of
 // them for now. The same gray the track list already uses for a song that
 // cannot play, so the two agree about what gray means.
++ (NSColor *)secondaryText { return [NSColor colorWithCalibratedWhite:0.35 alpha:1.0]; }
+
 + (NSColor *)ineligibleTextForReason:(NSInteger)reason {
     (void)reason;
     return [NSColor colorWithCalibratedWhite:0.55 alpha:1.0];

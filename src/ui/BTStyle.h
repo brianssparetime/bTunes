@@ -40,6 +40,11 @@
 + (NSColor *)listBackground;
 + (NSColor *)selection;
 
+// The small gray note: what a field means, what a length is, what is checked.
+// Secondary to whatever it sits under, and the same gray wherever it appears,
+// which it was not: three files wrote it out and one of them had drifted.
++ (NSColor *)secondaryText;
+
 // A row that cannot be imported yet, or a song that cannot play. Every reason
 // draws the same gray today. The reason is passed in rather than decided
 // beforehand, so giving one its own color later is a change to this method and
