@@ -92,11 +92,43 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
 }
 
 - (NSString *)libraryFilePath {
+    return [[self supportDirectory] stringByAppendingPathComponent:@"btunes_library.json"];
+}
+
+// What the database was called before it was given a name of its own. A folder
+// holding one is carried over the first time it is opened, since walking past it
+// and starting empty would look exactly like losing every rating in it.
+- (NSString *)formerLibraryFilePath {
     return [[self supportDirectory] stringByAppendingPathComponent:@"library.json"];
 }
 
+// Renamed rather than copied, so there is one database afterwards and no second
+// copy left to diverge from it or to be opened by mistake. A rename that fails
+// is not fatal: the library is in hand either way and the next save writes it
+// out under the name it should have.
+- (void)adoptFormerLibraryFile {
+    NSFileManager *files = [NSFileManager defaultManager];
+    NSString *former = [self formerLibraryFilePath];
+    NSString *current = [self libraryFilePath];
+
+    if ([files fileExistsAtPath:current]) return;
+    if (![files fileExistsAtPath:former]) return;
+
+    NSError *error = nil;
+    if ([files moveItemAtPath:former toPath:current error:&error]) {
+        NSLog(@"BTunes: carried the library over from %@", [former lastPathComponent]);
+    } else {
+        NSLog(@"BTunes: could not rename %@ (%@)", former, [error localizedDescription]);
+    }
+}
+
 - (void)loadFromDisk {
+    [self adoptFormerLibraryFile];
+
     NSData *data = [NSData dataWithContentsOfFile:[self libraryFilePath]];
+    // The rename is the ordinary path and this is the one where it failed, so
+    // the database is read from wherever it actually is.
+    if (data == nil) data = [NSData dataWithContentsOfFile:[self formerLibraryFilePath]];
     if (data == nil) return;
 
     NSDictionary *root = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];

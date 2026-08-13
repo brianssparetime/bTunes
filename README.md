@@ -89,7 +89,7 @@ The app travels through this machine rather than straight from `BUILD` to
 `TARGET`, so those two need no credentials for each other. Installing replaces
 only the bundle. The `BTunes Library` folder beside it holds the ratings and
 play counts and is never touched. Any copy already running on `TARGET` is
-stopped first, because two of them share one `library.json` and would overwrite
+stopped first, because two of them share one database and would overwrite
 each other's play counts.
 
 ## Settings
@@ -105,7 +105,7 @@ independently:
 - **Library** is where BTunes keeps its own database: ratings, play counts, and
   playlists. Songs are not moved when it changes.
 
-The database is `library.json`. Without a setting it sits in a `BTunes Library`
+The database is `btunes_library.json`. Without a setting it sits in a `BTunes Library`
 folder beside the application if there is one, and otherwise in
 `~/Library/Application Support/BTunes`. `BTUNES_LIBRARY_DIR` overrides both.
 

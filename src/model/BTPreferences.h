@@ -12,7 +12,7 @@ extern NSString *const BTPreferencesDidChangeNotification;
 // share, or the converted files when detune finishes with them. It is also
 // where the panel that adds songs starts.
 //
-// The database folder holds library.json, the ratings, play counts and
+// The database folder holds btunes_library.json, the ratings, play counts and
 // playlists. Those are the irreplaceable part, so they are allowed to live
 // somewhere other than the audio.
 @interface BTPreferences : NSObject

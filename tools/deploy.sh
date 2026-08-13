@@ -64,7 +64,7 @@ done
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=10"
 TARBALL="/tmp/btunes-build.tgz"
 
-# Stops every copy running on TARGET. Two instances share one library.json and
+# Stops every copy running on TARGET. Two instances share one database and
 # overwrite each other's play counts, so an old one is always stopped before a
 # new one starts. Named explicitly rather than by killall, which is banned.
 stop_target() {
