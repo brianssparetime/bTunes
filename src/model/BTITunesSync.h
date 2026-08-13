@@ -37,7 +37,10 @@ typedef NS_ENUM(NSInteger, BTITunesBlock) {
 @property (nonatomic, copy) NSString *artist;
 @property (nonatomic, copy) NSString *album;
 @property (nonatomic, assign) BTITunesBlock blocked;
-@property (nonatomic, assign) BOOL excludedBefore;   // left behind in an earlier sync
+// Left behind in an earlier sync. This decides nothing about what may be
+// imported; it only says the box should start unticked, so a song turned down
+// once does not have to be turned down again. Ticking it imports it.
+@property (nonatomic, assign) BOOL excludedBefore;
 @property (nonatomic, assign) BOOL alreadyHere;      // imported by an earlier sync
 // The entry this came from, kept so an import reads every field rather than
 // only the handful shown in the list.

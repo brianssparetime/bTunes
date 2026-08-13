@@ -5,8 +5,10 @@
 #import "BTITunesImport.h"
 
 @implementation BTITunesSyncTrack
+// Whether it could come across at all. Being left behind before is deliberately
+// not part of this: that sets which way the box starts, and a box can be ticked.
 - (BOOL)eligible {
-    return self.blocked == BTITunesBlockNone && !self.excludedBefore && !self.alreadyHere;
+    return self.blocked == BTITunesBlockNone && !self.alreadyHere;
 }
 @end
 

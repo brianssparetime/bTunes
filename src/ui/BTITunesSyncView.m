@@ -289,6 +289,17 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     }
 
     [self indexChoosableSongs];
+
+    // What was turned down before starts turned down, and nothing more than
+    // that: every one of these can still be ticked and brought across.
+    NSUInteger i;
+    for (i = 0; i < [_sync.incomingTracks count]; i++) {
+        BTITunesSyncTrack *track = [_sync.incomingTracks objectAtIndex:i];
+        if (track.excludedBefore && track.persistentID) {
+            [_uncheckedSongs addObject:track.persistentID];
+        }
+    }
+
     [_summary setStringValue:[_sync summary]];
     [self rebuildLists];
 }
@@ -588,8 +599,10 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     BTLibrary *library = [BTLibrary sharedLibrary];
     NSDictionary *result = [_sync importInto:library chosenSongs:songs chosenPlaylists:lists];
 
-    // A song turned down stays turned down, so the next sync does not ask again.
+    // What was left unticked starts unticked next time. What came across is no
+    // longer left behind, so it stops being remembered as such.
     [library setExcluded:YES forPersistentIDs:leftBehind];
+    [library setExcluded:NO forPersistentIDs:[songs allObjects]];
 
     NSAlert *alert = [[NSAlert alloc] init];
     [alert setMessageText:@"The sync finished."];
