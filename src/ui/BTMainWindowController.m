@@ -1,4 +1,6 @@
 #import "BTMainWindowController.h"
+#import "BTMainWindowViews.h"
+#import "BTTrackColumns.h"
 #import "BTStyle.h"
 #import "BTControls.h"
 #import "BTDisplayView.h"
@@ -32,45 +34,6 @@ static NSString *const BTRecentlyAddedSource = @"Recently Added";
 // restored over that decision.
 static NSString *const BTColumnsAutosaveName = @"BTunesTrackColumns2";
 static NSString *const BTHiddenColumnsKey = @"BTHiddenColumns";
-
-static NSString *BTStringOrEmpty(NSString *value) {
-    return value ? value : @"";
-}
-
-static double BTTimeOrZero(NSDate *date) {
-    return date ? [date timeIntervalSince1970] : 0.0;
-}
-
-static NSComparisonResult BTCompareNumbers(double a, double b) {
-    return (a < b) ? NSOrderedAscending : (a > b) ? NSOrderedDescending : NSOrderedSame;
-}
-
-static NSString *BTSizeString(long long bytes) {
-    double megabytes = (double)bytes / (1024.0 * 1024.0);
-    if (megabytes >= 1024.0) return [NSString stringWithFormat:@"%.2f GB", megabytes / 1024.0];
-    return [NSString stringWithFormat:@"%.1f MB", megabytes];
-}
-
-static NSString *BTShortDateString(NSDate *date) {
-    if (date == nil) return @"";
-    static NSDateFormatter *formatter = nil;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        formatter = [[NSDateFormatter alloc] init];
-        [formatter setDateStyle:NSDateFormatterShortStyle];
-        [formatter setTimeStyle:NSDateFormatterNoStyle];
-    });
-    return [formatter stringFromDate:date];
-}
-
-// Filled stars, the way a rating was shown in 2003.
-static NSString *BTStarsString(NSInteger rating) {
-    if (rating <= 0) return @"";
-    NSMutableString *stars = [NSMutableString string];
-    NSInteger i;
-    for (i = 0; i < rating && i < 5; i++) [stars appendString:@"★"];
-    return stars;
-}
 
 // The source list holds three kinds of row: the library, an attached iPod, and
 // playlists. Anything reaching for a playlist's own members has to ask first,
@@ -111,201 +74,6 @@ static CGFloat BTTitleBarHeight(void) {
     NSRect frame = [NSWindow frameRectForContentRect:content styleMask:NSTitledWindowMask];
     return NSHeight(frame) - NSHeight(content);
 }
-
-#pragma mark - Chrome
-
-@interface BTChromeView : NSView
-// The readout and the search field are placed by hand on every resize, so the
-// search field can take the slack rather than leaving a gap beside it.
-@property (nonatomic, copy) void (^layoutHandler)(void);
-@end
-
-@implementation BTChromeView
-- (BOOL)isOpaque { return YES; }
-- (void)drawRect:(NSRect)dirtyRect {
-    [BTStyle drawChromeInRect:[self bounds]];
-}
-- (void)resizeSubviewsWithOldSize:(NSSize)oldSize {
-    [super resizeSubviewsWithOldSize:oldSize];
-    if (self.layoutHandler) self.layoutHandler();
-}
-@end
-
-#pragma mark - Bottom bar
-
-@interface BTBottomBarView : NSView
-@property (nonatomic, copy) NSString *statusText;
-@end
-
-@implementation BTBottomBarView
-- (BOOL)isOpaque { return YES; }
-- (void)drawRect:(NSRect)dirtyRect {
-    NSRect bounds = [self bounds];
-    [BTStyle drawVerticalGradientInRect:bounds from:[BTStyle chromeTop] to:[BTStyle chromeBottom]];
-    [[BTStyle chromeEdge] set];
-    NSRectFill(NSMakeRect(0, NSMaxY(bounds) - 1, NSWidth(bounds), 1));
-
-    if ([self.statusText length] > 0) {
-        NSMutableParagraphStyle *centered = [[NSMutableParagraphStyle alloc] init];
-        [centered setAlignment:NSCenterTextAlignment];
-        NSDictionary *attrs = @{NSFontAttributeName: [BTStyle uiFont],
-                                NSForegroundColorAttributeName: [NSColor colorWithCalibratedWhite:0.25 alpha:1.0],
-                                NSParagraphStyleAttributeName: centered};
-        // Leave the right end clear for the three buttons.
-        CGFloat reserved = 84.0;
-        [self.statusText drawInRect:NSMakeRect(reserved, NSMidY(bounds) - 7, NSWidth(bounds) - reserved * 2, 14)
-                     withAttributes:attrs];
-    }
-}
-@end
-
-#pragma mark - Source list cell
-
-@interface BTSourceCell : NSTextFieldCell
-@property (nonatomic, strong) NSImage *icon;
-@property (nonatomic, assign) BOOL showsEject;
-@end
-
-@implementation BTSourceCell
-
-// Where the eject mark sits inside a row, so the row and the click test agree.
-+ (NSRect)ejectRectInFrame:(NSRect)frame {
-    return NSMakeRect(NSMaxX(frame) - 18, NSMidY(frame) - 6, 12, 12);
-}
-
-- (void)drawInteriorWithFrame:(NSRect)frame inView:(NSView *)view {
-    if (self.showsEject) {
-        [BTStyle drawEjectGlyphInRect:[BTSourceCell ejectRectInFrame:frame]
-                                color:[NSColor colorWithCalibratedWhite:0.30 alpha:1.0]];
-    }
-
-    // A few points of air on the left, so the icon does not sit against the
-    // disclosure triangle on rows that have one.
-    NSRect content = frame;
-    content.origin.x += 5.0;
-    content.size.width -= 5.0;
-
-    NSRect textFrame = content;
-    if (self.showsEject) textFrame.size.width -= 20;
-    if (self.icon) {
-        NSRect iconFrame = NSMakeRect(NSMinX(content), NSMidY(content) - 7, 14, 14);
-        [self.icon drawInRect:iconFrame
-                     fromRect:NSZeroRect
-                    operation:NSCompositeSourceOver
-                     fraction:1.0
-               respectFlipped:YES
-                        hints:nil];
-        textFrame.origin.x += 18;
-        textFrame.size.width -= 18;
-    }
-    textFrame.origin.y += 1;
-    [super drawInteriorWithFrame:textFrame inView:view];
-}
-
-@end
-
-// Track number cell that shows the speaker instead of the number while its row
-// is the one playing, so the indicator needs no column of its own.
-@interface BTTrackNumberCell : NSTextFieldCell
-@property (nonatomic, strong) NSImage *indicator;
-@end
-
-@implementation BTTrackNumberCell
-
-- (void)drawInteriorWithFrame:(NSRect)frame inView:(NSView *)view {
-    if (self.indicator == nil) {
-        [super drawInteriorWithFrame:frame inView:view];
-        return;
-    }
-    NSSize size = [self.indicator size];
-    NSRect box = NSMakeRect(NSMidX(frame) - size.width / 2,
-                            NSMidY(frame) - size.height / 2,
-                            size.width, size.height);
-    [self.indicator drawInRect:box
-                      fromRect:NSZeroRect
-                     operation:NSCompositeSourceOver
-                      fraction:1.0
-                respectFlipped:YES
-                         hints:nil];
-}
-
-@end
-
-#pragma mark - Tables that answer the delete key
-
-@protocol BTKeyTableDelegate <NSObject>
-- (void)tableViewDeletePressed:(NSTableView *)tableView;
-@end
-
-// The window catches transport keys that no view claimed.
-@interface BTMainWindow : NSWindow
-@end
-
-@implementation BTMainWindow
-- (void)keyDown:(NSEvent *)event {
-    if (BTHandleTransportKey(event, self, YES)) return;
-    [super keyDown:event];
-}
-@end
-
-@interface BTKeyTableView : BTListTableView
-@end
-
-@implementation BTKeyTableView
-- (void)keyDown:(NSEvent *)event {
-    if (BTHandleDeleteKey(event, self)) return;
-    if (BTHandleTransportKey(event, self, NO)) return;
-    [super keyDown:event];
-}
-@end
-
-@interface BTKeyOutlineView : BTListOutlineView
-@end
-
-@implementation BTKeyOutlineView
-
-// A click on the eject mark ejects rather than selecting the row.
-- (void)mouseDown:(NSEvent *)event {
-    NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
-    NSInteger row = [self rowAtPoint:point];
-    if (row >= 0) {
-        NSCell *cell = [self preparedCellAtColumn:0 row:row];
-        if ([cell isKindOfClass:[BTSourceCell class]] && [(BTSourceCell *)cell showsEject]) {
-            NSRect frame = [self frameOfCellAtColumn:0 row:row];
-            if (NSPointInRect(point, [BTSourceCell ejectRectInFrame:frame])) {
-                [NSApp sendAction:@selector(ejectIPod:) to:nil from:self];
-                return;
-            }
-        }
-    }
-    [super mouseDown:event];
-}
-
-- (void)keyDown:(NSEvent *)event {
-    if (BTHandleDeleteKey(event, self)) return;
-
-    unichar key = [[event charactersIgnoringModifiers] length] > 0
-        ? [[event charactersIgnoringModifiers] characterAtIndex:0] : 0;
-
-    // On a folder, the arrows open and close it. Everywhere else in this list
-    // they skip tracks, which is what they do in the rest of the window.
-    if (key == NSLeftArrowFunctionKey || key == NSRightArrowFunctionKey) {
-        NSInteger row = [self selectedRow];
-        id item = (row >= 0) ? [self itemAtRow:row] : nil;
-        if (item && [self isExpandable:item]) {
-            if (key == NSRightArrowFunctionKey) {
-                [self expandItem:item];
-            } else {
-                [self collapseItem:item];
-            }
-            return;
-        }
-    }
-
-    if (BTHandleTransportKey(event, self, NO)) return;
-    [super keyDown:event];
-}
-@end
 
 #pragma mark - Controller
 
@@ -668,7 +436,7 @@ static CGFloat BTTitleBarHeight(void) {
 
     _trackTable = [[BTKeyTableView alloc] initWithFrame:[[trackScroll contentView] bounds]];
     [_trackTable setFocusRingType:NSFocusRingTypeNone];
-    [self addTrackColumns];
+    BTAddTrackColumns(_trackTable);
     [_trackTable setRowHeight:17.0];
     [_trackTable setUsesAlternatingRowBackgroundColors:YES];
     [_trackTable setAllowsMultipleSelection:YES];
@@ -709,103 +477,6 @@ static CGFloat BTTitleBarHeight(void) {
     [_outerSplit addSubview:_innerSplit];
 }
 
-// Everything a column is, in one place.
-//
-// Two numbers here are easy to confuse, so they are two columns. Track is the
-// song's place on its album: it belongs to the song and reads the same wherever
-// the song appears. Order is the song's place in the playlist, and the same song
-// sits at a different number in every playlist that holds it. Both are made and
-// one is hidden at a time, since making them once keeps whatever width they have
-// been dragged to.
-//
-// Three separate lists of identifiers used to say what is written here: which
-// columns count something, which have no heading, and which may be hidden. A
-// column added to the specs and forgotten in one of the three was wrong in a way
-// nothing reported.
-//
-// Two things are still said elsewhere and have to be: what a column sorts by,
-// and how its value is read off a song. Neither is a fact about the column that
-// a table can hold, so both are chains further down, and a new column needs an
-// arm in each.
-typedef struct {
-    __unsafe_unretained NSString *identifier;
-    __unsafe_unretained NSString *heading;
-    CGFloat width;
-    CGFloat minimum;
-    CGFloat maximum;
-    BOOL shown;         // before the reader has hidden or shown anything
-    BOOL counts;        // a number: set to the right, and kept narrow
-    BOOL isPosition;    // may carry the speaker for the row that is playing
-    BOOL canBeHidden;   // offered in the menu on the header
-} BTColumnSpec;
-
-// Song Name cannot be hidden, since a list of songs with no names is not a view
-// anyone wants. Neither can the two the source decides: the mark, and #, which
-// is there for a playlist and not for the library.
-//
-// Track is last on purpose. It can be dragged anywhere and stays where it is
-// put; this is only where it starts.
-static const BTColumnSpec BTTrackColumns[] = {
-//    identifier      heading         width  min  max  shown  counts  position  hideable
-    { @"playing",     @"",             18,   18,  18,  YES,   NO,     YES,      NO  },
-    { @"order",       @"#",            38,   30,  54,  YES,   YES,    YES,      NO  },
-    { @"title",       @"Song Name",   240,   80, 900,  YES,   NO,     NO,       NO  },
-    { @"time",        @"Time",         52,   44,  72,  YES,   YES,    NO,       YES },
-    { @"artist",      @"Artist",      160,   70, 600,  YES,   NO,     NO,       YES },
-    { @"albumArtist", @"Album Artist",160,   70, 600,  NO,    NO,     NO,       YES },
-    { @"album",       @"Album",       160,   70, 600,  YES,   NO,     NO,       YES },
-    { @"genre",       @"Genre",       110,   60, 400,  YES,   NO,     NO,       YES },
-    { @"composer",    @"Composer",    140,   70, 500,  NO,    NO,     NO,       YES },
-    { @"year",        @"Year",         54,   46,  80,  NO,    YES,    NO,       YES },
-    { @"kind",        @"Kind",        120,   60, 300,  NO,    NO,     NO,       YES },
-    { @"disc",        @"Disc",         46,   38,  70,  NO,    YES,    NO,       YES },
-    { @"rating",      @"My Rating",    84,   60, 120,  NO,    NO,     NO,       YES },
-    { @"playCount",   @"Play Count",   80,   66, 110,  YES,   YES,    NO,       YES },
-    { @"lastPlayed",  @"Last Played", 110,   80, 180,  NO,    NO,     NO,       YES },
-    { @"dateAdded",   @"Date Added",  110,   80, 180,  NO,    NO,     NO,       YES },
-    { @"size",        @"Size",         70,   56, 100,  NO,    YES,    NO,       YES },
-    { @"track",       @"Track",        46,   38,  62,  YES,   YES,    YES,      YES },
-};
-
-#define BT_TRACK_COLUMN_COUNT (sizeof(BTTrackColumns) / sizeof(BTTrackColumns[0]))
-
-static const BTColumnSpec *BTColumnSpecFor(NSString *identifier) {
-    NSUInteger i;
-    for (i = 0; i < BT_TRACK_COLUMN_COUNT; i++) {
-        if ([BTTrackColumns[i].identifier isEqualToString:identifier]) return &BTTrackColumns[i];
-    }
-    return NULL;
-}
-
-- (void)addTrackColumns {
-    NSUInteger i;
-    for (i = 0; i < BT_TRACK_COLUMN_COUNT; i++) {
-        const BTColumnSpec *spec = &BTTrackColumns[i];
-
-        NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:spec->identifier];
-        [[column headerCell] setStringValue:spec->heading];
-        [[column headerCell] setFont:[BTStyle uiFont]];
-        [column setWidth:spec->width];
-        [column setMinWidth:spec->minimum];
-        [column setMaxWidth:spec->maximum];
-        [column setHidden:!spec->shown];
-        [column setEditable:NO];
-
-        NSTextFieldCell *cell = spec->isPosition ? [[BTTrackNumberCell alloc] init]
-                                                 : [[NSTextFieldCell alloc] init];
-        [cell setFont:[BTStyle uiFont]];
-        // Truncated with an ellipsis rather than clipped: a clipped cell cuts
-        // mid-word and reads as though the tag itself is broken.
-        if (!spec->isPosition) [cell setLineBreakMode:NSLineBreakByTruncatingTail];
-        if (spec->counts) {
-            [cell setAlignment:NSRightTextAlignment];
-            [[column headerCell] setAlignment:NSRightTextAlignment];
-        }
-        [column setDataCell:cell];
-        [_trackTable addTableColumn:column];
-    }
-}
-
 - (void)updateColumnLayout {
     NSTableColumn *order = [_trackTable tableColumnWithIdentifier:@"order"];
     [order setHidden:!_showsPlaylistOrder];
@@ -813,10 +484,6 @@ static const BTColumnSpec *BTColumnSpecFor(NSString *identifier) {
 
 #pragma mark - Choosing columns
 
-- (BOOL)columnCanBeHidden:(NSTableColumn *)column {
-    const BTColumnSpec *spec = BTColumnSpecFor([column identifier]);
-    return spec ? spec->canBeHidden : NO;
-}
 
 - (NSMenuItem *)sourceItemTitled:(NSString *)title action:(SEL)action {
     NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:action keyEquivalent:@""];
@@ -830,7 +497,7 @@ static const BTColumnSpec *BTColumnSpecFor(NSString *identifier) {
     NSUInteger i;
     for (i = 0; i < [columns count]; i++) {
         NSTableColumn *column = [columns objectAtIndex:i];
-        if (![self columnCanBeHidden:column]) continue;
+        if (!BTColumnCanBeHidden([column identifier])) continue;
 
         NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:[[column headerCell] stringValue]
                                                       action:@selector(toggleColumn:)
@@ -855,7 +522,7 @@ static const BTColumnSpec *BTColumnSpecFor(NSString *identifier) {
     NSUInteger i;
     for (i = 0; i < [columns count]; i++) {
         NSTableColumn *column = [columns objectAtIndex:i];
-        if ([self columnCanBeHidden:column] && [column isHidden]) {
+        if (BTColumnCanBeHidden([column identifier]) && [column isHidden]) {
             [hidden addObject:[column identifier]];
         }
     }
@@ -870,7 +537,7 @@ static const BTColumnSpec *BTColumnSpecFor(NSString *identifier) {
     NSUInteger i;
     for (i = 0; i < [columns count]; i++) {
         NSTableColumn *column = [columns objectAtIndex:i];
-        if (![self columnCanBeHidden:column]) continue;
+        if (!BTColumnCanBeHidden([column identifier])) continue;
         [column setHidden:[hidden containsObject:[column identifier]]];
     }
 }
@@ -1238,70 +905,6 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     return BTPlaylistFromSource(_selectedSource) ? @"order" : @"track";
 }
 
-- (NSArray *)sortTracks:(NSArray *)tracks {
-    NSString *key = _sortColumn;
-    if (key == nil) return tracks;   // the source's own order
-    BOOL ascending = _sortAscending;
-    NSDictionary *order = _sourceOrder;
-
-    return [tracks sortedArrayUsingComparator:^NSComparisonResult(id a, id b) {
-        BTTrack *left = a, *right = b;
-        NSComparisonResult result = NSOrderedSame;
-
-        if ([key isEqualToString:@"order"]) {
-            // The playlist's own order, which is the order it was built in.
-            result = BTCompareNumbers([[order objectForKey:left.trackID] doubleValue],
-                                      [[order objectForKey:right.trackID] doubleValue]);
-        } else if ([key isEqualToString:@"track"]) {
-            // A track number only means something within an album, so albums
-            // stay together and disc and track order the songs inside them.
-            result = [[left displayAlbum] caseInsensitiveCompare:[right displayAlbum]];
-            if (result == NSOrderedSame) result = BTCompareNumbers(left.discNumber, right.discNumber);
-            if (result == NSOrderedSame) result = BTCompareNumbers(left.trackNumber, right.trackNumber);
-        } else if ([key isEqualToString:@"title"]) {
-            result = [[left displayTitle] caseInsensitiveCompare:[right displayTitle]];
-        } else if ([key isEqualToString:@"album"]) {
-            result = [[left displayAlbum] caseInsensitiveCompare:[right displayAlbum]];
-            if (result == NSOrderedSame) result = BTCompareNumbers(left.discNumber, right.discNumber);
-            if (result == NSOrderedSame) result = BTCompareNumbers(left.trackNumber, right.trackNumber);
-        } else if ([key isEqualToString:@"genre"]) {
-            result = [[left displayGenre] caseInsensitiveCompare:[right displayGenre]];
-        } else if ([key isEqualToString:@"albumArtist"]) {
-            result = [BTStringOrEmpty(left.albumArtist) caseInsensitiveCompare:BTStringOrEmpty(right.albumArtist)];
-        } else if ([key isEqualToString:@"composer"]) {
-            result = [BTStringOrEmpty(left.composer) caseInsensitiveCompare:BTStringOrEmpty(right.composer)];
-        } else if ([key isEqualToString:@"kind"]) {
-            result = [BTStringOrEmpty(left.kind) caseInsensitiveCompare:BTStringOrEmpty(right.kind)];
-        } else if ([key isEqualToString:@"time"]) {
-            result = BTCompareNumbers(left.duration, right.duration);
-        } else if ([key isEqualToString:@"playCount"]) {
-            result = BTCompareNumbers(left.playCount, right.playCount);
-        } else if ([key isEqualToString:@"year"]) {
-            result = BTCompareNumbers(left.year, right.year);
-        } else if ([key isEqualToString:@"disc"]) {
-            result = BTCompareNumbers(left.discNumber, right.discNumber);
-        } else if ([key isEqualToString:@"rating"]) {
-            result = BTCompareNumbers(left.rating, right.rating);
-        } else if ([key isEqualToString:@"size"]) {
-            result = BTCompareNumbers((double)left.fileSize, (double)right.fileSize);
-        } else if ([key isEqualToString:@"dateAdded"]) {
-            // Never played and never added sort together at the bottom rather
-            // than landing in 1970.
-            result = BTCompareNumbers(BTTimeOrZero(left.dateAdded), BTTimeOrZero(right.dateAdded));
-        } else if ([key isEqualToString:@"lastPlayed"]) {
-            result = BTCompareNumbers(BTTimeOrZero(left.lastPlayed), BTTimeOrZero(right.lastPlayed));
-        } else {
-            // Artist, then album, then track number: the order iTunes falls back to.
-            result = [[left displayArtist] caseInsensitiveCompare:[right displayArtist]];
-            if (result == NSOrderedSame) result = [[left displayAlbum] caseInsensitiveCompare:[right displayAlbum]];
-            if (result == NSOrderedSame) result = BTCompareNumbers(left.trackNumber, right.trackNumber);
-        }
-
-        if (result == NSOrderedSame) result = [[left displayTitle] caseInsensitiveCompare:[right displayTitle]];
-        return ascending ? result : -result;
-    }];
-}
-
 // Folders come up open, since a closed one hides the playlists it holds. One
 // you have closed yourself stays closed: the list is rebuilt on every library
 // change, and without remembering that, playing a song would open it again.
@@ -1468,7 +1071,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
 // current sort order. The browser can narrow on its own without the source or
 // the search changing, so this is the smaller of the two reloads.
 - (void)reloadTrackList {
-    _visibleTracks = [self sortTracks:[_browser filteredTracks]];
+    _visibleTracks = BTSortTracks([_browser filteredTracks], _sortColumn, _sortAscending, _sourceOrder);
     [_trackTable reloadData];
     [self updateStatus];
 }
@@ -1757,41 +1360,9 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     objectValueForTableColumn:(NSTableColumn *)tableColumn
                           row:(NSInteger)row {
     if (row < 0 || row >= (NSInteger)[_visibleTracks count]) return nil;
-    BTTrack *track = [_visibleTracks objectAtIndex:(NSUInteger)row];
-    NSString *identifier = [tableColumn identifier];
-
-    if ([identifier isEqualToString:@"playing"]) return @"";
-    if ([identifier isEqualToString:@"order"]) {
-        NSNumber *place = [_sourceOrder objectForKey:track.trackID];
-        return place ? [NSString stringWithFormat:@"%ld", (long)[place integerValue]] : @"";
-    }
-    if ([identifier isEqualToString:@"track"]) {
-        return track.trackNumber > 0 ? [NSString stringWithFormat:@"%ld", (long)track.trackNumber] : @"";
-    }
-    if ([identifier isEqualToString:@"title"]) return [track displayTitle];
-    if ([identifier isEqualToString:@"time"]) return [track durationString];
-    if ([identifier isEqualToString:@"artist"]) return [track displayArtist];
-    if ([identifier isEqualToString:@"album"]) return [track displayAlbum];
-    if ([identifier isEqualToString:@"genre"]) return (track.genre ? track.genre : @"");
-    if ([identifier isEqualToString:@"albumArtist"]) return (track.albumArtist ? track.albumArtist : @"");
-    if ([identifier isEqualToString:@"composer"]) return (track.composer ? track.composer : @"");
-    if ([identifier isEqualToString:@"kind"]) return (track.kind ? track.kind : @"");
-    if ([identifier isEqualToString:@"rating"]) return BTStarsString(track.rating);
-    if ([identifier isEqualToString:@"lastPlayed"]) return BTShortDateString(track.lastPlayed);
-    if ([identifier isEqualToString:@"dateAdded"]) return BTShortDateString(track.dateAdded);
-    if ([identifier isEqualToString:@"size"]) {
-        return track.fileSize > 0 ? BTSizeString(track.fileSize) : @"";
-    }
-    if ([identifier isEqualToString:@"year"]) {
-        return track.year > 0 ? [NSString stringWithFormat:@"%ld", (long)track.year] : @"";
-    }
-    if ([identifier isEqualToString:@"disc"]) {
-        return track.discNumber > 0 ? [NSString stringWithFormat:@"%ld", (long)track.discNumber] : @"";
-    }
-    if ([identifier isEqualToString:@"playCount"]) {
-        return track.playCount > 0 ? [NSString stringWithFormat:@"%ld", (long)track.playCount] : @"";
-    }
-    return nil;
+    return BTTrackColumnValue([tableColumn identifier],
+                              [_visibleTracks objectAtIndex:(NSUInteger)row],
+                              _sourceOrder);
 }
 
 - (void)tableView:(NSTableView *)tableView
