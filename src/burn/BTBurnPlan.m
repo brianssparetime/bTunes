@@ -97,10 +97,6 @@ static NSUInteger BTSectorsForSeconds(NSTimeInterval seconds) {
     return (NSTimeInterval)(([_songs count] - 1) * _gapSeconds);
 }
 
-- (NSTimeInterval)totalTime {
-    return [self audioTime] + [self gapTime];
-}
-
 // Summed per song rather than off the total, since each song rounds up to a
 // whole sector of its own.
 - (NSUInteger)sectors {

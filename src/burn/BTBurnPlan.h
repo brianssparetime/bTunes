@@ -45,9 +45,11 @@ typedef NS_ENUM(NSInteger, BTBurnRefusal) {
 // between songs, so a playlist of twenty has nineteen of them.
 @property (nonatomic, assign) NSUInteger gapSeconds;
 
+// What the playlist runs to, and what it would take on a disc. The dialog only
+// ever asks for the sectors; the first two are here because the standing checks
+// measure them, which is how the sector arithmetic is held to an answer.
 - (NSTimeInterval)audioTime;
 - (NSTimeInterval)gapTime;
-- (NSTimeInterval)totalTime;
 - (NSUInteger)sectors;
 
 - (BTBurnRefusal)refusal;

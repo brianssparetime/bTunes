@@ -5,8 +5,6 @@
 // Posted whenever tracks or playlists change. The user interface reloads from
 // the library rather than tracking incremental edits.
 extern NSString *const BTLibraryDidChangeNotification;
-// Posted while an import is running. userInfo has "path" and "count".
-extern NSString *const BTLibraryImportProgressNotification;
 
 @interface BTLibrary : NSObject
 
@@ -14,7 +12,6 @@ extern NSString *const BTLibraryImportProgressNotification;
 
 @property (nonatomic, readonly) NSMutableArray *tracks;      // BTTrack
 @property (nonatomic, readonly) NSMutableArray *playlists;   // top-level BTPlaylist
-@property (nonatomic, readonly) BOOL importing;
 
 - (NSString *)libraryFilePath;
 // Where the library would sit with no setting chosen: the environment

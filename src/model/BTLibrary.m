@@ -7,12 +7,10 @@
 #import <AudioToolbox/AudioToolbox.h>
 
 NSString *const BTLibraryDidChangeNotification = @"BTLibraryDidChange";
-NSString *const BTLibraryImportProgressNotification = @"BTLibraryImportProgress";
 
 @interface BTLibrary ()
 @property (nonatomic, strong) NSMutableArray *tracks;
 @property (nonatomic, strong) NSMutableArray *playlists;
-@property (nonatomic, assign) BOOL importing;
 @property (nonatomic, strong) NSMutableSet *knownPaths;
 @property (nonatomic, strong) NSMutableSet *excluded;
 @end
@@ -437,7 +435,6 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
 }
 
 - (void)importPaths:(NSArray *)paths completion:(void (^)(NSUInteger added))completion {
-    self.importing = YES;
     NSArray *extensions = [BTLibrary supportedExtensions];
     NSSet *existing = [NSSet setWithSet:self.knownPaths];
 
@@ -474,14 +471,6 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
             if (t == nil) continue;
             [newTracks addObject:t];
 
-            if ([newTracks count] % 25 == 0) {
-                NSDictionary *info = @{@"path": file, @"count": @([newTracks count])};
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [[NSNotificationCenter defaultCenter] postNotificationName:BTLibraryImportProgressNotification
-                                                                        object:self
-                                                                      userInfo:info];
-                });
-            }
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -491,7 +480,6 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
                 [self.tracks addObject:t];
                 [self.knownPaths addObject:[t resolvedPath]];
             }
-            self.importing = NO;
             [self noteChanged];
             if (completion) completion([newTracks count]);
         });
