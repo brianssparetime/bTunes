@@ -24,6 +24,9 @@ static BTBurnController *sRunning = nil;
 + (void)releaseRunning;
 - (void)reserveDevices:(NSArray *)devices;
 - (void)refresh;
+- (void)setPreparing:(BOOL)preparing count:(NSUInteger)count;
+- (void)startBurnOf:(NSArray *)tracks with:(DRDevice *)device;
+- (void)refuse:(NSString *)text;
 @end
 
 @implementation BTBurnController {
@@ -43,6 +46,11 @@ static BTBurnController *sRunning = nil;
     NSButton *_verifyCheck;
     NSTextField *_status;
     BTPushButton *_burnButton;
+    BTPushButton *_cancelButton;
+    // Set while the trimmed songs are being written out. Nothing can be
+    // touched then, including Cancel: a half-decoded song has no clean place
+    // to stop and the wait is seconds rather than minutes.
+    BOOL _preparing;
     // A refusal that no longer follows from what the dialog can see. A file
     // that has gone since the plan was made does not come back because a tray
     // was opened, so the reason has to stick rather than being recomputed away.
@@ -138,12 +146,13 @@ static BTBurnController *sRunning = nil;
     _status = [self wrappingLabelWithFont:[BTStyle uiFont]];
     [content addSubview:_status];
 
-    BTPushButton *cancel = [BTPushButton buttonWithTitle:@"Cancel"
-                                                  target:self
-                                                  action:@selector(cancel:)];
-    [cancel setFrame:NSMakeRect(BT_BURN_SHEET_WIDTH - 190, 14, 80, NSHeight([cancel frame]))];
-    [cancel setKeyEquivalent:@"\033"];
-    [content addSubview:cancel];
+    _cancelButton = [BTPushButton buttonWithTitle:@"Cancel"
+                                           target:self
+                                           action:@selector(cancel:)];
+    [_cancelButton setFrame:NSMakeRect(BT_BURN_SHEET_WIDTH - 190, 14, 80,
+                                       NSHeight([_cancelButton frame]))];
+    [_cancelButton setKeyEquivalent:@"\033"];
+    [content addSubview:_cancelButton];
 
     _burnButton = [BTPushButton buttonWithTitle:@"Burn" target:self action:@selector(burn:)];
     [_burnButton setFrame:NSMakeRect(BT_BURN_SHEET_WIDTH - 104, 14, 84, NSHeight([_burnButton frame]))];
@@ -219,7 +228,7 @@ static BTBurnController *sRunning = nil;
         [_drivePopUp addItemWithTitle:@"No disc burner"];
         [_drivePopUp setEnabled:NO];
     } else {
-        [_drivePopUp setEnabled:YES];
+        [_drivePopUp setEnabled:!_preparing];
         for (i = 0; i < [_devices count]; i++) {
             if (wasSelected && [[_devices objectAtIndex:i] isEqualToDevice:wasSelected]) {
                 [_drivePopUp selectItemAtIndex:(NSInteger)i];
@@ -260,16 +269,23 @@ static BTBurnController *sRunning = nil;
     NSUInteger trimmed = [[_plan trimmed] count];
     if (trimmed > 0) {
         [_note setStringValue:[NSString stringWithFormat:
-            @"%lu song%@ here %@ a start or end time. The disc gets the whole file, since "
-            @"the times are BTunes' own and the disc has nowhere to keep them.",
+            @"%lu song%@ here %@ a start or end time. The disc gets the part that plays, "
+            @"so %@ converted first and Burn takes a moment to begin.",
             (unsigned long)trimmed, (trimmed == 1 ? @"" : @"s"),
-            (trimmed == 1 ? @"has" : @"have")]];
+            (trimmed == 1 ? @"has" : @"have"),
+            (trimmed == 1 ? @"it is" : @"they are")]];
     } else {
         [_note setStringValue:@""];
     }
 
+    if (_preparing) {
+        [self layoutWindow];
+        return;
+    }
+
     NSString *problem = _blocked;
     if (problem == nil) problem = [_plan refusalText];
+    if (problem == nil) problem = [_plan problemWithScratchSpace];
     if (problem == nil) problem = [_plan problemWithDisc:[self selectedDevice]];
 
     [_status setStringValue:(problem ? problem
@@ -376,13 +392,52 @@ static BTBurnController *sRunning = nil;
         return;
     }
 
-    NSString *reason = nil;
-    NSArray *tracks = [_plan buildTracks:&reason];
-    if (tracks == nil) {
-        [self refuse:(reason ? reason : @"This playlist cannot be burned.")];
+    NSString *tight = [_plan problemWithScratchSpace];
+    if (tight != nil) {
+        [self refuse:tight];
         return;
     }
 
+    // Decoding the trimmed songs is the slow part and none of it needs the
+    // window to wait, so it happens off the main thread with the dialog saying
+    // what it is doing. Everything after it is back on the main thread, which
+    // is where the drive is spoken to.
+    NSUInteger trimmed = [[_plan trimmed] count];
+    [self setPreparing:(trimmed > 0) count:trimmed];
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSString *reason = nil;
+        NSArray *tracks = [self->_plan buildTracks:&reason];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self setPreparing:NO count:0];
+            if (tracks == nil) {
+                [self refuse:(reason ? reason : @"This playlist cannot be burned.")];
+                return;
+            }
+            [self startBurnOf:tracks with:device];
+        });
+    });
+}
+
+// Nothing can be pressed while a song is being decoded, and the reason it
+// cannot is on screen rather than left to be guessed at.
+- (void)setPreparing:(BOOL)preparing count:(NSUInteger)count {
+    _preparing = preparing;
+    [_burnButton setEnabled:!preparing];
+    [_cancelButton setEnabled:!preparing];
+    [_drivePopUp setEnabled:(!preparing && [_devices count] > 0)];
+    [_gapPopUp setEnabled:!preparing];
+    [_verifyCheck setEnabled:!preparing];
+
+    if (preparing) {
+        [_status setStringValue:[NSString stringWithFormat:
+            @"Converting %lu song%@ to the part that plays...",
+            (unsigned long)count, (count == 1 ? @"" : @"s")]];
+        [self layoutWindow];
+    }
+}
+
+- (void)startBurnOf:(NSArray *)tracks with:(DRDevice *)device {
     DRBurn *burn = [DRBurn burnForDevice:device];
     NSMutableDictionary *properties = [NSMutableDictionary dictionary];
     NSDictionary *existing = [burn properties];
@@ -440,6 +495,9 @@ static BTBurnController *sRunning = nil;
 - (void)burnProgressPanelDidFinish:(NSNotification *)note {
     DRBurnProgressPanel *panel = [note object];
     [panel setDelegate:nil];
+    // The framework read these for the whole burn, so this is the first moment
+    // they can go.
+    [_plan removeScratch];
     [BTBurnController releaseRunning];
 }
 

@@ -2,6 +2,7 @@
 #import "BTPlaylist.h"
 #import "BTTrack.h"
 #import <DiscRecording/DiscRecording.h>
+#import <AudioToolbox/AudioToolbox.h>
 
 const NSUInteger BTBurnSectorsPerSecond = 75;
 const NSUInteger BTBurnNominalDiscSectors = 360000;   // 80 minutes, the standard blank
@@ -9,6 +10,14 @@ const NSUInteger BTBurnNominalDiscSectors = 360000;   // 80 minutes, the standar
 @interface BTBurnPlan ()
 + (BOOL)canBurnTrack:(BTTrack *)track;
 @end
+
+// What a song puts on the disc: the part BTunes plays, not the whole file. A
+// start or end time is honoured, so a run-in nobody wants is not burned and a
+// song sharing a file with another does not drag its neighbour along.
+static NSTimeInterval BTBurnLengthOfSong(BTTrack *song) {
+    NSTimeInterval length = [song playbackEnd] - [song playbackStart];
+    return (length > 0) ? length : 0;
+}
 
 // A CD track is a whole number of sectors, so a song always costs at least the
 // sector its last fraction of a second lands in.
@@ -21,6 +30,9 @@ static NSUInteger BTSectorsForSeconds(NSTimeInterval seconds) {
     NSMutableArray *_songs;
     NSMutableArray *_unreadable;
     NSMutableArray *_trimmed;
+    // Where the trimmed copies were written, held so they can be thrown away
+    // once the burn that reads them is over.
+    NSString *_scratch;
 }
 
 @synthesize name = _name;
@@ -71,13 +83,11 @@ static NSUInteger BTSectorsForSeconds(NSTimeInterval seconds) {
 
 #pragma mark - What it would take on a disc
 
-// The whole file, not the part BTunes plays. A start or end time is a BTunes
-// idea; the framework is handed a file and burns all of it.
 - (NSTimeInterval)audioTime {
     NSTimeInterval total = 0;
     NSUInteger i;
     for (i = 0; i < [_songs count]; i++) {
-        total += [[_songs objectAtIndex:i] duration];
+        total += BTBurnLengthOfSong([_songs objectAtIndex:i]);
     }
     return total;
 }
@@ -96,7 +106,7 @@ static NSUInteger BTSectorsForSeconds(NSTimeInterval seconds) {
 - (NSUInteger)sectors {
     NSUInteger total = 0, i;
     for (i = 0; i < [_songs count]; i++) {
-        total += BTSectorsForSeconds([[_songs objectAtIndex:i] duration]);
+        total += BTSectorsForSeconds(BTBurnLengthOfSong([_songs objectAtIndex:i]));
     }
     return total + BTSectorsForSeconds([self gapTime]);
 }
@@ -143,13 +153,190 @@ static NSUInteger BTSectorsForSeconds(NSTimeInterval seconds) {
     return nil;
 }
 
+#pragma mark - Writing out the part that plays
+
+// The framework takes a file and burns all of it, so the only way to give the
+// disc a start or an end time is to hand it a file that already has them: the
+// played range decoded to an AIFF beside the burn.
+//
+// The copy keeps the source's own rate and channel count and changes nothing
+// but the trim, because the framework converts to Red Book itself and it is
+// better at that than a second conversion written here would be.
+static NSString *BTWriteTrimmedCopy(BTTrack *song, NSString *directory,
+                                    NSUInteger index, NSString **reason) {
+    NSURL *source = [song fileURL];
+    if (source == nil) {
+        if (reason) *reason = @"has no file";
+        return nil;
+    }
+
+    ExtAudioFileRef in = NULL, out = NULL;
+    NSString *written = nil;
+    SInt16 *buffer = NULL;
+    NSString *trouble = nil;
+
+    do {
+        if (ExtAudioFileOpenURL((__bridge CFURLRef)source, &in) != noErr || in == NULL) {
+            trouble = @"could not be opened";
+            break;
+        }
+
+        AudioStreamBasicDescription sourceFormat;
+        UInt32 size = sizeof(sourceFormat);
+        if (ExtAudioFileGetProperty(in, kExtAudioFileProperty_FileDataFormat,
+                                    &size, &sourceFormat) != noErr) {
+            trouble = @"could not be read";
+            break;
+        }
+
+        double rate = (sourceFormat.mSampleRate > 0) ? sourceFormat.mSampleRate : 44100.0;
+        UInt32 channels = sourceFormat.mChannelsPerFrame;
+        if (channels < 1) channels = 2;
+        if (channels > 2) channels = 2;
+
+        // Sixteen-bit signed, which is what AIFF holds and what a CD is.
+        // Native byte order on the way through, big-endian in the file, and
+        // the framework swaps between the two.
+        AudioStreamBasicDescription client;
+        memset(&client, 0, sizeof(client));
+        client.mSampleRate = rate;
+        client.mFormatID = kAudioFormatLinearPCM;
+        client.mFormatFlags = kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
+        client.mChannelsPerFrame = channels;
+        client.mBitsPerChannel = 16;
+        client.mFramesPerPacket = 1;
+        client.mBytesPerFrame = 2 * channels;
+        client.mBytesPerPacket = client.mBytesPerFrame;
+
+        AudioStreamBasicDescription file = client;
+        file.mFormatFlags |= kAudioFormatFlagIsBigEndian;
+
+        if (ExtAudioFileSetProperty(in, kExtAudioFileProperty_ClientDataFormat,
+                                    sizeof(client), &client) != noErr) {
+            trouble = @"is in a form that cannot be trimmed";
+            break;
+        }
+
+        NSString *path = [directory stringByAppendingPathComponent:
+                          [NSString stringWithFormat:@"%02lu.aiff", (unsigned long)index]];
+        if (ExtAudioFileCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:path],
+                                      kAudioFileAIFFType, &file, NULL,
+                                      kAudioFileFlags_EraseFile, &out) != noErr || out == NULL) {
+            trouble = @"could not be written out";
+            break;
+        }
+        if (ExtAudioFileSetProperty(out, kExtAudioFileProperty_ClientDataFormat,
+                                    sizeof(client), &client) != noErr) {
+            trouble = @"could not be written out";
+            break;
+        }
+
+        SInt64 first = (SInt64)llround([song playbackStart] * rate);
+        SInt64 left = (SInt64)llround(BTBurnLengthOfSong(song) * rate);
+        if (first > 0 && ExtAudioFileSeek(in, first) != noErr) {
+            trouble = @"could not be wound to its start time";
+            break;
+        }
+
+        const UInt32 chunk = 16384;   // frames
+        buffer = malloc((size_t)chunk * client.mBytesPerFrame);
+        if (buffer == NULL) { trouble = @"could not be written out"; break; }
+
+        AudioBufferList list;
+        list.mNumberBuffers = 1;
+        list.mBuffers[0].mNumberChannels = channels;
+
+        while (left > 0) {
+            UInt32 want = (left < (SInt64)chunk) ? (UInt32)left : chunk;
+            list.mBuffers[0].mData = buffer;
+            list.mBuffers[0].mDataByteSize = want * client.mBytesPerFrame;
+
+            UInt32 got = want;
+            if (ExtAudioFileRead(in, &got, &list) != noErr) {
+                trouble = @"could not be read to its end time";
+                break;
+            }
+            // The file ended early. What was read is what there is, and the
+            // song is shorter than the library said rather than broken.
+            if (got == 0) break;
+
+            list.mBuffers[0].mDataByteSize = got * client.mBytesPerFrame;
+            if (ExtAudioFileWrite(out, got, &list) != noErr) {
+                trouble = @"could not be written out";
+                break;
+            }
+            left -= got;
+        }
+        if (trouble != nil) break;
+
+        written = path;
+    } while (0);
+
+    if (buffer) free(buffer);
+    if (in) ExtAudioFileDispose(in);
+    if (out) ExtAudioFileDispose(out);
+
+    if (written == nil && reason) *reason = (trouble ? trouble : @"could not be trimmed");
+    return written;
+}
+
 #pragma mark - Handing the framework the files
+
+- (BOOL)needsPreparation {
+    return [_trimmed count] > 0;
+}
+
+// Sixteen bits a sample, so a minute of stereo is about ten megabytes. Asked
+// before the reader is left waiting on a conversion that runs out of room
+// halfway through.
+- (NSString *)problemWithScratchSpace {
+    if (![self needsPreparation]) return nil;
+
+    long long needed = 0;
+    NSUInteger i;
+    for (i = 0; i < [_trimmed count]; i++) {
+        needed += (long long)(BTBurnLengthOfSong([_trimmed objectAtIndex:i]) * 44100.0 * 4.0);
+    }
+
+    NSString *temp = NSTemporaryDirectory();
+    NSDictionary *fs = [[NSFileManager defaultManager] attributesOfFileSystemForPath:temp error:NULL];
+    long long free = [[fs objectForKey:NSFileSystemFreeSize] longLongValue];
+    if (fs == nil || free == 0) return nil;   // nothing said is better than a guess
+
+    if (free < needed) {
+        return [NSString stringWithFormat:
+                @"Trimming %lu song%@ needs about %lld MB of scratch space and there is %lld MB.",
+                (unsigned long)[_trimmed count], ([_trimmed count] == 1 ? @"" : @"s"),
+                needed / (1024 * 1024), free / (1024 * 1024)];
+    }
+    return nil;
+}
+
+- (void)removeScratch {
+    if (_scratch == nil) return;
+    [[NSFileManager defaultManager] removeItemAtPath:_scratch error:NULL];
+    _scratch = nil;
+}
 
 // Built fresh on every burn rather than kept from when the dialog opened. The
 // window between the two is small, but a burn that starts and cannot finish
 // wastes a disc.
 - (NSArray *)buildTracks:(NSString **)reason {
     if (reason) *reason = nil;
+    [self removeScratch];
+
+    if ([self needsPreparation]) {
+        _scratch = [NSTemporaryDirectory() stringByAppendingPathComponent:
+                    [NSString stringWithFormat:@"BTunes Burn %@",
+                     [[NSProcessInfo processInfo] globallyUniqueString]]];
+        if (![[NSFileManager defaultManager] createDirectoryAtPath:_scratch
+                                      withIntermediateDirectories:YES
+                                                       attributes:nil error:NULL]) {
+            _scratch = nil;
+            if (reason) *reason = @"There is nowhere to write the trimmed songs.";
+            return nil;
+        }
+    }
 
     NSMutableArray *tracks = [NSMutableArray arrayWithCapacity:[_songs count]];
     NSUInteger i;
@@ -157,9 +344,28 @@ static NSUInteger BTSectorsForSeconds(NSTimeInterval seconds) {
         BTTrack *song = [_songs objectAtIndex:i];
         NSURL *url = [song fileURL];
 
+        // A song with a start or end time is burned from a copy holding only
+        // the part that plays, since the framework has no way to be told a
+        // range of a file.
+        if (song.usesStartTime || song.usesEndTime) {
+            NSString *why = nil;
+            NSString *copy = BTWriteTrimmedCopy(song, _scratch, i, &why);
+            if (copy == nil) {
+                [self removeScratch];
+                if (reason) {
+                    *reason = [NSString stringWithFormat:
+                               @"\"%@\" %@, so nothing has been written.",
+                               [song displayTitle], why];
+                }
+                return nil;
+            }
+            url = [NSURL fileURLWithPath:copy];
+        }
+
         DRAudioTrackRef ref = (url != nil)
             ? DRAudioTrackCreateWithURL((__bridge CFURLRef)url) : NULL;
         if (ref == NULL) {
+            [self removeScratch];
             if (reason) {
                 *reason = [NSString stringWithFormat:
                            @"\"%@\" could not be read as audio, so nothing has been written.",
@@ -182,6 +388,7 @@ static NSUInteger BTSectorsForSeconds(NSTimeInterval seconds) {
     }
 
     if ([tracks count] == 0) {
+        [self removeScratch];
         if (reason) *reason = @"There is nothing in this playlist to burn.";
         return nil;
     }

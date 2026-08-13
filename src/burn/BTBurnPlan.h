@@ -36,8 +36,9 @@ typedef NS_ENUM(NSInteger, BTBurnRefusal) {
 @property (nonatomic, readonly, copy) NSString *name;
 @property (nonatomic, readonly) NSArray *songs;        // BTTrack, in playlist order
 @property (nonatomic, readonly) NSArray *unreadable;   // the ones that stop the burn
-// Songs carrying a start or end time. The framework burns the file, so those
-// times do not reach the disc and the reader is told rather than surprised.
+// Songs carrying a start or end time. The disc gets what BTunes plays, which
+// the framework cannot do from the file alone, so each of these is written out
+// as a trimmed copy before the burn and costs time and scratch space.
 @property (nonatomic, readonly) NSArray *trimmed;
 
 // None, one second, or two, and two unless something says otherwise. Gaps sit
@@ -56,7 +57,20 @@ typedef NS_ENUM(NSInteger, BTBurnRefusal) {
 // The tracks the framework will burn, built fresh each time so a file that has
 // gone since the dialog opened is caught before anything is written. Nil when
 // the framework turns one down, with the reason in *reason.
+//
+// Slow when the playlist holds trimmed songs, since each one is decoded to a
+// copy of the part that plays. Call it off the main thread.
 - (NSArray *)buildTracks:(NSString **)reason;
+
+// Whether building the tracks will have to decode anything first, and why the
+// scratch space it would need is not there. Both are asked before the reader is
+// left waiting on a conversion that cannot finish.
+- (BOOL)needsPreparation;
+- (NSString *)problemWithScratchSpace;
+
+// Throws away the trimmed copies. Called once the burn is over, since the
+// framework reads them for its whole length.
+- (void)removeScratch;
 
 // The playlist name on the disc and the title and artist on each track, for
 // players that show them. Nil when there is nothing worth writing.
