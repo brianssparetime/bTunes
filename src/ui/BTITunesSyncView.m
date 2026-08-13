@@ -110,6 +110,10 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     [self addSubview:_syncButton];
 
     [self showComparingState];
+    // Laid out here as well as on resize. The pane is made at the size it is
+    // going to be, so nothing ever resizes it, and waiting for that leaves
+    // every one of these sitting at zero and the pane looking empty.
+    [self layoutPane];
     return self;
 }
 
@@ -183,8 +187,15 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
 #pragma mark - Layout
 
+// Both of these, because the split view resizes the pane by one route and the
+// window by the other, and being laid out twice costs nothing.
 - (void)resizeSubviewsWithOldSize:(NSSize)oldSize {
     [super resizeSubviewsWithOldSize:oldSize];
+    [self layoutPane];
+}
+
+- (void)setFrameSize:(NSSize)newSize {
+    [super setFrameSize:newSize];
     [self layoutPane];
 }
 
