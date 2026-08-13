@@ -74,6 +74,20 @@ typedef NS_ENUM(NSInteger, BTPathRoot) {
 - (NSTimeInterval)playbackStart;
 - (NSTimeInterval)playbackEnd;
 
+// How long a list of songs runs, said the way a person would say it: the
+// largest unit that gives a number worth saying, and the same time in minutes
+// after it.
+//
+// The units run minutes, hours, days, months, years, decades, centuries, and
+// the one used is the largest whose whole number reaches two. Forty-seven hours
+// stays in hours and forty-eight becomes two days, because "1 day" tells a
+// reader less than "25 hours" does.
+//
+// Minutes come second always, since that is the figure worth comparing one list
+// against another. Past a million of them the exact count stops meaning
+// anything and it is said in millions, then in billions.
++ (NSString *)runningTimeStringFromInterval:(NSTimeInterval)interval;
+
 + (instancetype)trackWithDictionary:(NSDictionary *)dict;
 - (NSDictionary *)dictionaryRepresentation;
 

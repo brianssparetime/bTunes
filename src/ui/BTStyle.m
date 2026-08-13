@@ -752,20 +752,4 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
     return [NSString stringWithFormat:@"%ld:%02ld", (long)minutes, (long)seconds];
 }
 
-+ (NSString *)longTimeStringFromInterval:(NSTimeInterval)interval {
-    NSInteger total = (NSInteger)interval;
-    NSInteger days = total / 86400;
-    NSInteger hours = (total % 86400) / 3600;
-    NSInteger minutes = (total % 3600) / 60;
-    NSInteger seconds = total % 60;
-
-    if (days > 0) {
-        return [NSString stringWithFormat:@"%ld days %ld hours", (long)days, (long)hours];
-    }
-    if (hours > 0) {
-        return [NSString stringWithFormat:@"%ld:%02ld:%02ld", (long)hours, (long)minutes, (long)seconds];
-    }
-    return [NSString stringWithFormat:@"%ld:%02ld", (long)minutes, (long)seconds];
-}
-
 @end

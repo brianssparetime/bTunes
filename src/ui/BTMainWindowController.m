@@ -1489,7 +1489,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     _bottomBar.statusText = [NSString stringWithFormat:@"%lu song%@, %@, %@",
                              (unsigned long)count,
                              (count == 1 ? @"" : @"s"),
-                             [BTStyle longTimeStringFromInterval:total],
+                             [BTTrack runningTimeStringFromInterval:total],
                              BTSizeString(bytes)];
     [_bottomBar setNeedsDisplay:YES];
 }

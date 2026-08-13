@@ -48,7 +48,66 @@ static NSDate *BTDate(NSDictionary *d, NSString *key) {
     return t > 0 ? [NSDate dateWithTimeIntervalSince1970:t] : nil;
 }
 
+// A month is the average Gregorian year in twelfths and a year is that same
+// average, because a library's running time is read at a glance rather than
+// counted to a date.
+typedef struct { const char *one; const char *many; double seconds; } BTRunningUnit;
+
+static const BTRunningUnit BTRunningUnits[] = {
+    { "century", "centuries", 3155695200.0 },
+    { "decade",  "decades",    315569520.0 },
+    { "year",    "years",       31556952.0 },
+    { "month",   "months",       2629746.0 },
+    { "day",     "days",           86400.0 },
+    { "hour",    "hours",           3600.0 },
+    { "minute",  "minutes",           60.0 },
+};
+
+// Past a million the digits stop carrying meaning, so they are dropped for a
+// word. A trailing nought after the point says nothing either: two million, not
+// two point nought million.
+static NSString *BTScaledCount(double value, NSString *word) {
+    NSString *number = [NSString stringWithFormat:@"%.1f", value];
+    if ([number hasSuffix:@".0"]) number = [number substringToIndex:[number length] - 2];
+    return [NSString stringWithFormat:@"%@ %@", number, word];
+}
+
+static NSString *BTMinuteCount(double minutes) {
+    if (minutes >= 1000000000.0) return BTScaledCount(minutes / 1000000000.0, @"billion");
+    if (minutes >= 1000000.0)    return BTScaledCount(minutes / 1000000.0, @"million");
+
+    // Grouped, because six figures of unbroken digits is not a number anyone
+    // reads at a glance.
+    static NSNumberFormatter *formatter = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        formatter = [[NSNumberFormatter alloc] init];
+        [formatter setNumberStyle:NSNumberFormatterDecimalStyle];
+        [formatter setMaximumFractionDigits:0];
+    });
+    return [formatter stringFromNumber:@(llround(minutes))];
+}
+
 @implementation BTTrack
+
++ (NSString *)runningTimeStringFromInterval:(NSTimeInterval)interval {
+    if (interval < 0 || isnan(interval)) interval = 0;
+
+    NSUInteger count = sizeof(BTRunningUnits) / sizeof(BTRunningUnits[0]);
+    NSUInteger i, chosen = count - 1;      // minutes, when nothing larger reaches two
+    for (i = 0; i < count; i++) {
+        if (floor(interval / BTRunningUnits[i].seconds) >= 2.0) { chosen = i; break; }
+    }
+
+    long long leading = (long long)floor(interval / BTRunningUnits[chosen].seconds);
+    const char *word = (leading == 1) ? BTRunningUnits[chosen].one : BTRunningUnits[chosen].many;
+    NSString *head = [NSString stringWithFormat:@"%lld %s", leading, word];
+
+    // Saying "5 minutes (5 minutes)" helps nobody.
+    if (chosen == count - 1) return head;
+
+    return [NSString stringWithFormat:@"%@ (%@ minutes)", head, BTMinuteCount(interval / 60.0)];
+}
 
 @synthesize path = _path;
 

@@ -96,6 +96,5 @@
 + (void)drawRepeatGlyphInRect:(NSRect)rect one:(BOOL)one color:(NSColor *)color;
 
 + (NSString *)timeStringFromInterval:(NSTimeInterval)interval;
-+ (NSString *)longTimeStringFromInterval:(NSTimeInterval)interval;
 
 @end
