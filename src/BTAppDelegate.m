@@ -4,6 +4,7 @@
 #import "BTSplashWindowController.h"
 #import "BTPreferencesController.h"
 #import "BTLibrary.h"
+#import "BTTrack.h"
 #import "BTPlayer.h"
 #import "BTIPod.h"
 
@@ -51,6 +52,70 @@
 // imported, and it blocked quitting while it was up. Bringing music over from
 // iTunes is a button on the window, which says the same thing without a dialog.
 - (void)finishLaunching {
+    [self checkForMissingFiles];
+}
+
+// Songs are played where they already sit, which means anything that moves or
+// deletes one of those files does it behind BTunes' back. Told at startup, the
+// gap is a day at worst and a backup still has the file; found months later, it
+// may not.
+//
+// Off the main thread, because asking the filesystem about several thousand
+// files is most of what a check like this costs and none of it needs the window
+// to wait. Nothing is removed either way: a file missing this morning may be a
+// volume that is not mounted, and the ratings hanging off the entry cannot be
+// got back while the audio usually can.
+- (void)checkForMissingFiles {
+    BTLibrary *library = [BTLibrary sharedLibrary];
+    if ([library.tracks count] == 0) return;
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+        NSArray *gone = [library tracksWithMissingFiles];
+        if ([gone count] == 0) return;
+
+        NSString *log = [library writeMissingFilesLog:gone];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self reportMissingFiles:gone log:log];
+        });
+    });
+}
+
+// A handful are named outright, since that is usually enough to recognise what
+// happened. Past that the names stop being a list and start being a wall, and
+// the log is the better place to read them.
+#define BT_MISSING_NAMED 10
+
+- (void)reportMissingFiles:(NSArray *)gone log:(NSString *)log {
+    NSUInteger count = [gone count];
+
+    NSMutableString *detail = [NSMutableString string];
+    if (count <= BT_MISSING_NAMED) {
+        NSUInteger i;
+        for (i = 0; i < count; i++) {
+            BTTrack *track = [gone objectAtIndex:i];
+            [detail appendFormat:@"%@ - %@\n", [track displayArtist], [track displayTitle]];
+        }
+        [detail appendString:@"\n"];
+    }
+
+    [detail appendString:@"Nothing has been removed. The ratings, play counts and playlist "
+                         @"membership are all still here, waiting for the files to come back."];
+    if ([log length] > 0) {
+        [detail appendFormat:@"\n\nThe full list is in:\n%@", log];
+    }
+
+    NSAlert *alert = [[NSAlert alloc] init];
+    [alert setMessageText:[NSString stringWithFormat:@"%lu song%@ %@ missing.",
+                           (unsigned long)count,
+                           (count == 1 ? @"" : @"s"),
+                           (count == 1 ? @"is" : @"are")]];
+    [alert setInformativeText:detail];
+    [alert addButtonWithTitle:@"OK"];
+    if ([log length] > 0) [alert addButtonWithTitle:@"Show Log"];
+
+    if ([alert runModal] == NSAlertSecondButtonReturn && [log length] > 0) {
+        [[NSWorkspace sharedWorkspace] selectFile:log inFileViewerRootedAtPath:@""];
+    }
 }
 
 // Running the executable directly, rather than through the bundle, leaves the

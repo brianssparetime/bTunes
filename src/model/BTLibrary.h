@@ -23,6 +23,20 @@ extern NSString *const BTLibraryImportProgressNotification;
 - (void)loadFromDisk;
 - (void)saveToDisk;
 
+// Tracks whose file is not where the library says it is.
+//
+// Reading only, and nothing is ever removed on the strength of it. A file that
+// is gone this morning may be a volume that is not mounted, a folder iTunes has
+// renamed, or a music root pointed somewhere else for the afternoon. The
+// ratings and play counts hanging off the entry cannot be got back, and the
+// audio usually can.
+- (NSArray *)tracksWithMissingFiles;
+
+// Writes those tracks out and returns where it put them, or nil if it could
+// not. Beside the database, since that is BTunes' own folder.
+- (NSString *)writeMissingFilesLog:(NSArray *)tracks;
+- (NSString *)missingFilesLogPath;
+
 // Recursively imports every supported audio file under the given paths. Files
 // already in the library are skipped. The completion block runs on the main
 // thread with the number of tracks added.

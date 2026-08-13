@@ -122,6 +122,52 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
     }
 }
 
+- (NSString *)missingFilesLogPath {
+    return [[self supportDirectory] stringByAppendingPathComponent:@"missing-files.log"];
+}
+
+- (NSArray *)tracksWithMissingFiles {
+    NSFileManager *files = [NSFileManager defaultManager];
+    NSMutableArray *gone = [NSMutableArray array];
+    NSUInteger i;
+    for (i = 0; i < [self.tracks count]; i++) {
+        BTTrack *track = [self.tracks objectAtIndex:i];
+        NSString *path = [track resolvedPath];
+        if ([path length] == 0 || ![files fileExistsAtPath:path]) [gone addObject:track];
+    }
+    return gone;
+}
+
+// Every one of them, however many, with the path each was looked for at. The
+// dialog names a handful; this is what to read when the handful is not enough.
+- (NSString *)writeMissingFilesLog:(NSArray *)tracks {
+    NSDateFormatter *stamp = [[NSDateFormatter alloc] init];
+    [stamp setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
+
+    NSMutableString *text = [NSMutableString string];
+    [text appendFormat:@"BTunes, %@\n", [stamp stringFromDate:[NSDate date]]];
+    [text appendFormat:@"%lu of %lu songs are not where the library says they are.\n\n",
+                       (unsigned long)[tracks count], (unsigned long)[self.tracks count]];
+    [text appendString:@"Nothing has been removed from the library. The ratings, play counts\n"
+                       @"and playlist membership are all still here, waiting for the files.\n\n"];
+
+    NSUInteger i;
+    for (i = 0; i < [tracks count]; i++) {
+        BTTrack *track = [tracks objectAtIndex:i];
+        [text appendFormat:@"%@ - %@\n    %@\n",
+                           [track displayArtist], [track displayTitle],
+                           ([track resolvedPath] ?: @"(no path recorded)")];
+    }
+
+    NSString *path = [self missingFilesLogPath];
+    NSError *error = nil;
+    if (![text writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
+        NSLog(@"BTunes: could not write %@ (%@)", path, [error localizedDescription]);
+        return nil;
+    }
+    return path;
+}
+
 - (void)loadFromDisk {
     [self adoptFormerLibraryFile];
 
