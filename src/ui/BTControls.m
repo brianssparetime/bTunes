@@ -154,6 +154,12 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume) 
 
 #define BT_SEARCH_GLYPH 11.0
 #define BT_SEARCH_LEFT  7.0
+// How far the word is lifted off the middle of the capsule. Measured on the
+// target system rather than worked out: the cell puts the top of its line box at
+// the top of the rect it is handed, and the visible weight of a line sits above
+// the baseline, so a box centred exactly leaves the word looking low. A point
+// and a half puts it on the same line as the magnifier beside it.
+#define BT_SEARCH_LIFT  1.5
 
 @implementation BTSearchFieldCell
 
@@ -166,16 +172,15 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume) 
 - (NSRect)searchTextRectForBounds:(NSRect)rect {
     CGFloat left = BT_SEARCH_LEFT + BT_SEARCH_GLYPH + 5.0;
     CGFloat right = 20.0;
-    // Centred on the line's own middle rather than on the em box. The em box
-    // reserves room for descenders that a word like Search never uses, which
-    // leaves the text riding high in the capsule.
+
+    // A rect exactly one line tall, centred on the capsule. Given any slack the
+    // cell puts the line at one end of it and the word sits off centre, which is
+    // what a taller rect with a correction applied to it was trying and failing
+    // to undo.
     NSFont *font = [self font];
-    CGFloat height = ceil([font ascender] - [font descender]) + 2.0;
-    CGFloat visualCentre = ([font ascender] + [font descender]) / 2.0;
-    // Added rather than subtracted: the cell draws in a flipped context, so the
-    // correction that lifts the line on paper pushes it down here.
-    CGFloat origin = NSMidY(rect) - height / 2.0 + visualCentre / 2.0;
-    return NSMakeRect(NSMinX(rect) + left, floor(origin), NSWidth(rect) - left - right, height);
+    CGFloat height = ceil([font ascender] - [font descender]);
+    CGFloat origin = round(NSMidY(rect) - height / 2.0 + BT_SEARCH_LIFT);
+    return NSMakeRect(NSMinX(rect) + left, origin, NSWidth(rect) - left - right, height);
 }
 
 // The field editor has to be given the same rect the text is drawn in, or the

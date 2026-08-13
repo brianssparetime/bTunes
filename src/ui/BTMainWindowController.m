@@ -612,6 +612,14 @@ static CGFloat BTTitleBarHeight(void) {
     [_sourceList setTarget:self];
     [_sourceList setDoubleAction:@selector(renameSelectedPlaylist:)];
     [_sourceList registerForDraggedTypes:@[BTTrackPasteboardType, BTPlaylistPasteboardType]];
+
+    NSMenu *sourceMenu = [[NSMenu alloc] initWithTitle:@"Source"];
+    NSMenuItem *editRules = [[NSMenuItem alloc] initWithTitle:@"Edit Smart Playlist..."
+                                                        action:@selector(editSmartPlaylist:)
+                                                 keyEquivalent:@""];
+    [editRules setTarget:self];
+    [sourceMenu addItem:editRules];
+    [_sourceList setMenu:sourceMenu];
     [sourceScroll setDocumentView:_sourceList];
     [_outerSplit addSubview:sourceScroll];
 
@@ -878,38 +886,60 @@ static CGFloat BTTitleBarHeight(void) {
     [_bottomBar addSubview:_ejectButton];
 }
 
-// The readout keeps a fixed width and the search field grows into whatever is
-// left, so there is no dead gap between them at any window size. When the
-// window is too narrow for that, the readout gives up width instead.
-- (void)layoutChrome {
-    NSRect bounds = [_chrome bounds];
-    CGFloat rightMargin = 15.0;
-    CGFloat miniWidth = 27.0;
-    // The readout carries the song, so it gives up width last. The search field
-    // gets small before the readout does.
-    CGFloat minimumSearch = 88.0;
-    CGFloat minimumDisplay = 260.0;
+// Where the three things at the right of the chrome sit, for a given width.
+//
+// The readout takes the slack and the search field keeps a steady width. It was
+// the other way round, which meant a search box the width of the window on a
+// wide screen, reading as a mistake. A wider readout simply shows more of the
+// song, which is what the space is worth spending on.
+//
+// Kept as arithmetic on numbers rather than on views, so it can be checked
+// without a window.
+void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
+                    CGFloat *outMiniLeft,
+                    CGFloat *outDisplayLeft, CGFloat *outDisplayWidth,
+                    CGFloat *outSearchLeft, CGFloat *outSearchWidth) {
+    const CGFloat rightMargin = 15.0;
+    const CGFloat miniWidth = 27.0;
+    const CGFloat displayLeft = 230.0;
+    const CGFloat preferredSearch = 180.0;
+    const CGFloat minimumSearch = 88.0;
+    const CGFloat minimumDisplay = 200.0;
 
     // The space either side of the readout is the same: whatever sits between
     // the volume control and the readout on the left is repeated on the right.
-    CGFloat gap = 230.0 - NSMaxX([_volumeView frame]);
+    CGFloat gap = displayLeft - volumeRight;
     if (gap < 8.0) gap = 8.0;
 
-    CGFloat miniX = NSWidth(bounds) - rightMargin - miniWidth;
-    [_miniButton setFrame:NSMakeRect(miniX, 14, miniWidth, miniWidth)];
+    CGFloat miniLeft = chromeWidth - rightMargin - miniWidth;
+    CGFloat searchRight = miniLeft - gap;
 
-    CGFloat searchRight = miniX - gap;
-    CGFloat displayLeft = 230.0;
-    CGFloat displayWidth = 340.0;
-
-    CGFloat searchLeft = displayLeft + displayWidth + gap;
-    if (searchRight - searchLeft < minimumSearch) {
-        displayWidth = MAX(minimumDisplay, searchRight - minimumSearch - gap - displayLeft);
-        searchLeft = displayLeft + displayWidth + gap;
+    CGFloat searchWidth = preferredSearch;
+    CGFloat displayWidth = searchRight - searchWidth - gap - displayLeft;
+    if (displayWidth < minimumDisplay) {
+        // Too narrow for both at their best. The search field gives up width
+        // first, because the readout carries the song.
+        searchWidth = searchRight - minimumDisplay - gap - displayLeft;
+        if (searchWidth < minimumSearch) searchWidth = minimumSearch;
+        displayWidth = searchRight - searchWidth - gap - displayLeft;
     }
+    if (displayWidth < 60.0) displayWidth = 60.0;
 
+    if (outMiniLeft) *outMiniLeft = miniLeft;
+    if (outDisplayLeft) *outDisplayLeft = displayLeft;
+    if (outDisplayWidth) *outDisplayWidth = displayWidth;
+    if (outSearchLeft) *outSearchLeft = searchRight - searchWidth;
+    if (outSearchWidth) *outSearchWidth = searchWidth;
+}
+
+- (void)layoutChrome {
+    CGFloat miniLeft = 0, displayLeft = 0, displayWidth = 0, searchLeft = 0, searchWidth = 0;
+    BTChromeLayout(NSWidth([_chrome bounds]), NSMaxX([_volumeView frame]),
+                   &miniLeft, &displayLeft, &displayWidth, &searchLeft, &searchWidth);
+
+    [_miniButton setFrame:NSMakeRect(miniLeft, 14, 27.0, 27.0)];
     [_display setFrame:NSMakeRect(displayLeft, 6, displayWidth, 42)];
-    [_searchField setFrame:NSMakeRect(searchLeft, 17, MAX(40.0, searchRight - searchLeft), 21)];
+    [_searchField setFrame:NSMakeRect(searchLeft, 17, searchWidth, 21)];
 }
 
 - (void)layoutContent {
@@ -1789,7 +1819,21 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     return [_visibleTracks objectAtIndex:(NSUInteger)row];
 }
 
+// What Command-I means depends on what is in front of you. On a smart playlist
+// it opens the rules; on a song it opens the song. Both are "tell me about the
+// thing I am looking at", which is the one idea the shortcut carries.
+- (BTPlaylist *)smartPlaylistForInfo {
+    if ([[self window] firstResponder] != _sourceList) return nil;
+    BTPlaylist *playlist = [self selectedPlaylist];
+    return (playlist && playlist.kind == BTPlaylistKindSmart) ? playlist : nil;
+}
+
 - (void)getInfo:(id)sender {
+    if ([self smartPlaylistForInfo]) {
+        [self editSmartPlaylist:sender];
+        return;
+    }
+
     BTTrack *track = [self trackForInfo];
     if (track == nil) return;
 
@@ -2079,7 +2123,9 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 }
 
 - (void)editSmartPlaylist:(id)sender {
-    BTPlaylist *playlist = [self selectedPlaylist];
+    NSInteger clicked = [_sourceList clickedRow];
+    BTPlaylist *playlist = (clicked >= 0) ? BTPlaylistFromSource([_sourceList itemAtRow:clicked])
+                                          : [self selectedPlaylist];
     if (playlist == nil || playlist.kind != BTPlaylistKindSmart) return;
 
     _sheetController = [[BTSmartPlaylistController alloc] initWithPlaylist:playlist];
@@ -2185,10 +2231,19 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 - (BOOL)validateMenuItem:(NSMenuItem *)item {
     SEL action = [item action];
     if (action == @selector(editSmartPlaylist:)) {
-        BTPlaylist *selected = [self selectedPlaylist];
+        NSInteger clicked = [_sourceList clickedRow];
+        BTPlaylist *selected = (clicked >= 0)
+            ? BTPlaylistFromSource([_sourceList itemAtRow:clicked]) : [self selectedPlaylist];
         return (selected != nil && selected.kind == BTPlaylistKindSmart);
     }
+    // The menu says which of the two it is about to do rather than making it a
+    // surprise.
     if (action == @selector(getInfo:)) {
+        if ([self smartPlaylistForInfo]) {
+            [item setTitle:@"Edit Smart Playlist..."];
+            return YES;
+        }
+        [item setTitle:@"Get Info"];
         return [self trackForInfo] != nil;
     }
     if (action == @selector(syncPlaylistOrder:)) {
