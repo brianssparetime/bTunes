@@ -12,6 +12,22 @@
 static NSString *const BTHideIneligibleKey = @"BTSyncHideIneligible";
 static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
+// A folder in the incoming playlists. iTunes gives each playlist the names of
+// the folders above it; this turns those back into the tree they came from, so
+// a folder can be opened, closed, and ticked as one thing.
+@interface BTSyncFolder : NSObject
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic, strong) NSMutableArray *children;   // folders and playlists
+@end
+
+@implementation BTSyncFolder
+- (id)init {
+    self = [super init];
+    if (self) _children = [NSMutableArray array];
+    return self;
+}
+@end
+
 // The bar between the two lists. Wide enough to catch the pointer, with a dot
 // on it so it reads as something to take hold of rather than as a seam.
 @interface BTSyncDivider : NSSplitView
@@ -35,7 +51,9 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
 @end
 
-@interface BTITunesSyncView () <NSTableViewDataSource, NSTableViewDelegate, NSSplitViewDelegate>
+@interface BTITunesSyncView () <NSTableViewDataSource, NSTableViewDelegate,
+                                NSOutlineViewDataSource, NSOutlineViewDelegate,
+                                NSSplitViewDelegate>
 @end
 
 @implementation BTITunesSyncView {
@@ -54,7 +72,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     NSScrollView *_songsScroll;
     NSScrollView *_playlistsScroll;
     NSTableView *_songsTable;
-    NSTableView *_playlistsTable;
+    NSOutlineView *_playlistsTable;
     // Each list travels with its own heading, so dragging the bar between them
     // moves the words along with the rows they describe.
     NSView *_songsPane;
@@ -62,7 +80,8 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     BTSyncDivider *_panes;
 
     NSArray *_songs;          // what the two lists are showing, after hiding
-    NSArray *_lists;
+    NSArray *_lists;          // the playlists, flat, after hiding
+    NSArray *_playlistTree;   // the same ones as folders and playlists
 
     // Chosen by leaving them alone: everything starts checked, so only what has
     // been turned off has to be remembered.
@@ -111,11 +130,11 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
                                            @[@"title", @"Song Name", @180],
                                            @[@"artist", @"Artist", @130],
                                            @[@"album", @"Album", @130]]];
-    _playlistsScroll = [self listWithColumns:@[@[@"check", @"", @20],
-                                               @[@"name", @"Playlist", @220],
-                                               @[@"what", @"", @90]]];
+    _playlistsScroll = [self outlineWithColumns:@[@[@"check", @"", @20],
+                                                  @[@"name", @"Playlist", @200],
+                                                  @[@"what", @"", @90]]];
     _songsTable = (NSTableView *)[_songsScroll documentView];
-    _playlistsTable = (NSTableView *)[_playlistsScroll documentView];
+    _playlistsTable = (NSOutlineView *)[_playlistsScroll documentView];
 
     _playlistsPane = [self paneWithHeading:_playlistsHeading list:_playlistsScroll];
     _songsPane = [self paneWithHeading:_songsHeading list:_songsScroll];
@@ -204,6 +223,61 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     }
 
     [scroll setDocumentView:table];
+    return scroll;
+}
+
+// The same columns as a plain list, but the name column carries the disclosure
+// triangle and indents, while the tick stays at the near edge whatever depth a
+// playlist sits at. That is how a device sync pane is arranged and it reads the
+// same way here.
+- (NSScrollView *)outlineWithColumns:(NSArray *)specs {
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    [scroll setHasVerticalScroller:YES];
+    [scroll setAutohidesScrollers:YES];
+    [scroll setBorderType:NSBezelBorder];
+    [scroll setFocusRingType:NSFocusRingTypeNone];
+
+    NSOutlineView *outline = [[NSOutlineView alloc] initWithFrame:NSZeroRect];
+    [outline setFocusRingType:NSFocusRingTypeNone];
+    [outline setRowHeight:17.0];
+    [outline setUsesAlternatingRowBackgroundColors:YES];
+    [outline setAllowsMultipleSelection:NO];
+    [outline setAllowsColumnSelection:NO];
+    [outline setIndentationPerLevel:14.0];
+    [outline setDataSource:self];
+    [outline setDelegate:self];
+
+    NSTableColumn *nameColumn = nil;
+    NSUInteger i;
+    for (i = 0; i < [specs count]; i++) {
+        NSArray *spec = [specs objectAtIndex:i];
+        NSString *identifier = [spec objectAtIndex:0];
+        NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:identifier];
+        [[column headerCell] setStringValue:[spec objectAtIndex:1]];
+        [[column headerCell] setFont:[BTStyle uiFont]];
+        [column setWidth:[[spec objectAtIndex:2] doubleValue]];
+
+        if ([identifier isEqualToString:@"check"]) {
+            NSButtonCell *cell = [[NSButtonCell alloc] init];
+            [cell setButtonType:NSSwitchButton];
+            [cell setAllowsMixedState:YES];
+            [cell setTitle:@""];
+            [cell setControlSize:NSSmallControlSize];
+            [column setDataCell:cell];
+            [column setEditable:YES];
+        } else {
+            NSTextFieldCell *cell = [[NSTextFieldCell alloc] init];
+            [cell setFont:[BTStyle uiFont]];
+            [cell setLineBreakMode:NSLineBreakByTruncatingTail];
+            [column setDataCell:cell];
+            [column setEditable:NO];
+        }
+        if ([identifier isEqualToString:@"name"]) nameColumn = column;
+        [outline addTableColumn:column];
+    }
+    [outline setOutlineTableColumn:nameColumn];
+
+    [scroll setDocumentView:outline];
     return scroll;
 }
 
@@ -417,12 +491,52 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 
     _songs = songs;
     _lists = lists;
+    _playlistTree = [self treeFromPlaylists:lists];
     [_songsHeading setStringValue:[NSString stringWithFormat:@"Music (%lu)", (unsigned long)[songs count]]];
     [_playlistsHeading setStringValue:[NSString stringWithFormat:@"Playlists (%lu)", (unsigned long)[lists count]]];
 
     [_songsTable reloadData];
     [_playlistsTable reloadData];
+    [self expandEveryFolder];
     [self updateButtons];
+}
+
+// Folders are rebuilt out of the names iTunes hangs on each playlist, so a
+// folder exists here only when something inside it survived the hiding.
+- (NSArray *)treeFromPlaylists:(NSArray *)playlists {
+    NSMutableArray *roots = [NSMutableArray array];
+    NSMutableDictionary *foldersByPath = [NSMutableDictionary dictionary];
+
+    NSUInteger i, j;
+    for (i = 0; i < [playlists count]; i++) {
+        BTITunesSyncPlaylist *playlist = [playlists objectAtIndex:i];
+        NSMutableArray *into = roots;
+        NSMutableString *path = [NSMutableString string];
+
+        for (j = 0; j < [playlist.folderNames count]; j++) {
+            NSString *name = [playlist.folderNames objectAtIndex:j];
+            [path appendFormat:@"/%@", name];
+
+            BTSyncFolder *folder = [foldersByPath objectForKey:path];
+            if (folder == nil) {
+                folder = [[BTSyncFolder alloc] init];
+                folder.name = name;
+                [foldersByPath setObject:folder forKey:path];
+                [into addObject:folder];
+            }
+            into = folder.children;
+        }
+        [into addObject:playlist];
+    }
+    return roots;
+}
+
+- (void)expandEveryFolder {
+    NSInteger row;
+    for (row = 0; row < [_playlistsTable numberOfRows]; row++) {
+        id item = [_playlistsTable itemAtRow:row];
+        if ([item isKindOfClass:[BTSyncFolder class]]) [_playlistsTable expandItem:item];
+    }
 }
 
 #pragma mark - What is ticked
@@ -478,6 +592,48 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     return (chosen == [choosable count]) ? NSOnState : NSMixedState;
 }
 
+// Every playlist under a folder, however deep.
+- (NSArray *)playlistsUnder:(id)item {
+    if ([item isKindOfClass:[BTITunesSyncPlaylist class]]) return @[item];
+
+    NSMutableArray *found = [NSMutableArray array];
+    NSArray *children = [(BTSyncFolder *)item children];
+    NSUInteger i;
+    for (i = 0; i < [children count]; i++) {
+        [found addObjectsFromArray:[self playlistsUnder:[children objectAtIndex:i]]];
+    }
+    return found;
+}
+
+// A folder is ticked when everything inside it is, empty when none of it is, and
+// dashed in between. A folder holding nothing that can come across is simply
+// off.
+- (NSInteger)stateOfItem:(id)item {
+    if ([item isKindOfClass:[BTITunesSyncPlaylist class]]) {
+        return [self stateOfPlaylist:(BTITunesSyncPlaylist *)item];
+    }
+
+    NSArray *inside = [self playlistsUnder:item];
+    BOOL anyOn = NO, anyOff = NO;
+    NSUInteger i;
+    for (i = 0; i < [inside count]; i++) {
+        BTITunesSyncPlaylist *playlist = [inside objectAtIndex:i];
+        if (![playlist eligible]) continue;
+        if ([self stateOfPlaylist:playlist] == NSOffState) anyOff = YES; else anyOn = YES;
+        if (anyOn && anyOff) return NSMixedState;
+    }
+    return anyOn ? NSOnState : NSOffState;
+}
+
+- (void)setItem:(id)item chosen:(BOOL)chosen {
+    NSArray *inside = [self playlistsUnder:item];
+    NSUInteger i;
+    for (i = 0; i < [inside count]; i++) {
+        BTITunesSyncPlaylist *playlist = [inside objectAtIndex:i];
+        if ([playlist eligible]) [self setPlaylist:playlist chosen:chosen];
+    }
+}
+
 - (void)setPlaylist:(BTITunesSyncPlaylist *)playlist chosen:(BOOL)chosen {
     if (chosen) {
         [_uncheckedLists removeObject:playlist.persistentID];
@@ -530,42 +686,117 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 
     [_songsTable reloadData];
     [_playlistsTable reloadData];
+    [self expandEveryFolder];
     [self updateButtons];
 }
 
 #pragma mark - The lists
 
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView {
-    return (NSInteger)[(tableView == _songsTable ? _songs : _lists) count];
+    return (NSInteger)[_songs count];
 }
 
 - (id)tableView:(NSTableView *)tableView
     objectValueForTableColumn:(NSTableColumn *)tableColumn
                           row:(NSInteger)row {
     NSString *identifier = [tableColumn identifier];
+    if (row < 0 || row >= (NSInteger)[_songs count]) return nil;
 
-    if (tableView == _songsTable) {
-        if (row < 0 || row >= (NSInteger)[_songs count]) return nil;
-        BTITunesSyncTrack *track = [_songs objectAtIndex:(NSUInteger)row];
-        if ([identifier isEqualToString:@"check"]) {
-            return @([self songIsChosen:track] ? NSOnState : NSOffState);
-        }
-        if ([identifier isEqualToString:@"title"]) {
-            return [track.title length] > 0 ? track.title : @"(untitled)";
-        }
-        if ([identifier isEqualToString:@"artist"]) return track.artist ? track.artist : @"";
-        return track.album ? track.album : @"";
+    BTITunesSyncTrack *track = [_songs objectAtIndex:(NSUInteger)row];
+    if ([identifier isEqualToString:@"check"]) {
+        return @([self songIsChosen:track] ? NSOnState : NSOffState);
+    }
+    if ([identifier isEqualToString:@"title"]) {
+        return [track.title length] > 0 ? track.title : @"(untitled)";
+    }
+    if ([identifier isEqualToString:@"artist"]) return track.artist ? track.artist : @"";
+    return track.album ? track.album : @"";
+}
+
+#pragma mark - The playlists, as folders
+
+- (NSArray *)childrenOfItem:(id)item {
+    if (item == nil) return _playlistTree;
+    if ([item isKindOfClass:[BTSyncFolder class]]) return [(BTSyncFolder *)item children];
+    return @[];
+}
+
+- (NSInteger)outlineView:(NSOutlineView *)outlineView numberOfChildrenOfItem:(id)item {
+    return (NSInteger)[[self childrenOfItem:item] count];
+}
+
+- (id)outlineView:(NSOutlineView *)outlineView child:(NSInteger)index ofItem:(id)item {
+    return [[self childrenOfItem:item] objectAtIndex:(NSUInteger)index];
+}
+
+- (BOOL)outlineView:(NSOutlineView *)outlineView isItemExpandable:(id)item {
+    return [[self childrenOfItem:item] count] > 0;
+}
+
+- (id)outlineView:(NSOutlineView *)outlineView
+    objectValueForTableColumn:(NSTableColumn *)tableColumn
+                       byItem:(id)item {
+    NSString *identifier = [tableColumn identifier];
+
+    if ([item isKindOfClass:[BTSyncFolder class]]) {
+        if ([identifier isEqualToString:@"check"]) return @([self stateOfItem:item]);
+        if ([identifier isEqualToString:@"name"]) return [(BTSyncFolder *)item name];
+        NSUInteger inside = [[self playlistsUnder:item] count];
+        return [NSString stringWithFormat:@"%lu playlists", (unsigned long)inside];
     }
 
-    if (row < 0 || row >= (NSInteger)[_lists count]) return nil;
-    BTITunesSyncPlaylist *playlist = [_lists objectAtIndex:(NSUInteger)row];
+    BTITunesSyncPlaylist *playlist = item;
     if ([identifier isEqualToString:@"check"]) return @([self stateOfPlaylist:playlist]);
-    if ([identifier isEqualToString:@"name"]) {
-        if ([playlist.folderNames count] == 0) return playlist.name;
-        return [NSString stringWithFormat:@"%@ / %@",
-                [playlist.folderNames componentsJoinedByString:@" / "], playlist.name];
-    }
+    if ([identifier isEqualToString:@"name"]) return playlist.name;
     return [self wordForPlaylist:playlist];
+}
+
+- (void)outlineView:(NSOutlineView *)outlineView
+    setObjectValue:(id)object
+    forTableColumn:(NSTableColumn *)tableColumn
+            byItem:(id)item {
+    if (![[tableColumn identifier] isEqualToString:@"check"]) return;
+
+    // A dash means partly chosen, and the next click takes all of it.
+    [self setItem:item chosen:([self stateOfItem:item] != NSOnState)];
+    [_songsTable reloadData];
+    [outlineView reloadData];
+    [self updateButtons];
+}
+
+- (void)outlineView:(NSOutlineView *)outlineView
+    willDisplayCell:(id)cell
+     forTableColumn:(NSTableColumn *)tableColumn
+               item:(id)item {
+    BOOL blocked = NO, here = NO;
+    NSInteger reason = 0;
+
+    if ([item isKindOfClass:[BTITunesSyncPlaylist class]]) {
+        BTITunesSyncPlaylist *playlist = item;
+        blocked = (playlist.blocked != BTITunesBlockNone);
+        here = playlist.alreadyHere;
+        reason = playlist.blocked;
+    } else {
+        // A folder is only as available as what is inside it.
+        blocked = ([[self playlistsUnder:item] count] > 0);
+        NSArray *inside = [self playlistsUnder:item];
+        NSUInteger i;
+        for (i = 0; i < [inside count]; i++) {
+            if ([[inside objectAtIndex:i] eligible]) { blocked = NO; break; }
+        }
+    }
+
+    if ([cell isKindOfClass:[NSButtonCell class]]) {
+        [(NSButtonCell *)cell setEnabled:!(blocked || here)];
+        return;
+    }
+    if (![cell isKindOfClass:[NSTextFieldCell class]]) return;
+
+    [(NSTextFieldCell *)cell setHighlighted:NO];
+    NSColor *ink = [NSColor blackColor];
+    if (blocked) ink = [BTStyle ineligibleTextForReason:reason];
+    else if (here) ink = [BTStyle ineligibleTextForReason:0];
+    [(NSTextFieldCell *)cell setTextColor:ink];
 }
 
 // What is about to happen to it, or why nothing can.
@@ -587,22 +818,11 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     willDisplayCell:(id)cell
      forTableColumn:(NSTableColumn *)tableColumn
                 row:(NSInteger)row {
-    BOOL blocked = NO, here = NO;
-    NSInteger reason = 0;
-
-    if (tableView == _songsTable) {
-        if (row < 0 || row >= (NSInteger)[_songs count]) return;
-        BTITunesSyncTrack *track = [_songs objectAtIndex:(NSUInteger)row];
-        blocked = (track.blocked != BTITunesBlockNone);
-        here = track.alreadyHere;
-        reason = track.blocked;
-    } else {
-        if (row < 0 || row >= (NSInteger)[_lists count]) return;
-        BTITunesSyncPlaylist *playlist = [_lists objectAtIndex:(NSUInteger)row];
-        blocked = (playlist.blocked != BTITunesBlockNone);
-        here = playlist.alreadyHere;
-        reason = playlist.blocked;
-    }
+    if (row < 0 || row >= (NSInteger)[_songs count]) return;
+    BTITunesSyncTrack *track = [_songs objectAtIndex:(NSUInteger)row];
+    BOOL blocked = (track.blocked != BTITunesBlockNone);
+    BOOL here = track.alreadyHere;
+    NSInteger reason = track.blocked;
 
     // Nothing that cannot come across can be ticked, and it says so by being
     // gray rather than by disappearing.
@@ -624,31 +844,21 @@ constrainMaxCoordinate:(CGFloat)proposedMax
    forTableColumn:(NSTableColumn *)tableColumn
               row:(NSInteger)row {
     if (![[tableColumn identifier] isEqualToString:@"check"]) return;
+    if (row < 0 || row >= (NSInteger)[_songs count]) return;
 
-    if (tableView == _songsTable) {
-        if (row < 0 || row >= (NSInteger)[_songs count]) return;
-        BTITunesSyncTrack *track = [_songs objectAtIndex:(NSUInteger)row];
-        if (![track eligible]) return;
+    BTITunesSyncTrack *track = [_songs objectAtIndex:(NSUInteger)row];
+    if (![track eligible]) return;
 
-        if ([self songIsChosen:track]) {
-            [_uncheckedSongs addObject:track.persistentID];
-        } else {
-            [_uncheckedSongs removeObject:track.persistentID];
-        }
-        // A playlist holding it now reads as partly chosen, so both lists are
-        // redrawn rather than only the one that was clicked.
-        [_playlistsTable reloadData];
+    if ([self songIsChosen:track]) {
+        [_uncheckedSongs addObject:track.persistentID];
     } else {
-        if (row < 0 || row >= (NSInteger)[_lists count]) return;
-        BTITunesSyncPlaylist *playlist = [_lists objectAtIndex:(NSUInteger)row];
-        if (![playlist eligible]) return;
-
-        // A dash means partly chosen, and the next click takes all of it.
-        [self setPlaylist:playlist chosen:([self stateOfPlaylist:playlist] != NSOnState)];
-        [_songsTable reloadData];
+        [_uncheckedSongs removeObject:track.persistentID];
     }
 
+    // A playlist holding it now reads as partly chosen, and so does the folder
+    // that playlist sits in, so the whole tree is redrawn rather than one row.
     [tableView reloadData];
+    [_playlistsTable reloadData];
     [self updateButtons];
 }
 
