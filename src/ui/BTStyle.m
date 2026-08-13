@@ -222,6 +222,55 @@ static NSImage *BTSteelGrain(void) {
     [path stroke];
 }
 
++ (void)drawPushButtonInRect:(NSRect)rect
+                     pressed:(BOOL)pressed
+                     enabled:(BOOL)enabled
+                   isDefault:(BOOL)isDefault {
+    NSRect box = NSInsetRect(rect, 0.5, 0.5);
+    CGFloat radius = NSHeight(box) / 2.0;
+    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:box xRadius:radius yRadius:radius];
+
+    NSColor *top, *bottom, *edge;
+    if (isDefault) {
+        // The one blue button, the way 2010 drew it.
+        top    = [NSColor colorWithCalibratedRed:0.48 green:0.71 blue:0.96 alpha:1.0];
+        bottom = [NSColor colorWithCalibratedRed:0.22 green:0.48 blue:0.86 alpha:1.0];
+        edge   = [NSColor colorWithCalibratedRed:0.20 green:0.38 blue:0.66 alpha:1.0];
+    } else {
+        // Barely a gradient. Enough to say the light is above, and no more.
+        top    = [NSColor colorWithCalibratedWhite:0.99 alpha:1.0];
+        bottom = [NSColor colorWithCalibratedWhite:0.90 alpha:1.0];
+        edge   = [NSColor colorWithCalibratedWhite:0.62 alpha:1.0];
+    }
+    if (pressed) {
+        top = [top shadowWithLevel:0.16];
+        bottom = [bottom shadowWithLevel:0.16];
+    }
+    if (!enabled) {
+        top = [NSColor colorWithCalibratedWhite:0.96 alpha:1.0];
+        bottom = [NSColor colorWithCalibratedWhite:0.92 alpha:1.0];
+        edge = [NSColor colorWithCalibratedWhite:0.76 alpha:1.0];
+    }
+
+    [NSGraphicsContext saveGraphicsState];
+    [path addClip];
+    [self drawVerticalGradientInRect:box from:top to:bottom];
+
+    // A catch of light along the top edge only. The 2004 buttons put a bubble
+    // across the whole upper half; this is the quieter thing that replaced it.
+    NSGradient *sheen = [[NSGradient alloc]
+        initWithStartingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:(isDefault ? 0.34 : 0.55)]
+                  endingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:0.0]];
+    [sheen drawInRect:NSMakeRect(NSMinX(box), NSMaxY(box) - NSHeight(box) * 0.46,
+                                 NSWidth(box), NSHeight(box) * 0.46)
+                angle:270.0];
+    [NSGraphicsContext restoreGraphicsState];
+
+    [edge set];
+    [path setLineWidth:1.0];
+    [path stroke];
+}
+
 #pragma mark - Glyphs
 
 + (void)drawTriangleInRect:(NSRect)rect pointingRight:(BOOL)right color:(NSColor *)color {

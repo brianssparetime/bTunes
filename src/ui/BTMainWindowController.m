@@ -610,6 +610,7 @@ static CGFloat BTTitleBarHeight(void) {
     [_sourceList setAllowsMultipleSelection:NO];
     [_sourceList setAllowsColumnSelection:NO];
     [_sourceList setTarget:self];
+    [_sourceList setAction:@selector(sourceClicked:)];
     [_sourceList setDoubleAction:@selector(renameSelectedPlaylist:)];
     [_sourceList registerForDraggedTypes:@[BTTrackPasteboardType, BTPlaylistPasteboardType]];
 
@@ -1018,11 +1019,23 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
 // The sync only ever occupies the right half, so picking anything on the left
 // leaves it by putting that source's songs back in its place.
 - (void)showITunesSync:(id)sender {
-    if (_showingITunesSync) return;
+    // The same button both ways: it opened the pane, so it puts it away and
+    // gives back whatever was being looked at before.
+    if (_showingITunesSync) {
+        [self closeITunesSync];
+        return;
+    }
     _showingITunesSync = YES;
     _syncButton.on = YES;
     [self updateRightPane];
     [_iTunesSyncView beginComparing];
+}
+
+// A click that lands on the row already selected sends no selection change, so
+// the sync pane would sit there while the source list looked as though it had
+// been answered.
+- (void)sourceClicked:(id)sender {
+    if (_showingITunesSync) [self closeITunesSync];
 }
 
 - (void)closeITunesSync {

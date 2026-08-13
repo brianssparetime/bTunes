@@ -48,6 +48,13 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume);
 + (instancetype)buttonWithFrame:(NSRect)frame glyph:(BTGlyph)glyph target:(id)target action:(SEL)action;
 @end
 
+// Push button in the 2010 manner, drawn rather than left to the system, so it
+// matches the rest of the window instead of whichever decade the system is in.
+// It sizes itself to its title; callers place it and may widen it.
+@interface BTPushButton : NSButton
++ (instancetype)buttonWithTitle:(NSString *)title target:(id)target action:(SEL)action;
+@end
+
 // Search field drawn as a capsule with the magnifier placed by hand. The stock
 // cell draws its own rounded rectangle and ignores the rounded bezel style, and
 // it sits the magnifier low against the text.

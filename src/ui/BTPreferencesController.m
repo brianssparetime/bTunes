@@ -82,12 +82,8 @@
     [[path cell] setLineBreakMode:NSLineBreakByTruncatingHead];
     [content addSubview:path];
 
-    NSButton *choose = [[NSButton alloc] initWithFrame:NSMakeRect(BT_PREFS_WIDTH - 112, *y - 5, 92, 26)];
-    [choose setTitle:@"Choose..."];
-    [choose setBezelStyle:NSRoundedBezelStyle];
-    [choose setFont:[BTStyle uiFont]];
-    [choose setTarget:self];
-    [choose setAction:action];
+    BTPushButton *choose = [BTPushButton buttonWithTitle:@"Choose..." target:self action:action];
+    [choose setFrame:NSMakeRect(BT_PREFS_WIDTH - 112, *y - 3, 92, NSHeight([choose frame]))];
     [content addSubview:choose];
 
     *y -= 24.0;

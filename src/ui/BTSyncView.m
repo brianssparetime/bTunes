@@ -15,7 +15,7 @@
     NSScrollView *_scroll;
     NSTextField *_headline;
     NSTextField *_detail;
-    NSButton *_syncButton;
+    BTPushButton *_syncButton;
     BTRoundButton *_ejectButton;
     NSMutableSet *_checked;          // playlist ids of the checked playlists
     BTIPodSync *_sync;
@@ -69,12 +69,7 @@
     [_scroll setDocumentView:_outline];
     [self addSubview:_scroll];
 
-    _syncButton = [[NSButton alloc] initWithFrame:NSZeroRect];
-    [_syncButton setTitle:@"Sync"];
-    [_syncButton setBezelStyle:NSRoundedBezelStyle];
-    [_syncButton setFont:[BTStyle uiFont]];
-    [_syncButton setTarget:self];
-    [_syncButton setAction:@selector(startSync:)];
+    _syncButton = [BTPushButton buttonWithTitle:@"Sync" target:self action:@selector(startSync:)];
     [self addSubview:_syncButton];
 
     _ejectButton = [BTRoundButton buttonWithFrame:NSZeroRect

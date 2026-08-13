@@ -150,16 +150,63 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume) 
 
 @end
 
+#pragma mark - Push button
+
+@implementation BTPushButton
+
++ (instancetype)buttonWithTitle:(NSString *)title target:(id)target action:(SEL)action {
+    BTPushButton *b = [[BTPushButton alloc] initWithFrame:NSMakeRect(0, 0, 90, 22)];
+    [b setTitle:title];
+    [b setBezelStyle:NSRoundedBezelStyle];
+    [b setFont:[BTStyle uiFont]];
+    [b setTarget:target];
+    [b setAction:action];
+    [b sizeToFit];
+    // Room around the words, since the drawn capsule has more curve at its ends
+    // than the system bezel this measured against.
+    NSRect frame = [b frame];
+    [b setFrame:NSMakeRect(0, 0, NSWidth(frame) + 12.0, 22.0)];
+    return b;
+}
+
+- (BOOL)isDefaultButton {
+    return [[self keyEquivalent] isEqualToString:@"\r"];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    NSRect bounds = [self bounds];
+    BOOL enabled = [self isEnabled];
+    [BTStyle drawPushButtonInRect:bounds
+                          pressed:[self isHighlighted]
+                          enabled:enabled
+                        isDefault:[self isDefaultButton]];
+
+    NSColor *ink = [NSColor colorWithCalibratedWhite:0.16 alpha:1.0];
+    if ([self isDefaultButton]) ink = [NSColor whiteColor];
+    if (!enabled) ink = [NSColor colorWithCalibratedWhite:0.62 alpha:1.0];
+
+    NSMutableParagraphStyle *centred = [[NSMutableParagraphStyle alloc] init];
+    [centred setAlignment:NSCenterTextAlignment];
+    [centred setLineBreakMode:NSLineBreakByClipping];
+    NSDictionary *attrs = @{NSFontAttributeName: [self font],
+                            NSForegroundColorAttributeName: ink,
+                            NSParagraphStyleAttributeName: centred};
+
+    // Placed off the measured height of the line rather than off the em box, the
+    // same reason the word in the search field needed lifting.
+    NSSize size = [[self title] sizeWithAttributes:attrs];
+    [[self title] drawInRect:NSMakeRect(NSMinX(bounds), NSMidY(bounds) - size.height / 2.0,
+                                        NSWidth(bounds), size.height)
+              withAttributes:attrs];
+}
+
+@end
+
 #pragma mark - Search field
 
 #define BT_SEARCH_GLYPH 11.0
 #define BT_SEARCH_LEFT  7.0
-// How far the word is lifted off the middle of the capsule. Measured on the
-// target system rather than worked out: the cell puts the top of its line box at
-// the top of the rect it is handed, and the visible weight of a line sits above
-// the baseline, so a box centred exactly leaves the word looking low. A point
-// and a half puts it on the same line as the magnifier beside it.
-#define BT_SEARCH_LIFT  1.5
+
 
 @implementation BTSearchFieldCell
 
@@ -173,14 +220,19 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume) 
     CGFloat left = BT_SEARCH_LEFT + BT_SEARCH_GLYPH + 5.0;
     CGFloat right = 20.0;
 
-    // A rect exactly one line tall, centred on the capsule. Given any slack the
-    // cell puts the line at one end of it and the word sits off centre, which is
-    // what a taller rect with a correction applied to it was trying and failing
-    // to undo.
-    NSFont *font = [self font];
-    CGFloat height = ceil([font ascender] - [font descender]);
-    CGFloat origin = round(NSMidY(rect) - height / 2.0 + BT_SEARCH_LIFT);
-    return NSMakeRect(NSMinX(rect) + left, origin, NSWidth(rect) - left - right, height);
+    // The whole height of the capsule, less a hair top and bottom. The cell
+    // centres its line within whatever rect it is handed, which is why every
+    // attempt to place the line by hand came out low: a rect one line tall,
+    // positioned by eye, only moved the word half as far as it was moved.
+    // Handing over the full height lets the centring that is already there do
+    // the work, and the word lands on the same line as the magnifier.
+    // Shifted by the depth of a descender. The cell centres the em box, and an
+    // em box has room under the baseline that a word like Search never uses, so
+    // centring it exactly leaves the word riding low by that much. Measured by
+    // drawing a real field on the target system and finding where the ink fell
+    // against the middle of the capsule.
+    return NSMakeRect(NSMinX(rect) + left, NSMinY(rect) - 2.5,
+                      NSWidth(rect) - left - right, NSHeight(rect));
 }
 
 // The field editor has to be given the same rect the text is drawn in, or the

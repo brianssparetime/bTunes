@@ -71,11 +71,9 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
                                             on:[defaults objectForKey:BTHideAlreadySyncedKey]
                                                 ? [defaults boolForKey:BTHideAlreadySyncedKey] : YES];
 
-    _checkAll = [[NSButton alloc] initWithFrame:NSZeroRect];
-    [_checkAll setBezelStyle:NSRoundedBezelStyle];
-    [_checkAll setFont:[BTStyle uiFont]];
-    [_checkAll setTarget:self];
-    [_checkAll setAction:@selector(checkAllOrNone:)];
+    _checkAll = [BTPushButton buttonWithTitle:@"Uncheck All"
+                                       target:self
+                                       action:@selector(checkAllOrNone:)];
     [self addSubview:_checkAll];
 
     _songsHeading = BTLabelWithText(@"Music", [BTStyle boldFont]);
@@ -93,13 +91,8 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     _songsScroll = [_songsTable enclosingScrollView];
     _playlistsScroll = [_playlistsTable enclosingScrollView];
 
-    _syncButton = [[NSButton alloc] initWithFrame:NSZeroRect];
-    [_syncButton setTitle:@"Sync"];
-    [_syncButton setBezelStyle:NSRoundedBezelStyle];
-    [_syncButton setFont:[BTStyle uiFont]];
+    _syncButton = [BTPushButton buttonWithTitle:@"Sync" target:self action:@selector(runSync:)];
     [_syncButton setKeyEquivalent:@"\r"];
-    [_syncButton setTarget:self];
-    [_syncButton setAction:@selector(runSync:)];
     [self addSubview:_syncButton];
 
     [self showComparingState];
@@ -203,7 +196,10 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     y -= 28;
     [_hideIneligible setFrame:NSMakeRect(margin, y, 130, 18)];
     [_hideAlreadySynced setFrame:NSMakeRect(margin + 138, y, 160, 18)];
-    [_checkAll setFrame:NSMakeRect(NSMaxX(bounds) - margin - 110, y - 2, 110, 22)];
+    CGFloat checkWidth = MAX(110.0, NSWidth([_checkAll frame]));
+    CGFloat checkHeight = NSHeight([_checkAll frame]);
+    [_checkAll setFrame:NSMakeRect(NSMaxX(bounds) - margin - checkWidth,
+                                   y + 9 - checkHeight / 2.0, checkWidth, checkHeight)];
 
     y -= 22;
     CGFloat halves = (width - 12) / 2.0;
@@ -217,7 +213,10 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
     [_songsScroll setFrame:NSMakeRect(margin, footer, halves, listHeight)];
     [_playlistsScroll setFrame:NSMakeRect(margin + halves + 12, footer, halves, listHeight)];
-    [_syncButton setFrame:NSMakeRect(NSMaxX(bounds) - margin - 92, 12, 92, 22)];
+    CGFloat syncWidth = MAX(92.0, NSWidth([_syncButton frame]));
+    CGFloat syncHeight = NSHeight([_syncButton frame]);
+    [_syncButton setFrame:NSMakeRect(NSMaxX(bounds) - margin - syncWidth,
+                                     22.0 - syncHeight / 2.0, syncWidth, syncHeight)];
 
     [self sizeColumnsOf:_songsTable in:_songsScroll fixedFirst:20.0];
     [self sizeColumnsOf:_playlistsTable in:_playlistsScroll fixedFirst:20.0];

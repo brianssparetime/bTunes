@@ -93,21 +93,13 @@
     [content addSubview:_limitField];
     [content addSubview:_songsLabel];
 
-    NSButton *cancel = [[NSButton alloc] initWithFrame:NSMakeRect(BT_SHEET_WIDTH - 190, 12, 80, 28)];
-    [cancel setTitle:@"Cancel"];
-    [cancel setBezelStyle:NSRoundedBezelStyle];
-    [cancel setFont:[BTStyle uiFont]];
-    [cancel setTarget:self];
-    [cancel setAction:@selector(cancel:)];
+    BTPushButton *cancel = [BTPushButton buttonWithTitle:@"Cancel" target:self action:@selector(cancel:)];
+    [cancel setFrame:NSMakeRect(BT_SHEET_WIDTH - 190, 14, 80, NSHeight([cancel frame]))];
     [cancel setKeyEquivalent:@"\033"];
     [content addSubview:cancel];
 
-    NSButton *ok = [[NSButton alloc] initWithFrame:NSMakeRect(BT_SHEET_WIDTH - 104, 12, 84, 28)];
-    [ok setTitle:@"OK"];
-    [ok setBezelStyle:NSRoundedBezelStyle];
-    [ok setFont:[BTStyle uiFont]];
-    [ok setTarget:self];
-    [ok setAction:@selector(accept:)];
+    BTPushButton *ok = [BTPushButton buttonWithTitle:@"OK" target:self action:@selector(accept:)];
+    [ok setFrame:NSMakeRect(BT_SHEET_WIDTH - 104, 14, 84, NSHeight([ok frame]))];
     [ok setKeyEquivalent:@"\r"];
     [content addSubview:ok];
 

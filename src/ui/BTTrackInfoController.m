@@ -75,22 +75,14 @@
     [hint setFrame:NSMakeRect(160, y, BT_INFO_WIDTH - 180, 14)];
     [content addSubview:hint];
 
-    NSButton *cancel = [[NSButton alloc] initWithFrame:NSMakeRect(BT_INFO_WIDTH - 190, 14, 80, 22)];
-    [cancel setTitle:@"Cancel"];
-    [cancel setBezelStyle:NSRoundedBezelStyle];
-    [cancel setFont:[BTStyle uiFont]];
+    BTPushButton *cancel = [BTPushButton buttonWithTitle:@"Cancel" target:self action:@selector(cancel:)];
+    [cancel setFrame:NSMakeRect(BT_INFO_WIDTH - 190, 14, 80, NSHeight([cancel frame]))];
     [cancel setKeyEquivalent:@"\033"];
-    [cancel setTarget:self];
-    [cancel setAction:@selector(cancel:)];
     [content addSubview:cancel];
 
-    NSButton *ok = [[NSButton alloc] initWithFrame:NSMakeRect(BT_INFO_WIDTH - 104, 14, 84, 22)];
-    [ok setTitle:@"OK"];
-    [ok setBezelStyle:NSRoundedBezelStyle];
-    [ok setFont:[BTStyle uiFont]];
+    BTPushButton *ok = [BTPushButton buttonWithTitle:@"OK" target:self action:@selector(accept:)];
+    [ok setFrame:NSMakeRect(BT_INFO_WIDTH - 104, 14, 84, NSHeight([ok frame]))];
     [ok setKeyEquivalent:@"\r"];
-    [ok setTarget:self];
-    [ok setAction:@selector(accept:)];
     [content addSubview:ok];
 }
 

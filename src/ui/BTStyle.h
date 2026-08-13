@@ -47,6 +47,14 @@
 // by the color of its mark instead.
 + (void)drawTogglePressedInRect:(NSRect)rect;
 
+// A push button in the manner of 2010 and 2011: ends rounded all the way, a
+// gradient shallow enough to read as a lit surface rather than as a bubble, and
+// a thin border. The blue one is the default button.
++ (void)drawPushButtonInRect:(NSRect)rect
+                     pressed:(BOOL)pressed
+                     enabled:(BOOL)enabled
+                   isDefault:(BOOL)isDefault;
+
 // Glyphs, drawn as paths so they stay crisp at any size and need no image files.
 + (void)drawPlayGlyphInRect:(NSRect)rect color:(NSColor *)color;
 + (void)drawPauseGlyphInRect:(NSRect)rect color:(NSColor *)color;
