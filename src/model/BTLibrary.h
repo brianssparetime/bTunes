@@ -35,6 +35,13 @@ extern NSString *const BTLibraryImportProgressNotification;
 - (void)movePlaylist:(BTPlaylist *)playlist toFolder:(BTPlaylist *)folder atIndex:(NSInteger)index;
 - (BTPlaylist *)playlistWithID:(NSString *)playlistID;
 
+// iTunes persistent ids of songs deliberately left behind during a sync. A song
+// unchecked once stays unchecked, so a song not wanted here does not have to be
+// fought off every time. Kept with the library rather than in this machine's
+// settings, so the decision follows the library.
+- (NSSet *)excludedFromImport;
+- (void)setExcluded:(BOOL)excluded forPersistentIDs:(NSArray *)persistentIDs;
+
 - (void)noteChanged;   // posts the change notification and schedules a save
 
 + (NSArray *)supportedExtensions;

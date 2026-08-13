@@ -14,6 +14,7 @@ NSString *const BTLibraryImportProgressNotification = @"BTLibraryImportProgress"
 @property (nonatomic, strong) NSMutableArray *playlists;
 @property (nonatomic, assign) BOOL importing;
 @property (nonatomic, strong) NSMutableSet *knownPaths;
+@property (nonatomic, strong) NSMutableSet *excluded;
 @end
 
 @implementation BTLibrary
@@ -31,6 +32,7 @@ NSString *const BTLibraryImportProgressNotification = @"BTLibraryImportProgress"
         _tracks = [NSMutableArray array];
         _playlists = [NSMutableArray array];
         _knownPaths = [NSMutableSet set];
+        _excluded = [NSMutableSet set];
     }
     return self;
 }
@@ -103,6 +105,10 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
     [self.tracks removeAllObjects];
     [self.playlists removeAllObjects];
     [self.knownPaths removeAllObjects];
+    [self.excluded removeAllObjects];
+
+    NSArray *left = [root objectForKey:@"excludedFromImport"];
+    if ([left isKindOfClass:[NSArray class]]) [self.excluded addObjectsFromArray:left];
 
     NSUInteger i;
     NSArray *trackDicts = [root objectForKey:@"tracks"];
@@ -135,7 +141,10 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
         [playlistDicts addObject:[[self.playlists objectAtIndex:i] dictionaryRepresentation]];
     }
 
-    NSDictionary *root = @{@"version": @1, @"tracks": trackDicts, @"playlists": playlistDicts};
+    NSDictionary *root = @{@"version": @1,
+                           @"tracks": trackDicts,
+                           @"playlists": playlistDicts,
+                           @"excludedFromImport": [self.excluded allObjects]};
     NSData *data = [NSJSONSerialization dataWithJSONObject:root options:0 error:NULL];
     if (data) [data writeToFile:[self libraryFilePath] atomically:YES];
 }
@@ -144,6 +153,22 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
     [[NSNotificationCenter defaultCenter] postNotificationName:BTLibraryDidChangeNotification object:self];
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(saveToDisk) object:nil];
     [self performSelector:@selector(saveToDisk) withObject:nil afterDelay:2.0];
+}
+
+#pragma mark - Left behind on purpose
+
+- (NSSet *)excludedFromImport {
+    return [NSSet setWithSet:self.excluded];
+}
+
+- (void)setExcluded:(BOOL)excluded forPersistentIDs:(NSArray *)persistentIDs {
+    if ([persistentIDs count] == 0) return;
+    if (excluded) {
+        [self.excluded addObjectsFromArray:persistentIDs];
+    } else {
+        [self.excluded minusSet:[NSSet setWithArray:persistentIDs]];
+    }
+    [self noteChanged];
 }
 
 #pragma mark - Lookup
