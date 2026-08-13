@@ -339,6 +339,15 @@ static NSImage *BTSteelGrain(void) {
 #pragma mark - Glyphs
 
 + (void)drawTriangleInRect:(NSRect)rect pointingRight:(BOOL)right color:(NSColor *)color {
+    // A triangle carries its weight at its base, a third of the way along
+    // rather than halfway, so centring the box it sits in leaves the mark
+    // looking pushed away from its point. Nudged by that sixth toward the
+    // point, which puts the ink itself in the middle.
+    //
+    // Done here so every mark made of triangles is corrected once: the play
+    // triangle and both pairs of skip triangles.
+    rect = NSOffsetRect(rect, (right ? 1.0 : -1.0) * NSWidth(rect) / 6.0, 0.0);
+
     NSBezierPath *p = [NSBezierPath bezierPath];
     if (right) {
         [p moveToPoint:NSMakePoint(NSMinX(rect), NSMinY(rect))];
@@ -355,11 +364,11 @@ static NSImage *BTSteelGrain(void) {
 }
 
 + (void)drawPlayGlyphInRect:(NSRect)rect color:(NSColor *)color {
-    NSRect r = NSInsetRect(rect, NSWidth(rect) * 0.30, NSHeight(rect) * 0.26);
-    // A triangle centered by its bounding box reads as sitting left of center,
-    // because its weight is all at the base. Nudge it toward the point.
-    r.origin.x += NSWidth(rect) * 0.045;
-    [self drawTriangleInRect:r pointingRight:YES color:color];
+    // The nudge toward the point is applied for every triangle at once, in
+    // drawTriangleInRect:, rather than guessed at separately here.
+    [self drawTriangleInRect:NSInsetRect(rect, NSWidth(rect) * 0.30, NSHeight(rect) * 0.26)
+              pointingRight:YES
+                      color:color];
 }
 
 + (void)drawPauseGlyphInRect:(NSRect)rect color:(NSColor *)color {

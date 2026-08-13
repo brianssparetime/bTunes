@@ -610,6 +610,8 @@ static CGFloat BTTitleBarHeight(void) {
     _sourceList = [[BTKeyOutlineView alloc] initWithFrame:[[sourceScroll contentView] bounds]];
     [_sourceList setFocusRingType:NSFocusRingTypeNone];
     NSTableColumn *sourceColumn = [[NSTableColumn alloc] initWithIdentifier:@"source"];
+    // A starting width only. It follows the pane from here on, or a name wider
+    // than this stays cut short however far the pane is dragged open.
     [sourceColumn setWidth:150];
     BTSourceCell *sourceCell = [[BTSourceCell alloc] init];
     [sourceCell setFont:[BTStyle uiFont]];
@@ -959,6 +961,19 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     [_searchField setFrame:NSMakeRect(searchLeft, 17, searchWidth, 21)];
 }
 
+// The source list has one column and it is the whole width of the pane. Set by
+// hand rather than left to a column autoresizing style, because the outline view
+// is inside a scroll view whose width is what the column has to match.
+- (void)sizeSourceColumn {
+    NSScrollView *scroll = [_sourceList enclosingScrollView];
+    CGFloat width = [scroll contentSize].width;
+    if (width < 20.0) return;
+
+    [_sourceList setFrameSize:NSMakeSize(width, NSHeight([_sourceList frame]))];
+    NSArray *columns = [_sourceList tableColumns];
+    if ([columns count] > 0) [[columns objectAtIndex:0] setWidth:width];
+}
+
 - (void)layoutContent {
     NSRect bounds = [[[self window] contentView] bounds];
     CGFloat chromeHeight = BT_CHROME_HEIGHT + BTTitleBarHeight();
@@ -979,6 +994,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     // the edge of the table. Spread across the columns rather than given to the
     // last, which is a number column in a playlist.
     [_trackTable sizeToFit];
+    [self sizeSourceColumn];
 }
 
 - (void)showWindow:(id)sender {
@@ -1984,6 +2000,7 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
         if (right < 0) right = 0;
         [first setFrame:NSMakeRect(0, 0, left, size.height)];
         [second setFrame:NSMakeRect(left + divider, 0, right, size.height)];
+        [self sizeSourceColumn];
         return;
     }
 
