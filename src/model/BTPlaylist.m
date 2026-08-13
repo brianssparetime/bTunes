@@ -1,4 +1,5 @@
 #import "BTPlaylist.h"
+#import "BTSavedValue.h"
 #import "BTTrack.h"
 
 @implementation BTSmartRule
@@ -12,9 +13,11 @@
 }
 
 + (instancetype)ruleWithDictionary:(NSDictionary *)dict {
-    return [self ruleWithField:(BTRuleField)[[dict objectForKey:@"field"] integerValue]
-                      operator:(BTRuleOperator)[[dict objectForKey:@"op"] integerValue]
-                         value:[dict objectForKey:@"value"]];
+    // The value is copied into a string property and then compared as one, so a
+    // number saved here would be kept as a number and crash on the comparison.
+    return [self ruleWithField:(BTRuleField)BTSavedInteger(dict, @"field")
+                      operator:(BTRuleOperator)BTSavedInteger(dict, @"op")
+                         value:BTSavedString(dict, @"value")];
 }
 
 - (NSDictionary *)dictionaryRepresentation {
@@ -190,40 +193,45 @@
 }
 
 + (instancetype)playlistWithDictionary:(NSDictionary *)dict {
-    BTPlaylist *p = [self playlistWithName:[dict objectForKey:@"name"]
-                                      kind:(BTPlaylistKind)[[dict objectForKey:@"kind"] integerValue]];
-    NSString *pid = [dict objectForKey:@"id"];
-    if (pid) p.playlistID = pid;
-    p.sourcePersistentID = [dict objectForKey:@"sourcePersistentID"];
-    p.matchAll = [[dict objectForKey:@"matchAll"] boolValue];
-    p.limit = [[dict objectForKey:@"limit"] integerValue];
+    BTPlaylist *p = [self playlistWithName:BTSavedString(dict, @"name")
+                                      kind:(BTPlaylistKind)BTSavedInteger(dict, @"kind")];
+    NSString *pid = BTSavedString(dict, @"id");
+    if ([pid length] > 0) p.playlistID = pid;
+    p.sourcePersistentID = BTSavedString(dict, @"sourcePersistentID");
+    p.matchAll = BTSavedBool(dict, @"matchAll");
+    p.limit = BTSavedInteger(dict, @"limit");
 
-    id sort = [dict objectForKey:@"sortColumn"];
-    if ([sort isKindOfClass:[NSString class]] && [sort length] > 0) {
+    NSString *sort = BTSavedString(dict, @"sortColumn");
+    if ([sort length] > 0) {
         p.sortColumn = sort;
         // A playlist saved before the direction was recorded was ascending.
         id ascending = [dict objectForKey:@"sortAscending"];
-        p.sortAscending = ascending ? [ascending boolValue] : YES;
+        p.sortAscending = ascending ? BTSavedBool(dict, @"sortAscending") : YES;
     }
 
-    NSArray *ids = [dict objectForKey:@"trackIDs"];
-    if ([ids isKindOfClass:[NSArray class]]) [p.trackIDs addObjectsFromArray:ids];
-
-    NSArray *ruleDicts = [dict objectForKey:@"rules"];
     NSUInteger i;
-    if ([ruleDicts isKindOfClass:[NSArray class]]) {
-        for (i = 0; i < [ruleDicts count]; i++) {
-            [p.rules addObject:[BTSmartRule ruleWithDictionary:[ruleDicts objectAtIndex:i]]];
-        }
+    NSArray *ids = BTSavedArray(dict, @"trackIDs");
+    for (i = 0; i < [ids count]; i++) {
+        // A track id is looked up as a string everywhere else, so anything that
+        // is not one would sit in the playlist matching nothing.
+        NSString *trackID = [ids objectAtIndex:i];
+        if ([trackID isKindOfClass:[NSString class]]) [p.trackIDs addObject:trackID];
     }
 
-    NSArray *childDicts = [dict objectForKey:@"children"];
-    if ([childDicts isKindOfClass:[NSArray class]]) {
-        for (i = 0; i < [childDicts count]; i++) {
-            BTPlaylist *child = [BTPlaylist playlistWithDictionary:[childDicts objectAtIndex:i]];
-            child.parent = p;
-            [p.children addObject:child];
-        }
+    NSArray *ruleDicts = BTSavedArray(dict, @"rules");
+    for (i = 0; i < [ruleDicts count]; i++) {
+        NSDictionary *rule = [ruleDicts objectAtIndex:i];
+        if (![rule isKindOfClass:[NSDictionary class]]) continue;
+        [p.rules addObject:[BTSmartRule ruleWithDictionary:rule]];
+    }
+
+    NSArray *childDicts = BTSavedArray(dict, @"children");
+    for (i = 0; i < [childDicts count]; i++) {
+        NSDictionary *childDict = [childDicts objectAtIndex:i];
+        if (![childDict isKindOfClass:[NSDictionary class]]) continue;
+        BTPlaylist *child = [BTPlaylist playlistWithDictionary:childDict];
+        child.parent = p;
+        [p.children addObject:child];
     }
     return p;
 }

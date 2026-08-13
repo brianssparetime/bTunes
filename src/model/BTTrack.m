@@ -1,5 +1,6 @@
 #import "BTTrack.h"
 #import "BTPreferences.h"
+#import "BTSavedValue.h"
 
 // The roots, asked of the settings each time rather than held, so pointing a
 // setting somewhere else takes effect without anything having to be told.
@@ -24,28 +25,6 @@ static NSString *BTPathBelowRoot(NSString *path, BTPathRoot which) {
 
     NSString *below = [standard substringFromIndex:[prefix length]];
     return [below length] > 0 ? below : standard;
-}
-
-static NSString *BTString(NSDictionary *d, NSString *key) {
-    id v = [d objectForKey:key];
-    return [v isKindOfClass:[NSString class]] ? v : nil;
-}
-
-static NSInteger BTInteger(NSDictionary *d, NSString *key) {
-    id v = [d objectForKey:key];
-    return [v respondsToSelector:@selector(integerValue)] ? [v integerValue] : 0;
-}
-
-static double BTDouble(NSDictionary *d, NSString *key) {
-    id v = [d objectForKey:key];
-    return [v respondsToSelector:@selector(doubleValue)] ? [v doubleValue] : 0.0;
-}
-
-static NSDate *BTDate(NSDictionary *d, NSString *key) {
-    id v = [d objectForKey:key];
-    if (![v respondsToSelector:@selector(doubleValue)]) return nil;
-    double t = [v doubleValue];
-    return t > 0 ? [NSDate dateWithTimeIntervalSince1970:t] : nil;
 }
 
 // A month is the average Gregorian year in twelfths and a year is that same
@@ -125,33 +104,33 @@ static NSString *BTMinuteCount(double minutes) {
 
 + (instancetype)trackWithDictionary:(NSDictionary *)dict {
     BTTrack *t = [[BTTrack alloc] init];
-    t.trackID = BTString(dict, @"id");
+    t.trackID = BTSavedString(dict, @"id");
     // The root before the path, because the path is measured against it.
-    t.pathRoot = [BTString(dict, @"pathRoot") isEqualToString:@"detune"]
+    t.pathRoot = [BTSavedString(dict, @"pathRoot") isEqualToString:@"detune"]
         ? BTPathRootDetune : BTPathRootMusic;
-    t.path = BTString(dict, @"path");
-    t.persistentID = BTString(dict, @"persistentID");
-    t.title = BTString(dict, @"title");
-    t.artist = BTString(dict, @"artist");
-    t.albumArtist = BTString(dict, @"albumArtist");
-    t.album = BTString(dict, @"album");
-    t.genre = BTString(dict, @"genre");
-    t.composer = BTString(dict, @"composer");
-    t.kind = BTString(dict, @"kind");
-    t.trackNumber = BTInteger(dict, @"trackNumber");
-    t.discNumber = BTInteger(dict, @"discNumber");
-    t.year = BTInteger(dict, @"year");
-    t.rating = BTInteger(dict, @"rating");
-    t.playCount = BTInteger(dict, @"playCount");
-    t.duration = BTDouble(dict, @"duration");
-    t.fileSize = (long long)BTDouble(dict, @"fileSize");
-    t.dateAdded = BTDate(dict, @"dateAdded");
-    t.lastPlayed = BTDate(dict, @"lastPlayed");
+    t.path = BTSavedString(dict, @"path");
+    t.persistentID = BTSavedString(dict, @"persistentID");
+    t.title = BTSavedString(dict, @"title");
+    t.artist = BTSavedString(dict, @"artist");
+    t.albumArtist = BTSavedString(dict, @"albumArtist");
+    t.album = BTSavedString(dict, @"album");
+    t.genre = BTSavedString(dict, @"genre");
+    t.composer = BTSavedString(dict, @"composer");
+    t.kind = BTSavedString(dict, @"kind");
+    t.trackNumber = BTSavedInteger(dict, @"trackNumber");
+    t.discNumber = BTSavedInteger(dict, @"discNumber");
+    t.year = BTSavedInteger(dict, @"year");
+    t.rating = BTSavedInteger(dict, @"rating");
+    t.playCount = BTSavedInteger(dict, @"playCount");
+    t.duration = BTSavedDouble(dict, @"duration");
+    t.fileSize = (long long)BTSavedDouble(dict, @"fileSize");
+    t.dateAdded = BTSavedDate(dict, @"dateAdded");
+    t.lastPlayed = BTSavedDate(dict, @"lastPlayed");
     t.isProtected = [[dict objectForKey:@"protected"] boolValue];
     t.usesStartTime = [[dict objectForKey:@"usesStartTime"] boolValue];
-    t.startTime = BTDouble(dict, @"startTime");
+    t.startTime = BTSavedDouble(dict, @"startTime");
     t.usesEndTime = [[dict objectForKey:@"usesEndTime"] boolValue];
-    t.endTime = BTDouble(dict, @"endTime");
+    t.endTime = BTSavedDouble(dict, @"endTime");
     if (t.trackID == nil || t.path == nil) return nil;
     return t;
 }
