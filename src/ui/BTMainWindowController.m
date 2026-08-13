@@ -2409,8 +2409,23 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 
 #pragma mark - Menu validation
 
+// A key equivalent carrying no modifier is also an ordinary letter. While
+// something is being typed the letter has to win: searching for "moon hooch"
+// should not mute the music, and renaming a playlist should not pause it.
+static BOOL BTSomethingIsBeingTyped(NSWindow *window) {
+    id responder = [window firstResponder];
+    return ([responder isKindOfClass:[NSTextView class]] &&
+            [(NSTextView *)responder isFieldEditor]);
+}
+
 - (BOOL)validateMenuItem:(NSMenuItem *)item {
     SEL action = [item action];
+
+    if ([[item keyEquivalent] length] > 0 && [item keyEquivalentModifierMask] == 0 &&
+        BTSomethingIsBeingTyped([self window])) {
+        return NO;
+    }
+
     if (action == @selector(editSmartPlaylist:)) {
         NSInteger clicked = [_sourceList clickedRow];
         BTPlaylist *selected = (clicked >= 0)

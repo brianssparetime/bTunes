@@ -327,7 +327,9 @@
     [controlsMenu addItem:[NSMenuItem separatorItem]];
     // Plain M is handled by the windows, since a menu key equivalent would fire
     // while typing in the search field.
-    [controlsMenu addItem:[self itemWithTitle:@"Mute" action:@selector(toggleMute:) key:@"" modifiers:0 target:nil]];
+    // A bare letter, the way the bare space plays and pauses. Command-M is already
+    // Minimize. Both are held back while something is being typed.
+    [controlsMenu addItem:[self itemWithTitle:@"Mute" action:@selector(toggleMute:) key:@"m" modifiers:0 target:nil]];
     [controlsMenu addItem:[self itemWithTitle:@"Volume Up" action:@selector(volumeUp:) key:@"" modifiers:NSCommandKeyMask target:nil]];
     [controlsMenu addItem:[self itemWithTitle:@"Volume Down" action:@selector(volumeDown:) key:@"" modifiers:NSCommandKeyMask target:nil]];
     [controlsItem setSubmenu:controlsMenu];
