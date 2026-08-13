@@ -89,7 +89,7 @@ if [ "$BUILD_TOOLS" -eq 1 ]; then
 
     # These live in tools/local, which belongs to the machine rather than to the
     # project. Building them is optional and quietly skipped when they are absent.
-    for tool in bt-import smoke_test spectrum_check; do
+    for tool in bt-import smoke_test spectrum_check detune_check; do
         if [ ! -f "$SCRIPT_DIR/tools/local/$tool.m" ]; then
             echo "    skipping $tool, not present"
             continue
