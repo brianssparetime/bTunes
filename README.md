@@ -5,7 +5,11 @@ shaped like classic Winamp.
 
 ## What it does
 
-Sources sit on the left: the whole library, playlists, and folders of playlists.
+Sources sit on the left: the whole library, Recently Added, playlists, and
+folders of playlists. Recently Added holds the same songs in the order iTunes
+recorded them being added, newest first, and does not sort. Playlists are grouped
+by kind, the smart ones first, then folders, then the ones built by hand, and the
+same grouping applies inside a folder.
 Three browser columns across the top narrow by genre, then artist, then album,
 and appear for the library only. The track list sorts by any column. Search is
 in the upper right, transport and volume in the upper left, and the readout
@@ -94,8 +98,8 @@ each other's play counts.
 
 ## Settings
 
-Preferences, at Command-comma, holds two locations, kept apart because they move
-independently:
+Preferences, at Command-comma, holds four locations, kept apart because they move
+independently, and a switch for purple mode:
 
 - **Music** is the folder the audio sits in, and the root every track's path is
   stored against. A song is recorded as its place below this folder rather than
@@ -104,6 +108,13 @@ independently:
   still works. Existing libraries convert themselves the first time they load.
 - **Library** is where BTunes keeps its own database: ratings, play counts, and
   playlists. Songs are not moved when it changes.
+- **iTunes** is the library file a sync reads. It is only ever read. Point it at
+  a copy while trying something out.
+- **Detune** is the folder of free recordings standing in for locked purchases,
+  holding `detune-mapping.json` and the audio beneath it. Left empty, locked
+  songs simply stay locked. It is a second root, so a song from it records its
+  place below that folder the same way ordinary music records its place below the
+  music folder.
 
 The database is `btunes_library.json`. Without a setting it sits in a `BTunes Library`
 folder beside the application if there is one, and otherwise in
@@ -118,6 +129,15 @@ counts against separate libraries and no sign that anything is wrong.
 Volume, the open state of each folder, the selected source and the highlighted
 track carry over between runs.
 
+At startup BTunes checks that every song is where it recorded it. Anything that
+has moved is looked for in the iTunes library by its persistent id and pointed at
+its new place, which covers a media folder being reorganised or a tag edit
+renaming the file. Whatever is genuinely gone is reported, named in the dialog
+when there are fewer than ten and listed in full in `missing-files.log` beside
+the database. Nothing is removed on the strength of it: a file missing this
+morning may be a volume that is not mounted, and the ratings attached to it
+cannot be got back while the audio usually can.
+
 ## Using it
 
 Audio files are read and never modified, and nothing on disk is ever deleted.
@@ -125,10 +145,13 @@ BTunes never copies them either: a song is played where it already lives, so
 the music stays where it is and BTunes owns only the database.
 
 - Add to Library, Command-O, adds files or folders.
-- Import iTunes Library reads an iTunes XML file, never writes it, and rebuilds
-  its playlists and folders. Ratings, play counts, and date-added come across.
-  A smart playlist arrives as an ordinary playlist holding the songs it resolved
-  to, because iTunes stores the rules themselves in an undocumented form.
+- iTunes Sync, in the File menu and on the button at the bottom right, compares
+  the iTunes library against this one and shows what is new. Songs and playlists
+  are ticked and only what is ticked comes across. The XML is read and never
+  written. Ratings, play counts, and date-added come across; a smart playlist
+  arrives as an ordinary playlist holding the songs it resolved to, because
+  iTunes stores the rules themselves in an undocumented form. What is turned down
+  starts unticked next time.
 - New Playlist is Command-N, new smart playlist adds Option, new folder adds
   Shift. Double-click a playlist to rename it.
 - Space plays or pauses. Left and right skip tracks, up and down change volume,
