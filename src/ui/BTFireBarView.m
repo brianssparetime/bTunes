@@ -11,6 +11,7 @@
     NSInteger _capHold[BT_BAR_COUNT];
     CGFloat _ceiling;
     CGFloat _average;
+    BOOL _settled;
 }
 
 - (id)initWithFrame:(NSRect)frame {
@@ -70,9 +71,37 @@ static CGFloat BTRandomFraction(void) {
     return (CGFloat)arc4random_uniform(10000) / 10000.0f;
 }
 
+// Everything down and nothing left to fall.
+- (BOOL)atRest {
+    NSInteger i;
+    for (i = 0; i < BT_BAR_COUNT; i++) {
+        if (_values[i] > 0.001f || _peaks[i] > 0.001f) return NO;
+    }
+    return YES;
+}
+
 - (void)step:(NSTimer *)timer {
     BTPlayer *player = [BTPlayer sharedPlayer];
     CGFloat level = [player averageLevel];
+
+    // A pause reads as silence, so the bars fall away and the caps drop after
+    // them. Once the display is empty it is left alone rather than repainted
+    // twenty-five times a second for as long as the window is open.
+    if (level <= 0.0f && [self atRest]) {
+        if (!_settled) {
+            NSInteger i;
+            for (i = 0; i < BT_BAR_COUNT; i++) {
+                _values[i] = 0;
+                _peaks[i] = 0;
+                _capHold[i] = 0;
+                _capFall[i] = 0;
+            }
+            _settled = YES;
+            [self setNeedsDisplay:YES];
+        }
+        return;
+    }
+    _settled = NO;
 
     // A recording's loudness barely moves, so a fixed scale either pegs on a
     // loud track or barely lifts on a quiet one. The bars are measured against

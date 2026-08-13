@@ -258,7 +258,12 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
     [self postChange];
 }
 
-- (float)averageLevel { return self.smoothedAverage; }
+// Nothing sounding reads as silence. The meter is only sampled while the tick
+// runs, so a paused song otherwise leaves the last level standing and anything
+// driven from it carries on over a song that has stopped.
+- (float)averageLevel {
+    return [self isPlaying] ? self.smoothedAverage : 0.0f;
+}
 
 #pragma mark - Timer
 
