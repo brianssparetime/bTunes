@@ -128,6 +128,9 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
     player.volume = self.volume;
     player.meteringEnabled = YES;
     [player prepareToPlay];
+    // A song set to begin partway in starts there rather than at nothing.
+    NSTimeInterval from = [track playbackStart];
+    if (from > 0 && from < [player duration]) [player setCurrentTime:from];
     [player play];
 
     self.audio = player;
@@ -281,7 +284,21 @@ static float BTLevelFromDecibels(float db) {
     return powf(10.0f, db / 40.0f);
 }
 
+// A song set to stop early is stopped here rather than by the file running out,
+// which is the only moment AVAudioPlayer tells anyone about. Twenty times a
+// second is close enough that no one hears the difference.
+- (BOOL)passedItsEnd {
+    BTTrack *track = self.currentTrack;
+    if (track == nil || !track.usesEndTime || self.audio == nil) return NO;
+    NSTimeInterval end = [track playbackEnd];
+    return end > 0 && [self.audio currentTime] >= end;
+}
+
 - (void)tickFired:(NSTimer *)timer {
+    if ([self passedItsEnd]) {
+        [self reachedTheEnd];
+        return;
+    }
     if (self.audio) {
         [self.audio updateMeters];
         NSUInteger channels = [self.audio numberOfChannels];
@@ -309,12 +326,18 @@ static float BTLevelFromDecibels(float db) {
 
 #pragma mark - AVAudioPlayerDelegate
 
-- (void)audioPlayerDidFinishPlaying:(AVAudioPlayer *)player successfully:(BOOL)flag {
+// Reached however it was reached: the file ran out, or the song's own end time
+// came round. Both mean the same thing to whatever comes next.
+- (void)reachedTheEnd {
     if (self.repeatMode == BTRepeatModeOne) {
         [self startTrackAtOrderPosition:self.orderPosition];
         return;
     }
     [self advanceBy:1 allowRepeat:YES];
+}
+
+- (void)audioPlayerDidFinishPlaying:(AVAudioPlayer *)player successfully:(BOOL)flag {
+    [self reachedTheEnd];
 }
 
 - (void)audioPlayerDecodeErrorDidOccur:(AVAudioPlayer *)player error:(NSError *)error {

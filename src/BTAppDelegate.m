@@ -112,6 +112,7 @@
 - (void)addToLibrary:(id)sender { [_main addToLibrary:sender]; }
 - (void)importITunesLibrary:(id)sender { [_main importITunesLibrary:sender]; }
 - (void)focusSearch:(id)sender { [_main focusSearch:sender]; }
+- (void)getInfo:(id)sender { [_main getInfo:sender]; }
 
 - (void)showPreferences:(id)sender {
     [[BTPreferencesController sharedController] showWindow:nil];
@@ -169,7 +170,8 @@
     [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItem:[self itemWithTitle:@"Add to Library..." action:@selector(addToLibrary:) key:@"o" modifiers:NSCommandKeyMask target:nil]];
     [fileMenu addItem:[self itemWithTitle:@"Import iTunes Library..." action:@selector(importITunesLibrary:) key:@"" modifiers:0 target:nil]];
-    [fileMenu addItem:[self itemWithTitle:@"Edit Smart Playlist..." action:@selector(editSmartPlaylist:) key:@"i" modifiers:NSCommandKeyMask target:nil]];
+    [fileMenu addItem:[self itemWithTitle:@"Get Info" action:@selector(getInfo:) key:@"i" modifiers:NSCommandKeyMask target:nil]];
+    [fileMenu addItem:[self itemWithTitle:@"Edit Smart Playlist..." action:@selector(editSmartPlaylist:) key:@"" modifiers:0 target:nil]];
     [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItem:[self itemWithTitle:@"Delete" action:@selector(deleteSelection:) key:@"" modifiers:0 target:nil]];
     [fileItem setSubmenu:fileMenu];

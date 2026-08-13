@@ -80,6 +80,10 @@ static NSDate *BTDate(NSDictionary *d, NSString *key) {
     t.dateAdded = BTDate(dict, @"dateAdded");
     t.lastPlayed = BTDate(dict, @"lastPlayed");
     t.isProtected = [[dict objectForKey:@"protected"] boolValue];
+    t.usesStartTime = [[dict objectForKey:@"usesStartTime"] boolValue];
+    t.startTime = BTDouble(dict, @"startTime");
+    t.usesEndTime = [[dict objectForKey:@"usesEndTime"] boolValue];
+    t.endTime = BTDouble(dict, @"endTime");
     if (t.trackID == nil || t.path == nil) return nil;
     return t;
 }
@@ -106,6 +110,16 @@ static NSDate *BTDate(NSDictionary *d, NSString *key) {
     [d setObject:@((double)self.fileSize) forKey:@"fileSize"];
     if (self.dateAdded) [d setObject:@([self.dateAdded timeIntervalSince1970]) forKey:@"dateAdded"];
     if (self.lastPlayed) [d setObject:@([self.lastPlayed timeIntervalSince1970]) forKey:@"lastPlayed"];
+    // Written only when in use, so a library carries nothing for the songs that
+    // play whole, which is nearly all of them.
+    if (self.usesStartTime) {
+        [d setObject:@YES forKey:@"usesStartTime"];
+        [d setObject:@(self.startTime) forKey:@"startTime"];
+    }
+    if (self.usesEndTime) {
+        [d setObject:@YES forKey:@"usesEndTime"];
+        [d setObject:@(self.endTime) forKey:@"endTime"];
+    }
     return d;
 }
 
@@ -115,6 +129,78 @@ static NSDate *BTDate(NSDictionary *d, NSString *key) {
 
     NSString *root = BTMusicRoot();
     return root ? [root stringByAppendingPathComponent:self.path] : self.path;
+}
+
+- (NSTimeInterval)playbackStart {
+    if (!self.usesStartTime || self.startTime <= 0) return 0.0;
+    return self.startTime;
+}
+
+- (NSTimeInterval)playbackEnd {
+    if (!self.usesEndTime || self.endTime <= 0) return self.duration;
+    return self.endTime;
+}
+
+// Ninety seconds may be written 90, 1:30, 1m30s, or 90s. Hours are allowed as
+// 1:02:30. Anything else is refused rather than being read as zero, so a typing
+// slip does not quietly set a song to start at the beginning.
++ (NSTimeInterval)timeFromText:(NSString *)text {
+    NSString *trimmed = [[text stringByTrimmingCharactersInSet:
+                          [NSCharacterSet whitespaceCharacterSet]] lowercaseString];
+    if ([trimmed length] == 0) return -1.0;
+
+    if ([trimmed rangeOfString:@":"].location != NSNotFound) {
+        NSArray *parts = [trimmed componentsSeparatedByString:@":"];
+        if ([parts count] < 2 || [parts count] > 3) return -1.0;
+        NSTimeInterval total = 0.0;
+        NSUInteger i;
+        for (i = 0; i < [parts count]; i++) {
+            NSString *part = [parts objectAtIndex:i];
+            if ([part length] == 0) return -1.0;
+            if ([part rangeOfCharacterFromSet:
+                 [[NSCharacterSet decimalDigitCharacterSet] invertedSet]].location != NSNotFound) {
+                return -1.0;
+            }
+            total = total * 60.0 + [part doubleValue];
+        }
+        return total;
+    }
+
+    if ([trimmed rangeOfString:@"m"].location != NSNotFound ||
+        [trimmed rangeOfString:@"h"].location != NSNotFound ||
+        [trimmed rangeOfString:@"s"].location != NSNotFound) {
+        NSScanner *scanner = [NSScanner scannerWithString:trimmed];
+        NSTimeInterval total = 0.0;
+        BOOL read = NO;
+        while (![scanner isAtEnd]) {
+            double value = 0.0;
+            if (![scanner scanDouble:&value]) return -1.0;
+            NSString *unit = nil;
+            if (![scanner scanCharactersFromSet:[NSCharacterSet letterCharacterSet]
+                                     intoString:&unit]) return -1.0;
+            if ([unit isEqualToString:@"h"]) total += value * 3600.0;
+            else if ([unit isEqualToString:@"m"]) total += value * 60.0;
+            else if ([unit isEqualToString:@"s"]) total += value;
+            else return -1.0;
+            read = YES;
+        }
+        return read ? total : -1.0;
+    }
+
+    NSScanner *plain = [NSScanner scannerWithString:trimmed];
+    double seconds = 0.0;
+    if (![plain scanDouble:&seconds] || ![plain isAtEnd]) return -1.0;
+    return seconds;
+}
+
++ (NSString *)textFromTime:(NSTimeInterval)time {
+    if (time < 0) time = 0;
+    NSInteger total = (NSInteger)(time + 0.5);
+    if (total >= 3600) {
+        return [NSString stringWithFormat:@"%ld:%02ld:%02ld",
+                (long)(total / 3600), (long)((total % 3600) / 60), (long)(total % 60)];
+    }
+    return [NSString stringWithFormat:@"%ld:%02ld", (long)(total / 60), (long)(total % 60)];
 }
 
 - (NSURL *)fileURL {

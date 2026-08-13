@@ -4,6 +4,7 @@
 #import "BTDisplayView.h"
 #import "BTBrowserView.h"
 #import "BTSmartPlaylistController.h"
+#import "BTTrackInfoController.h"
 #import "BTLibrary.h"
 #import "BTITunesImport.h"
 #import "BTPlaylist.h"
@@ -22,7 +23,7 @@ static NSString *const BTLibrarySource = @"Library";
 // under this name. Which columns are shown is kept separately, because the #
 // column is decided by the source rather than by preference and must not be
 // restored over that decision.
-static NSString *const BTColumnsAutosaveName = @"BTunesTrackColumns";
+static NSString *const BTColumnsAutosaveName = @"BTunesTrackColumns2";
 static NSString *const BTHiddenColumnsKey = @"BTHiddenColumns";
 
 static NSString *BTStringOrEmpty(NSString *value) {
@@ -359,6 +360,7 @@ static CGFloat BTTitleBarHeight(void) {
     NSMutableSet *_closedFolders;
     NSImage *_speakerImage;
     BTSmartPlaylistController *_sheetController;
+    BTTrackInfoController *_infoController;
     NSUndoManager *_undoManager;
 }
 
@@ -654,6 +656,14 @@ static CGFloat BTTitleBarHeight(void) {
     // Widths and arrangement are the table's own business to remember. Which
     // columns are shown is kept separately, so restoring it cannot argue with
     // the # column, whose presence follows the source.
+    NSMenu *songMenu = [[NSMenu alloc] initWithTitle:@"Song"];
+    NSMenuItem *info = [[NSMenuItem alloc] initWithTitle:@"Get Info"
+                                                  action:@selector(getInfo:)
+                                           keyEquivalent:@""];
+    [info setTarget:self];
+    [songMenu addItem:info];
+    [_trackTable setMenu:songMenu];
+
     [_trackTable setAutosaveName:BTColumnsAutosaveName];
     [_trackTable setAutosaveTableColumns:YES];
     [self restoreColumnVisibility];
@@ -678,7 +688,8 @@ static CGFloat BTTitleBarHeight(void) {
 //
 // identifier, heading, width, smallest, largest, shown to begin with
 - (void)addTrackColumns {
-    NSArray *specs = @[@[@"order",       @"#",            @38,  @30,  @54,  @YES],
+    NSArray *specs = @[@[@"playing",     @"",             @18,  @18,  @18,  @YES],
+                       @[@"order",       @"#",            @38,  @30,  @54,  @YES],
                        @[@"title",       @"Song Name",    @240, @80,  @900, @YES],
                        @[@"time",        @"Time",         @52,  @44,  @72,  @YES],
                        @[@"artist",      @"Artist",       @160, @70,  @600, @YES],
@@ -700,6 +711,8 @@ static CGFloat BTTitleBarHeight(void) {
 
     NSArray *numeric = @[@"order", @"track", @"time", @"playCount",
                          @"year", @"disc", @"size"];
+    // Nothing to sort by, nothing to widen, and no heading to say so.
+    NSArray *fixed = @[@"playing"];
     NSUInteger i;
     for (i = 0; i < [specs count]; i++) {
         NSArray *spec = [specs objectAtIndex:i];
@@ -718,7 +731,9 @@ static CGFloat BTTitleBarHeight(void) {
         // whichever of them leads the row can show it.
         BOOL countsSomething = [numeric containsObject:identifier];
         BOOL isPosition = ([identifier isEqualToString:@"order"] ||
-                           [identifier isEqualToString:@"track"]);
+                           [identifier isEqualToString:@"track"] ||
+                           [identifier isEqualToString:@"playing"]);
+        if ([fixed containsObject:identifier]) [[column headerCell] setStringValue:@""];
 
         NSTextFieldCell *cell = isPosition ? [[BTTrackNumberCell alloc] init]
                                            : [[NSTextFieldCell alloc] init];
@@ -751,7 +766,9 @@ static CGFloat BTTitleBarHeight(void) {
 // it rather than the reader.
 - (BOOL)columnCanBeHidden:(NSTableColumn *)column {
     NSString *identifier = [column identifier];
-    return !([identifier isEqualToString:@"title"] || [identifier isEqualToString:@"order"]);
+    return !([identifier isEqualToString:@"title"] ||
+             [identifier isEqualToString:@"order"] ||
+             [identifier isEqualToString:@"playing"]);
 }
 
 - (NSMenu *)buildColumnMenu {
@@ -1536,6 +1553,7 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     BTTrack *track = [_visibleTracks objectAtIndex:(NSUInteger)row];
     NSString *identifier = [tableColumn identifier];
 
+    if ([identifier isEqualToString:@"playing"]) return @"";
     if ([identifier isEqualToString:@"order"]) {
         NSNumber *place = [_sourceOrder objectForKey:track.trackID];
         return place ? [NSString stringWithFormat:@"%ld", (long)[place integerValue]] : @"";
@@ -1586,13 +1604,11 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     BTTrack *track = [_visibleTracks objectAtIndex:(NSUInteger)row];
 
     if ([cell isKindOfClass:[BTTrackNumberCell class]]) {
-        // The speaker replaces the number that leads the row, which is the
-        // playlist order when there is one and the track number otherwise. On
-        // the far right it would not read as marking the row at all.
-        NSString *leading = _showsPlaylistOrder ? @"order" : @"track";
+        // The mark has a column to itself at the near end, so it stays where the
+        // eye looks for it however the track number is arranged.
         BOOL playing = (track == [[BTPlayer sharedPlayer] currentTrack]);
-        BOOL leads = [[tableColumn identifier] isEqualToString:leading];
-        [(BTTrackNumberCell *)cell setIndicator:((playing && leads) ? _speakerImage : nil)];
+        BOOL isTheMark = [[tableColumn identifier] isEqualToString:@"playing"];
+        [(BTTrackNumberCell *)cell setIndicator:((playing && isTheMark) ? _speakerImage : nil)];
     }
     NSColor *color = track.isProtected ? [NSColor colorWithCalibratedWhite:0.55 alpha:1.0]
                                        : [NSColor blackColor];
@@ -1621,6 +1637,8 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
 - (void)tableView:(NSTableView *)tableView
     didClickTableColumn:(NSTableColumn *)tableColumn {
     NSString *identifier = [tableColumn identifier];
+    // The mark is not a fact anyone would sort by.
+    if ([identifier isEqualToString:@"playing"]) return;
     if ([identifier isEqualToString:_sortColumn]) {
         _sortAscending = !_sortAscending;
     } else {
@@ -1760,6 +1778,26 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     if ([rows count] == 0) return;
     [_trackTable selectRowIndexes:rows byExtendingSelection:NO];
     [_trackTable scrollRowToVisible:(NSInteger)[rows firstIndex]];
+}
+
+// The song under the pointer when the menu was opened, or the selected one when
+// this came from the menu bar instead.
+- (BTTrack *)trackForInfo {
+    NSInteger row = [_trackTable clickedRow];
+    if (row < 0) row = [_trackTable selectedRow];
+    if (row < 0 || row >= (NSInteger)[_visibleTracks count]) return nil;
+    return [_visibleTracks objectAtIndex:(NSUInteger)row];
+}
+
+- (void)getInfo:(id)sender {
+    BTTrack *track = [self trackForInfo];
+    if (track == nil) return;
+
+    _infoController = [[BTTrackInfoController alloc] initWithTrack:track];
+    [_infoController beginSheetForWindow:[self window] completion:^(BOOL changed) {
+        if (changed) [[BTLibrary sharedLibrary] noteChanged];
+        self->_infoController = nil;
+    }];
 }
 
 - (void)playSelectedTrack:(id)sender {
@@ -2149,6 +2187,9 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     if (action == @selector(editSmartPlaylist:)) {
         BTPlaylist *selected = [self selectedPlaylist];
         return (selected != nil && selected.kind == BTPlaylistKindSmart);
+    }
+    if (action == @selector(getInfo:)) {
+        return [self trackForInfo] != nil;
     }
     if (action == @selector(syncPlaylistOrder:)) {
         BTPlaylist *selected = [self selectedPlaylist];

@@ -24,5 +24,6 @@
 - (void)volumeUp:(id)sender;
 - (void)volumeDown:(id)sender;
 - (void)focusSearch:(id)sender;
+- (void)getInfo:(id)sender;
 
 @end

@@ -42,6 +42,20 @@
 // survives, but nothing on this system can decode it.
 @property (nonatomic, assign) BOOL isProtected;
 
+// Where playback begins and ends within the file, for a song with a long silent
+// tail, a run-in that is not wanted, or two songs sharing one file. Each is only
+// obeyed while its flag is set, so a time can be turned off and kept rather than
+// having to be typed again.
+@property (nonatomic, assign) BOOL usesStartTime;
+@property (nonatomic, assign) NSTimeInterval startTime;
+@property (nonatomic, assign) BOOL usesEndTime;
+@property (nonatomic, assign) NSTimeInterval endTime;
+
+// Where playback should begin, and where it should stop, taking the flags into
+// account. The end is the track's own length when nothing was set.
+- (NSTimeInterval)playbackStart;
+- (NSTimeInterval)playbackEnd;
+
 + (instancetype)trackWithDictionary:(NSDictionary *)dict;
 - (NSDictionary *)dictionaryRepresentation;
 
@@ -58,5 +72,11 @@
 
 // Text used by the search field: title, artist, album, genre, composer.
 - (BOOL)matchesSearchString:(NSString *)needle;
+
+// Reads 90, 1:30, 1m30s, and 1:02:30 as times. Returns a negative number when
+// the text cannot be read as one at all, so nothing is silently taken as zero.
++ (NSTimeInterval)timeFromText:(NSString *)text;
+// The form the info window shows back, which timeFromText: reads again.
++ (NSString *)textFromTime:(NSTimeInterval)time;
 
 @end
