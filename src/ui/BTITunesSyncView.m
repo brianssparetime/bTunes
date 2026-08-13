@@ -84,6 +84,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     NSButton *_hideAlreadySynced;
     NSButton *_checkAll;
     NSButton *_syncButton;
+    NSTextField *_chosenSummary;
 
     NSTextField *_songsHeading;
     NSTextField *_playlistsHeading;
@@ -170,6 +171,14 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     _syncButton = [BTPushButton buttonWithTitle:@"Sync" target:self action:@selector(runSync:)];
     [_syncButton setKeyEquivalent:@"\r"];
     [self addSubview:_syncButton];
+
+    // What the button is about to do, beside the button that does it. The line
+    // at the top says what iTunes has; this says what has been asked for, and
+    // the two are easy to confuse when they are not kept apart.
+    _chosenSummary = BTLabelWithText(@"", [BTStyle uiFont]);
+    [_chosenSummary setAlignment:NSRightTextAlignment];
+    [_chosenSummary setTextColor:[NSColor colorWithCalibratedWhite:0.35 alpha:1.0]];
+    [self addSubview:_chosenSummary];
 
     [self showComparingState];
     // Laid out here as well as on resize. The pane is made at the size it is
@@ -366,6 +375,16 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     CGFloat syncHeight = NSHeight([_syncButton frame]);
     [_syncButton setFrame:NSMakeRect(NSMaxX(bounds) - margin - syncWidth,
                                      22.0 - syncHeight / 2.0, syncWidth, syncHeight)];
+
+    // Right up against the button and centred on it, so the count reads as
+    // belonging to the button rather than to the pane above.
+    CGFloat countRight = NSMinX([_syncButton frame]) - 12.0;
+    CGFloat countLeft = margin + 110.0;
+    if (countLeft > countRight - 40.0) countLeft = countRight - 40.0;
+    // Two and a half points below where centring the box would put it. A label
+    // and a button title centre their lines by different metrics, and matching
+    // the boxes leaves the words visibly out of line with each other.
+    [_chosenSummary setFrame:NSMakeRect(countLeft, 22.0 - 10.5, countRight - countLeft, 17)];
 
     [self sizeColumnsOf:_songsTable in:_songsScroll fixedFirst:20.0];
     [self sizeColumnsOf:_playlistsTable in:_playlistsScroll fixedFirst:20.0];
@@ -669,6 +688,24 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     }
 }
 
+// What the Sync button would bring across. A count of nothing is said outright
+// rather than left blank, since a blank line beside a dead button reads as
+// something that failed to fill in.
+static NSString *BTChosenSummary(NSUInteger playlists, NSUInteger songs) {
+    if (playlists == 0 && songs == 0) return @"Nothing checked";
+
+    NSMutableArray *parts = [NSMutableArray array];
+    if (playlists > 0) {
+        [parts addObject:[NSString stringWithFormat:@"%lu playlist%@",
+                          (unsigned long)playlists, playlists == 1 ? @"" : @"s"]];
+    }
+    if (songs > 0) {
+        [parts addObject:[NSString stringWithFormat:@"%lu song%@",
+                          (unsigned long)songs, songs == 1 ? @"" : @"s"]];
+    }
+    return [parts componentsJoinedByString:@", "];
+}
+
 - (void)updateButtons {
     NSUInteger i, chosenSongs = 0, chosenLists = 0;
     for (i = 0; i < [_sync.incomingTracks count]; i++) {
@@ -683,6 +720,7 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     BOOL anything = (chosenSongs > 0 || chosenLists > 0);
     [_checkAll setTitle:(anything ? @"Uncheck All" : @"Check All")];
     [_syncButton setEnabled:anything];
+    [_chosenSummary setStringValue:BTChosenSummary(chosenLists, chosenSongs)];
 }
 
 - (void)checkAllOrNone:(id)sender {
