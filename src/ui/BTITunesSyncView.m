@@ -945,19 +945,23 @@ static NSString *BTChosenSummary(NSUInteger playlists, NSUInteger songs) {
     NSMutableSet *lists = [NSMutableSet set];
     NSMutableArray *leftBehind = [NSMutableArray array];
 
+    // The persistent id is the only handle on any of this: what is chosen, what
+    // was left behind, and what the import matches against. An entry without one
+    // could never be imported anyway, and putting a nil in a set throws, so it
+    // is passed over here rather than a moment later and less clearly.
     NSUInteger i;
     for (i = 0; i < [_sync.incomingTracks count]; i++) {
         BTITunesSyncTrack *track = [_sync.incomingTracks objectAtIndex:i];
-        if (![track eligible]) continue;
+        if (![track eligible] || track.persistentID == nil) continue;
         if ([self songIsChosen:track]) {
             [songs addObject:track.persistentID];
-        } else if (track.persistentID) {
+        } else {
             [leftBehind addObject:track.persistentID];
         }
     }
     for (i = 0; i < [_sync.playlists count]; i++) {
         BTITunesSyncPlaylist *playlist = [_sync.playlists objectAtIndex:i];
-        if (![playlist eligible]) continue;
+        if (![playlist eligible] || playlist.persistentID == nil) continue;
         if ([self stateOfPlaylist:playlist] != NSOffState) [lists addObject:playlist.persistentID];
     }
 

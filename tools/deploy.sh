@@ -66,14 +66,35 @@ TARBALL="/tmp/btunes-build.tgz"
 
 # Stops every copy running on TARGET. Two instances share one database and
 # overwrite each other's play counts, so an old one is always stopped before a
-# new one starts. Named explicitly rather than by killall, which is banned.
+# new one starts.
+#
+# Asked to quit, not killed. The library is written a couple of seconds after a
+# change and again when the application is told to stop, and a signal runs
+# neither of those: whatever was done in the last moments before a deploy is
+# exactly what a signal throws away. A signal is still here, after asking
+# politely and waiting, because a deploy that cannot stop the old copy is worse
+# than one that stops it rudely. Both fallbacks say so rather than passing for
+# an ordinary quit.
 stop_target() {
     $SSH "$BT_TARGET_HOST" '
-        pids=$(pgrep -x BTunes || true)
-        [ -z "$pids" ] && exit 0
-        for pid in $pids; do kill "$pid" 2>/dev/null || true; done
-        sleep 2
-        for pid in $(pgrep -x BTunes || true); do kill -9 "$pid" 2>/dev/null || true; done
+        pgrep -x BTunes >/dev/null 2>&1 || exit 0
+
+        osascript -e "tell application \"BTunes\" to quit" >/dev/null 2>&1 || true
+
+        waited=0
+        while pgrep -x BTunes >/dev/null 2>&1 && [ "$waited" -lt 20 ]; do
+            sleep 1
+            waited=$((waited + 1))
+        done
+        pgrep -x BTunes >/dev/null 2>&1 || exit 0
+
+        echo "    it did not quit when asked, so signalling it" >&2
+        for pid in $(pgrep -x BTunes); do kill "$pid" 2>/dev/null || true; done
+        sleep 3
+        pgrep -x BTunes >/dev/null 2>&1 || exit 0
+
+        echo "    still running, so forcing it; the library may be a save behind" >&2
+        for pid in $(pgrep -x BTunes); do kill -9 "$pid" 2>/dev/null || true; done
     '
 }
 
