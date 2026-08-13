@@ -14,8 +14,10 @@
 #define BT_LABEL  ([BTStyle labelHeight])          // a caption on its own line
 #define BT_FIELD  ([BTStyle fieldHeight])          // the drive and the gap
 #define BT_BOX    ([BTStyle checkboxHeight])       // verify after burning
-#define BT_NOTE   ([BTStyle smallLineHeight] + 17.0)   // the start-and-end note
-#define BT_STATUS ([BTStyle lineHeight] * 2.0 + 10.0)  // the reason, up to two lines
+// The two lines that wrap ask their own words how tall they need to be. Written
+// as a number of lines it was right for one size of type and one wording, and
+// the first time either changed the last line went missing without a sign.
+#define BT_STATUS_MIN ([BTStyle lineHeight] * 2.0 + 10.0)   // never less than two lines
 // A caption sits above the bottom edge of the control beside it.
 #define BT_RISE   4.0
 
@@ -176,12 +178,17 @@ static BTBurnController *sRunning = nil;
 // Placed from the top down, since only the two wrapping lines change height.
 // The buttons stay pinned to the bottom.
 - (void)layoutWindow {
-    CGFloat noteHeight = ([[_note stringValue] length] > 0) ? BT_NOTE : 0;
+    CGFloat textWidth = BT_BURN_SHEET_WIDTH - 40;
+    CGFloat noteHeight = BTHeightForWords([_note stringValue], [BTStyle smallFont], textWidth);
+    if (noteHeight > 0) noteHeight += 6.0;      // air under it
+    CGFloat statusHeight = MAX(BT_STATUS_MIN,
+                               BTHeightForWords([_status stringValue], [BTStyle uiFont], textWidth) + 4.0);
+
     // Heading, summary, the note when there is one, then the drive, the gap, the
     // tick box, the reason, and the strip the buttons sit in.
     CGFloat height = (BT_LABEL + 16) + (BT_LABEL + 6) + noteHeight + 12
                    + (BT_FIELD + 8) + (BT_FIELD + 8) + (BT_BOX + 8)
-                   + (BT_STATUS + 4) + 46;
+                   + (statusHeight + 4) + 46;
 
     NSWindow *window = [self window];
     NSRect frame = [window frame];
@@ -200,7 +207,7 @@ static BTBurnController *sRunning = nil;
 
     if (noteHeight > 0) {
         y -= noteHeight;
-        [_note setFrame:NSMakeRect(20, y, right - 20, noteHeight - 4)];
+        [_note setFrame:NSMakeRect(20, y, right - 20, noteHeight - 6.0)];
     }
     [_note setHidden:(noteHeight == 0)];
 
@@ -215,8 +222,8 @@ static BTBurnController *sRunning = nil;
     y -= BT_BOX + 8;
     [_verifyCheck setFrame:NSMakeRect(150, y, right - 150, BT_BOX)];
 
-    y -= BT_STATUS + 4;
-    [_status setFrame:NSMakeRect(20, y, right - 20, BT_STATUS)];
+    y -= statusHeight + 4;
+    [_status setFrame:NSMakeRect(20, y, right - 20, statusHeight)];
 }
 
 #pragma mark - Drives, and what they hold
@@ -488,6 +495,17 @@ static BTBurnController *sRunning = nil;
         [panel setDescription:[NSString stringWithFormat:@"Burning \"%@\" to disc.", name]];
         [panel beginProgressSheetForBurn:burn layout:tracks modalForWindow:self->_parent];
     });
+}
+
+// How tall a run of words needs to be at a given width. Measured rather than
+// counted in lines, since how many lines a sentence takes depends on the words
+// and on the size of the type, and getting it wrong loses the end of it.
+static CGFloat BTHeightForWords(NSString *text, NSFont *font, CGFloat width) {
+    if ([text length] == 0) return 0.0;
+    NSRect box = [text boundingRectWithSize:NSMakeSize(width, 10000.0)
+                                    options:NSStringDrawingUsesLineFragmentOrigin
+                                 attributes:@{NSFontAttributeName: font}];
+    return ceil(NSHeight(box));
 }
 
 // Said in the dialog rather than in an alert on top of it, and it stays said:

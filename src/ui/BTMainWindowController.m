@@ -61,8 +61,10 @@ static NSString *const BTLibraryWasSelected = @"library";
 static NSString *const BTIPodWasSelected = @"ipod";
 static NSString *const BTRecentWasSelected = @"recent";
 
-// Tall enough for two lines of text above the scrub bar without them meeting.
-#define BT_CHROME_HEIGHT 54.0
+// Tall enough for the readout, with the same air above and below it that the
+// transport buttons sit in. The readout says how tall it needs to be, since
+// what is in it follows the size of the type.
+#define BT_CHROME_HEIGHT ([BTDisplayView naturalHeight] + 12.0)
 #define BT_BOTTOM_HEIGHT 24.0
 // Air above the first row, taken inside the list rather than between the panels.
 // A gap between them exposes the window's own background as a band of flat gray
@@ -316,7 +318,7 @@ static CGFloat BTTitleBarHeight(void) {
     [_volumeView setVolume:[[BTPlayer sharedPlayer] volume]];
     [_chrome addSubview:_volumeView];
 
-    _display = [[BTDisplayView alloc] initWithFrame:NSMakeRect(230, 6, 340, 42)];
+    _display = [[BTDisplayView alloc] initWithFrame:NSMakeRect(230, 6, 340, [BTDisplayView naturalHeight])];
     [_display setAutoresizingMask:NSViewWidthSizable];
     [_chrome addSubview:_display];
 
@@ -652,7 +654,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
                    &miniLeft, &displayLeft, &displayWidth, &searchLeft, &searchWidth);
 
     [_miniButton setFrame:NSMakeRect(miniLeft, 14, 27.0, 27.0)];
-    [_display setFrame:NSMakeRect(displayLeft, 6, displayWidth, 42)];
+    [_display setFrame:NSMakeRect(displayLeft, 6, displayWidth, [BTDisplayView naturalHeight])];
     [_searchField setFrame:NSMakeRect(searchLeft, 17, searchWidth, 21)];
 }
 

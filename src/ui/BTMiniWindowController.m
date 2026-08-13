@@ -90,10 +90,32 @@ static void BTDrawRibbon(NSRect rect) {
     }
 }
 
+// The panel's own type size, and the one number the four fonts below come from.
+//
+// Separate from the main window's on purpose. The panel is a fixed size,
+// measured from its top edge the way the skin it imitates was, so its bands are
+// fourteen points tall whatever the type does and there is nowhere for a larger
+// face to go. Its palette is already its own for the same kind of reason, and
+// purple mode does not reach it either.
+//
+// So this can be moved, but not far, and moving it means looking at the panel
+// rather than trusting the arithmetic: tools/local/mini_render.m draws it.
+#define BT_MINI_FONT_SIZE 11.0
+
 static NSFont *BTMiniFixedFont(CGFloat size) {
     NSFont *font = [NSFont fontWithName:@"Monaco" size:size];
     return font ? font : [NSFont userFixedPitchFontOfSize:size];
 }
+
+// The name across the title bar, and the three values in the boxes.
+static NSFont *BTMiniTitleFont(void) { return [BTStyle fontOfSize:BT_MINI_FONT_SIZE bold:YES]; }
+static NSFont *BTMiniSmallFont(void) { return [BTStyle fontOfSize:BT_MINI_FONT_SIZE - 2.0 bold:NO]; }
+
+// The elapsed time in the display, and the track name scrolling beside it. Both
+// are fixed pitch, because digits that change every second must not shuffle the
+// ones beside them.
+static NSFont *BTMiniClockFont(void)   { return BTMiniFixedFont(BT_MINI_FONT_SIZE + 4.0); }
+static NSFont *BTMiniReadoutFont(void) { return BTMiniFixedFont(BT_MINI_FONT_SIZE - 1.0); }
 
 #pragma mark - Blocky button
 
@@ -231,7 +253,7 @@ static NSFont *BTMiniFixedFont(CGFloat size) {
     [BTMiniBodyDark() set];
     NSRectFill(title);
 
-    NSDictionary *titleAttrs = @{NSFontAttributeName: [BTStyle boldFont],
+    NSDictionary *titleAttrs = @{NSFontAttributeName: BTMiniTitleFont(),
                                  NSForegroundColorAttributeName: BTMiniPurpleLight()};
     NSString *name = @"BTUNES";
     NSSize nameSize = [name sizeWithAttributes:titleAttrs];
@@ -250,7 +272,7 @@ static NSFont *BTMiniFixedFont(CGFloat size) {
     BTTrack *track = [player currentTrack];
 
     NSString *time = track ? [BTStyle timeStringFromInterval:[player currentTime]] : @"--:--";
-    NSDictionary *digitAttrs = @{NSFontAttributeName: BTMiniFixedFont(15.0),
+    NSDictionary *digitAttrs = @{NSFontAttributeName: BTMiniClockFont(),
                                  NSForegroundColorAttributeName: BTMiniLCD()};
     NSSize timeSize = [time sizeWithAttributes:digitAttrs];
     [time drawAtPoint:NSMakePoint(NSMaxX(lcd) - timeSize.width - 4, NSMaxY(lcd) - timeSize.height - 1)
@@ -274,7 +296,7 @@ static NSFont *BTMiniFixedFont(CGFloat size) {
     NSRect readout = NSMakeRect(BT_READOUT_X, BT_TOP(24, 14), BT_MINI_RIGHT - BT_READOUT_X, 14);
     BTDrawSunken(readout, [NSColor blackColor], BTMiniBodyLight(), [NSColor blackColor]);
 
-    NSFont *textFont = BTMiniFixedFont(10.0);
+    NSFont *textFont = BTMiniReadoutFont();
     NSString *headline = track
         ? [NSString stringWithFormat:@"%@ - %@", [track displayArtist], [track displayTitle]]
         : @"BTunes";
@@ -312,7 +334,7 @@ static NSFont *BTMiniFixedFont(CGFloat size) {
     // Three readouts under it, filling the row out to the right edge: length,
     // format, and track number. Each value is centered in its box.
     if (track) {
-        NSDictionary *smallAttrs = @{NSFontAttributeName: [BTStyle smallFont],
+        NSDictionary *smallAttrs = @{NSFontAttributeName: BTMiniSmallFont(),
                                      NSForegroundColorAttributeName: BTMiniLCD()};
         CGFloat span = BT_MINI_RIGHT - BT_READOUT_X;
         CGFloat gap = 4.0;

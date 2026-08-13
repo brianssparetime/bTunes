@@ -22,7 +22,11 @@ static NSColor *BTShiftColor(NSColor *color, CGFloat saturationScale, CGFloat br
 
 @implementation BTStyle
 
-+ (CGFloat)baseFontSize   { return 11.0; }
++ (CGFloat)baseFontSize   { return 12.0; }
+
++ (NSFont *)fontOfSize:(CGFloat)size bold:(BOOL)bold {
+    return BTFontNamed((bold ? @"Lucida Grande Bold" : @"Lucida Grande"), size, bold);
+}
 
 + (NSFont *)uiFont        { return BTFontNamed(@"Lucida Grande", [self baseFontSize], NO); }
 + (NSFont *)boldFont      { return BTFontNamed(@"Lucida Grande Bold", [self baseFontSize], YES); }
@@ -39,8 +43,9 @@ static CGFloat BTLineHeightOf(NSFont *font) {
     return [layout defaultLineHeightForFont:font];
 }
 
-+ (CGFloat)lineHeight      { return BTLineHeightOf([self uiFont]); }
-+ (CGFloat)smallLineHeight { return BTLineHeightOf([self smallFont]); }
++ (CGFloat)lineHeight        { return BTLineHeightOf([self uiFont]); }
++ (CGFloat)smallLineHeight   { return BTLineHeightOf([self smallFont]); }
++ (CGFloat)displayLineHeight { return BTLineHeightOf([self displayFont]); }
 
 // A line, plus the air around it. The three weights differ by two points each,
 // which is the whole of what separates a browser row from a source row.

@@ -12,16 +12,27 @@
 #define BT_NAME     ([BTStyle lineHeight] + 4.0)     // "Music:" beside the path
 #define BT_FIELD    ([BTStyle fieldHeight])          // the path itself
 #define BT_BOX      ([BTStyle lineHeight] + 5.0)     // a tick box and its words
-#define BT_NOTE_1   ([BTStyle smallLineHeight] + 17.0)  // a note, one line or two
-#define BT_NOTE_2   ([BTStyle smallLineHeight] + 21.0)  // a note that runs to three
-#define BT_TO_NOTE  ([BTStyle smallLineHeight] + 13.0)  // the field down to its note
-#define BT_TO_NEXT  (BT_FIELD + BT_NOTE_2 + 2.0)     // one setting down to the next
-#define BT_BOX_TO_NOTE (BT_BOX + 8.0)                // the tick box down to its note
+// The air around a note. Ten points under the box or field it explains, and
+// sixteen under the note before the next setting starts, which is what the
+// numbers written here used to come to.
+#define BT_TO_NOTE   10.0
+#define BT_AFTER_NOTE 16.0
+// A tick box does not fill its frame the way a field does, so its note sits
+// closer to it or the two read as unrelated.
+#define BT_BOX_TO_NOTE 4.0
+#define BT_NOTE_WIDTH (BT_PREFS_WIDTH - 104.0)
 
-// A top margin, four settings, then purple mode with its note and the margin
-// under it. Written as the stack it is, so a taller row makes a taller window
-// instead of the last note running off the bottom.
-#define BT_PREFS_HEIGHT (52.0 + 4.0 * (BT_TO_NOTE + BT_TO_NEXT) + BT_BOX_TO_NOTE + 18.0)
+// How tall a note is: asked of its own words rather than counted in lines. Said
+// as a number of lines it was right for one size of type and one wording, and
+// the first time either changed the end of the sentence went missing with
+// nothing to show it had.
+static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
+    if ([text length] == 0) return 0.0;
+    NSRect box = [text boundingRectWithSize:NSMakeSize(width, 10000.0)
+                                    options:NSStringDrawingUsesLineFragmentOrigin
+                                 attributes:@{NSFontAttributeName: [BTStyle smallFont]}];
+    return ceil(NSHeight(box));
+}
 
 @implementation BTPreferencesController {
     NSTextField *_musicField;
@@ -38,8 +49,43 @@
     return shared;
 }
 
+// The four paths, in the order they are shown. Held together so the window can
+// be measured before it is built: how tall it has to be is the sum of what goes
+// in it, and what goes in it includes four notes of different lengths.
++ (NSArray *)settingRows {
+    return @[
+        @[@"Music:", @"The folder the music sits in. Songs are recorded as their place below it, so pointing this at the same music on another machine opens the same library there."],
+        @[@"Library:", @"Where BTunes keeps its own database: ratings, play counts, and playlists. Songs are not moved."],
+        @[@"iTunes:", @"The iTunes library file a sync reads. It is only ever read, never written. Point it at a copy while trying something out."],
+        @[@"Detune:", @"The folder of free recordings standing in for locked purchases. Leave it empty until there is one: locked songs then simply stay locked. Choose the folder holding detune-mapping.json."],
+    ];
+}
+
++ (NSString *)purpleNote {
+    return @"Draws the main window in purple instead of blue. The mini player is purple either way.";
+}
+
+// One setting down to the next: the field, the air under it, its note however
+// many lines that turns out to be, and the air under that.
++ (CGFloat)stepForNote:(NSString *)note {
+    return BT_FIELD + BT_TO_NOTE + BTNoteHeight(note, BT_NOTE_WIDTH) + BT_AFTER_NOTE;
+}
+
+// The window is the sum of what goes in it. Four settings whose notes run to
+// different lengths, then purple mode with its own, over a top and bottom
+// margin.
++ (CGFloat)windowHeight {
+    CGFloat total = 52.0;
+    NSArray *rows = [self settingRows];
+    NSUInteger i;
+    for (i = 0; i < [rows count]; i++) {
+        total += [self stepForNote:[[rows objectAtIndex:i] objectAtIndex:1]];
+    }
+    return total + BT_BOX_TO_NOTE + BTNoteHeight([self purpleNote], BT_PREFS_WIDTH - 58.0) + 38.0;
+}
+
 - (instancetype)initPreferences {
-    NSRect frame = NSMakeRect(0, 0, BT_PREFS_WIDTH, BT_PREFS_HEIGHT);
+    NSRect frame = NSMakeRect(0, 0, BT_PREFS_WIDTH, [BTPreferencesController windowHeight]);
     NSWindow *window = [[NSWindow alloc] initWithContentRect:frame
                                                    styleMask:(NSTitledWindowMask | NSClosableWindowMask)
                                                      backing:NSBackingStoreBuffered
@@ -51,31 +97,20 @@
     if (self == nil) return nil;
 
     NSView *content = [window contentView];
-    CGFloat y = BT_PREFS_HEIGHT - 52.0;
+    CGFloat y = [BTPreferencesController windowHeight] - 52.0;
 
-    _musicField = [self addRowAtY:&y
-                            label:@"Music:"
-                             note:@"The folder the music sits in. Songs are recorded as their place below it, so pointing this at the same music on another machine opens the same library there."
-                           action:@selector(chooseMusicFolder:)
-                          inView:content];
-
-    _databaseField = [self addRowAtY:&y
-                               label:@"Library:"
-                                note:@"Where BTunes keeps its own database: ratings, play counts, and playlists. Songs are not moved."
-                              action:@selector(chooseDatabaseFolder:)
-                             inView:content];
-
-    _iTunesField = [self addRowAtY:&y
-                             label:@"iTunes:"
-                              note:@"The iTunes library file a sync reads. It is only ever read, never written. Point it at a copy while trying something out."
-                            action:@selector(chooseITunesLibrary:)
-                            inView:content];
-
-    _detuneField = [self addRowAtY:&y
-                             label:@"Detune:"
-                              note:@"The folder of free recordings standing in for locked purchases. Leave it empty until there is one: locked songs then simply stay locked. Choose the folder holding detune-mapping.json."
-                            action:@selector(chooseDetuneFolder:)
-                            inView:content];
+    NSArray *rows = [BTPreferencesController settingRows];
+    SEL actions[] = { @selector(chooseMusicFolder:), @selector(chooseDatabaseFolder:),
+                      @selector(chooseITunesLibrary:), @selector(chooseDetuneFolder:) };
+    NSTextField *__strong *fields[] = { &_musicField, &_databaseField, &_iTunesField, &_detuneField };
+    NSUInteger row;
+    for (row = 0; row < [rows count]; row++) {
+        *fields[row] = [self addRowAtY:&y
+                                 label:[[rows objectAtIndex:row] objectAtIndex:0]
+                                  note:[[rows objectAtIndex:row] objectAtIndex:1]
+                                action:actions[row]
+                                inView:content];
+    }
 
     // Its own row rather than a fifth path to choose: this is a choice about
     // how the window looks, not about where something lives. The note sits
@@ -93,8 +128,11 @@
     [_purpleBox setAction:@selector(purpleModeChanged:)];
     [content addSubview:_purpleBox];
 
-    [content addSubview:[self labelWithText:@"Draws the main window in purple instead of blue. The mini player is purple either way."
-                                      frame:NSMakeRect(38, y - BT_BOX_TO_NOTE, BT_PREFS_WIDTH - 58, BT_NOTE_1)
+    NSString *purpleNote = [BTPreferencesController purpleNote];
+    CGFloat purpleHeight = BTNoteHeight(purpleNote, BT_PREFS_WIDTH - 58.0);
+    [content addSubview:[self labelWithText:purpleNote
+                                      frame:NSMakeRect(38, y - BT_BOX_TO_NOTE - purpleHeight,
+                                                       BT_PREFS_WIDTH - 58, purpleHeight)
                                       small:YES]];
 
     [self refresh];
@@ -134,11 +172,12 @@
     [choose setFrame:NSMakeRect(BT_PREFS_WIDTH - 112, *y - 3, 92, NSHeight([choose frame]))];
     [content addSubview:choose];
 
-    *y -= BT_TO_NOTE;
+    CGFloat noteHeight = BTNoteHeight(noteText, BT_NOTE_WIDTH);
     [content addSubview:[self labelWithText:noteText
-                                      frame:NSMakeRect(84, *y - 18, BT_PREFS_WIDTH - 104, BT_NOTE_2)
+                                      frame:NSMakeRect(84, *y - BT_TO_NOTE - noteHeight,
+                                                       BT_NOTE_WIDTH, noteHeight)
                                       small:YES]];
-    *y -= BT_TO_NEXT;
+    *y -= BT_TO_NOTE + noteHeight + BT_AFTER_NOTE + BT_FIELD;
     return path;
 }
 

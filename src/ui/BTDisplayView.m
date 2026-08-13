@@ -4,6 +4,15 @@
 #import "BTTrack.h"
 #import "BTIPodSync.h"
 
+// The panel is three bands: the title, the artist and album, then the times with
+// the scrub bar between them. Keeping them from meeting is the whole of the
+// arithmetic here, and all three follow the size of the type, so none of them is
+// a number written down.
+#define BT_DISPLAY_LINE  ([BTStyle displayLineHeight])   // one band of words
+#define BT_DISPLAY_TOP   3.0                             // above the first band
+#define BT_DISPLAY_FOOT  15.0                            // the scrub bar and the times
+
+
 // A line too long for the panel sits still for a while, travels far enough to
 // show its tail, rests, and comes back. The wait matters: a line that starts
 // moving immediately is unreadable at the moment you most want to read it.
@@ -85,14 +94,18 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
                             NSForegroundColorAttributeName: [BTStyle displayText],
                             NSParagraphStyleAttributeName: centered};
     NSString *title = [_syncTitle length] > 0 ? _syncTitle : @"Working";
-    [title drawInRect:NSMakeRect(NSMinX(bounds) + 6, NSMaxY(bounds) - 15, NSWidth(bounds) - 12, 12)
+    [title drawInRect:NSMakeRect(NSMinX(bounds) + 6,
+                                 NSMaxY(bounds) - BT_DISPLAY_LINE - BT_DISPLAY_TOP,
+                                 NSWidth(bounds) - 12, BT_DISPLAY_LINE)
        withAttributes:attrs];
 
     if ([_syncMessage length] > 0) {
         NSDictionary *lineAttrs = @{NSFontAttributeName: [BTStyle displayFont],
                                     NSForegroundColorAttributeName: [BTStyle displayText],
                                     NSParagraphStyleAttributeName: centered};
-        [_syncMessage drawInRect:NSMakeRect(NSMinX(bounds) + 6, NSMaxY(bounds) - 27, NSWidth(bounds) - 12, 12)
+        [_syncMessage drawInRect:NSMakeRect(NSMinX(bounds) + 6,
+                                            NSMaxY(bounds) - 2.0 * BT_DISPLAY_LINE - BT_DISPLAY_TOP,
+                                            NSWidth(bounds) - 12, BT_DISPLAY_LINE)
                   withAttributes:lineAttrs];
     }
 
@@ -108,11 +121,6 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     [[BTStyle progressFill] set];
     [[NSBezierPath bezierPathWithRoundedRect:filled xRadius:3 yRadius:3] fill];
 }
-
-// The panel is three bands: title, artist and album, then the times with the
-// scrub bar between them. Keep them from meeting.
-#define BT_DISPLAY_TITLE_HEIGHT  12.0
-#define BT_DISPLAY_FOOT_HEIGHT   14.0
 
 // Centred while it fits; once it does not, it scrolls on the cycle above.
 - (void)drawLine:(NSString *)line
@@ -158,6 +166,10 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     [NSGraphicsContext restoreGraphicsState];
 }
 
++ (CGFloat)naturalHeight {
+    return BT_DISPLAY_TOP + 2.0 * BT_DISPLAY_LINE + BT_DISPLAY_FOOT;
+}
+
 - (NSRect)progressRect {
     // Inset past the rounded ends so the groove does not run into them.
     NSRect b = [self bounds];
@@ -194,7 +206,8 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
                                 NSParagraphStyleAttributeName: centered};
 
     if (track == nil) {
-        NSRect r = NSMakeRect(NSMinX(bounds), NSMidY(bounds) - 7, NSWidth(bounds), 14);
+        CGFloat h = BT_DISPLAY_LINE + 2.0;
+        NSRect r = NSMakeRect(NSMinX(bounds), NSMidY(bounds) - h / 2.0, NSWidth(bounds), h);
         [@"BTunes" drawInRect:r withAttributes:titleAttrs];
         return;
     }
@@ -208,9 +221,9 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     NSTimeInterval shown = _lineShownAt ? -[_lineShownAt timeIntervalSinceNow] : 0.0;
 
     NSRect titleRect = NSMakeRect(NSMinX(bounds) + 6,
-                                  NSMaxY(bounds) - BT_DISPLAY_TITLE_HEIGHT - 3,
+                                  NSMaxY(bounds) - BT_DISPLAY_LINE - BT_DISPLAY_TOP,
                                   NSWidth(bounds) - 12,
-                                  BT_DISPLAY_TITLE_HEIGHT);
+                                  BT_DISPLAY_LINE);
     [self drawLine:[track displayTitle] inRect:titleRect attributes:titleAttrs elapsed:shown];
 
     // The whole line is kept even when it does not fit: it scrolls rather than
@@ -218,9 +231,9 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     NSString *second = [NSString stringWithFormat:@"%@ - %@",
                         [track displayArtist], [track displayAlbum]];
     NSRect secondRect = NSMakeRect(NSMinX(bounds) + 6,
-                                   NSMinY(titleRect) - BT_DISPLAY_TITLE_HEIGHT,
+                                   NSMinY(titleRect) - BT_DISPLAY_LINE,
                                    NSWidth(bounds) - 12,
-                                   BT_DISPLAY_TITLE_HEIGHT);
+                                   BT_DISPLAY_LINE);
     [self drawLine:second inRect:secondRect attributes:lineAttrs elapsed:shown];
 
     NSTimeInterval elapsed = [player currentTime];
@@ -250,10 +263,15 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     CGFloat textHeight = [leading sizeWithAttributes:timeLeftAttrs].height;
     CGFloat textY = NSMidY(groove) - textHeight / 2.0;
 
+    // Wide enough for the longest time there is rather than a width written
+    // down, since a song over an hour with the remaining time showing is eight
+    // characters and grows with the type.
+    CGFloat textWidth = ceil([@"-0:00:00" sizeWithAttributes:timeLeftAttrs].width) + 2.0;
+
     // Held in against the scrub bar rather than out against the rounded ends.
-    [leading drawInRect:NSMakeRect(NSMinX(bounds) + 14, textY, 36, textHeight)
+    [leading drawInRect:NSMakeRect(NSMinX(bounds) + 14, textY, textWidth, textHeight)
          withAttributes:timeLeftAttrs];
-    [trailing drawInRect:NSMakeRect(NSMaxX(bounds) - 50, textY, 36, textHeight)
+    [trailing drawInRect:NSMakeRect(NSMaxX(bounds) - 14 - textWidth, textY, textWidth, textHeight)
           withAttributes:timeRightAttrs];
 
     // Progress groove and knob.

@@ -102,6 +102,16 @@ static const BTColumnSpec BTTrackColumns[] = {
 
 #define BT_TRACK_COLUMN_COUNT (sizeof(BTTrackColumns) / sizeof(BTTrackColumns[0]))
 
+// The widths above are in points at the size the columns were measured for, so
+// they hold their proportion when the type moves. Only the starting widths pass
+// through here: once a column has been dragged, that width is the reader's and
+// is used as it stands.
+#define BT_COLUMN_REFERENCE_SIZE 11.0
+
+static CGFloat BTScaledForType(CGFloat width) {
+    return round(width * [BTStyle baseFontSize] / BT_COLUMN_REFERENCE_SIZE);
+}
+
 static const BTColumnSpec *BTColumnSpecFor(NSString *identifier) {
     NSUInteger i;
     for (i = 0; i < BT_TRACK_COLUMN_COUNT; i++) {
@@ -127,11 +137,11 @@ void BTAddTrackColumns(NSTableView *table) {
             NSDictionary *attrs = @{NSFontAttributeName: [BTStyle uiFont]};
             headingRoom = ceil([spec->heading sizeWithAttributes:attrs].width) + 16.0;
         }
-        CGFloat minimum = MAX(spec->minimum, headingRoom);
+        CGFloat minimum = MAX(BTScaledForType(spec->minimum), headingRoom);
 
-        [column setWidth:MAX(spec->width, minimum)];
+        [column setWidth:MAX(BTScaledForType(spec->width), minimum)];
         [column setMinWidth:minimum];
-        [column setMaxWidth:MAX(spec->maximum, minimum)];
+        [column setMaxWidth:MAX(BTScaledForType(spec->maximum), minimum)];
         [column setHidden:!spec->shown];
         [column setEditable:NO];
 

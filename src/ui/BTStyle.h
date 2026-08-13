@@ -12,6 +12,12 @@
 // same decision written out in fifteen places and getting all fifteen right.
 + (CGFloat)baseFontSize;
 
+// The same face at a size of the caller's choosing. For the one place that has
+// to hold still while the rest of the window grows: the mini player is a fixed
+// panel measured from its top edge, so its type does not follow the base any
+// more than its palette follows purple mode.
++ (NSFont *)fontOfSize:(CGFloat)size bold:(BOOL)bold;
+
 + (NSFont *)uiFont;             // the base size: lists, captions, buttons
 + (NSFont *)boldFont;           // the same, for a heading
 + (NSFont *)smallFont;          // two under: a note beneath a field
@@ -24,6 +30,7 @@
 // extra point of type is already wrong.
 + (CGFloat)lineHeight;
 + (CGFloat)smallLineHeight;
++ (CGFloat)displayLineHeight;
 
 // A row in a list, in the three weights the window uses. The differences are
 // deliberate: the browser columns are tight, the songs are ordinary, and a

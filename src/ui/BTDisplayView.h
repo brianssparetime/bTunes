@@ -10,4 +10,10 @@ extern NSString *const BTDisplayProgressNotification;
 extern NSString *const BTDisplayProgressDidEndNotification;
 
 @interface BTDisplayView : NSView
+
+// How tall the readout has to be for what it holds: two lines of type, the
+// scrub bar, and the times beside it. Asked rather than assumed, since all three
+// follow the size of the type and the chrome has to leave room for them.
++ (CGFloat)naturalHeight;
+
 @end
