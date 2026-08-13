@@ -392,6 +392,10 @@ static CGFloat BTTitleBarHeight(void) {
     BTIPod *_iPod;
     BTSyncView *_syncView;
     NSMutableSet *_closedFolders;
+    // Whether the last session has been read back yet. The window is built
+    // before it has been, so until this is set there is nothing worth saving
+    // and a great deal worth not overwriting.
+    BOOL _sessionRestored;
     NSImage *_speakerImage;
     BTSmartPlaylistController *_sheetController;
     BTTrackInfoController *_infoController;
@@ -1328,13 +1332,19 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
 // Folders come up open, since a closed one hides the playlists it holds. One
 // you have closed yourself stays closed: the list is rebuilt on every library
 // change, and without remembering that, playing a song would open it again.
+// Both ways, not only open. A folder left closed last time has to be closed
+// here, and the window is built with every folder open before the record of
+// which ones were closed has even been read.
 - (void)expandFolders {
     NSInteger row;
     for (row = 0; row < [_sourceList numberOfRows]; row++) {
         id item = [_sourceList itemAtRow:row];
         if (item == nil || ![_sourceList isExpandable:item]) continue;
         BTPlaylist *folder = BTPlaylistFromSource(item);
-        if (folder && [_closedFolders containsObject:folder.playlistID]) continue;
+        if (folder && [_closedFolders containsObject:folder.playlistID]) {
+            [_sourceList collapseItem:item];
+            continue;
+        }
         [_sourceList expandItem:item];
     }
 }
@@ -1355,7 +1365,16 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
 
 #pragma mark - Session state
 
+// Nothing is written back before the last session has been read.
+//
+// The window is built with the library selected and every folder open, and
+// building it opens the folders, which is a change and asks to be saved. Saving
+// it overwrote both of the things restoring was about to read, so whatever was
+// selected last time was gone before anything looked for it and the window
+// always opened on the library.
 - (void)saveSessionState {
+    if (!_sessionRestored) return;
+
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setObject:[_closedFolders allObjects] forKey:BTClosedFoldersKey];
 
@@ -1439,6 +1458,10 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     // the strong selection, so leaving it nowhere would open the window with
     // every selection gray and nothing looking chosen.
     [[self window] makeFirstResponder:_trackTable];
+
+    // From here on a change is somebody's choice rather than the window being
+    // put together, and is worth keeping.
+    _sessionRestored = YES;
 }
 
 - (void)tableViewSelectionDidChange:(NSNotification *)note {
