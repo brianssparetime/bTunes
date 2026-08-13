@@ -226,12 +226,15 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume) 
     // positioned by eye, only moved the word half as far as it was moved.
     // Handing over the full height lets the centring that is already there do
     // the work, and the word lands on the same line as the magnifier.
-    // Shifted by the depth of a descender. The cell centres the em box, and an
-    // em box has room under the baseline that a word like Search never uses, so
-    // centring it exactly leaves the word riding low by that much. Measured by
-    // drawing a real field on the target system and finding where the ink fell
-    // against the middle of the capsule.
-    return NSMakeRect(NSMinX(rect) + left, NSMinY(rect) - 2.5,
+    // The capsule's own height, unshifted. The cell centres its line inside
+    // whatever rect it is handed, so handing it the whole capsule puts the word
+    // on the middle without any arithmetic here.
+    //
+    // Every correction tried before this was measured by drawing the field
+    // offscreen, which places the line differently from a field inside a window.
+    // The offscreen answer and the running one differed by five points, so the
+    // measurements were confidently wrong twice. This is measured from the app.
+    return NSMakeRect(NSMinX(rect) + left, NSMinY(rect),
                       NSWidth(rect) - left - right, NSHeight(rect));
 }
 
