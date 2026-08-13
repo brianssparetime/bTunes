@@ -252,22 +252,19 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
 #pragma mark - Lookup
 
 - (void)removeTracks:(NSArray *)tracks {
+    NSMutableArray *goneIDs = [NSMutableArray arrayWithCapacity:[tracks count]];
     NSUInteger i;
     for (i = 0; i < [tracks count]; i++) {
         BTTrack *t = [tracks objectAtIndex:i];
         [self.knownPaths removeObject:[t resolvedPath]];
         [self.tracks removeObject:t];
+        if (t.trackID) [goneIDs addObject:t.trackID];
     }
-    NSMutableArray *stack = [NSMutableArray arrayWithArray:self.playlists];
-    while ([stack count] > 0) {
-        BTPlaylist *p = [stack lastObject];
-        [stack removeLastObject];
-        [stack addObjectsFromArray:p.children];
-        for (i = 0; i < [tracks count]; i++) {
-            BTTrack *t = [tracks objectAtIndex:i];
-            [p.trackIDs removeObject:t.trackID];
-        }
-    }
+
+    // Out of every playlist that holds them, folders included.
+    [BTPlaylist enumerate:self.playlists usingBlock:^(BTPlaylist *playlist, BOOL *stop) {
+        [playlist.trackIDs removeObjectsInArray:goneIDs];
+    }];
     [self noteChanged];
 }
 
@@ -311,14 +308,14 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
 }
 
 - (BTPlaylist *)playlistWithID:(NSString *)playlistID {
-    NSMutableArray *stack = [NSMutableArray arrayWithArray:self.playlists];
-    while ([stack count] > 0) {
-        BTPlaylist *p = [stack lastObject];
-        [stack removeLastObject];
-        if ([p.playlistID isEqualToString:playlistID]) return p;
-        [stack addObjectsFromArray:p.children];
-    }
-    return nil;
+    __block BTPlaylist *found = nil;
+    [BTPlaylist enumerate:self.playlists usingBlock:^(BTPlaylist *p, BOOL *stop) {
+        if ([p.playlistID isEqualToString:playlistID]) {
+            found = p;
+            *stop = YES;
+        }
+    }];
+    return found;
 }
 
 #pragma mark - Import

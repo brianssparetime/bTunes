@@ -76,6 +76,15 @@ typedef NS_ENUM(NSInteger, BTRuleOperator) {
 @property (nonatomic, copy) NSString *sortColumn;
 @property (nonatomic, assign) BOOL sortAscending;
 
+// Visits every playlist in a list and everything inside its folders, a folder
+// before what it holds and each in the order it sits in. Setting *stop finishes
+// early without visiting the rest.
+//
+// Five places used to walk the tree by hand, two with a stack and three by
+// recursion, which is five chances to forget that a playlist can be inside a
+// folder inside a folder.
++ (void)enumerate:(NSArray *)playlists usingBlock:(void (^)(BTPlaylist *playlist, BOOL *stop))block;
+
 + (instancetype)playlistWithName:(NSString *)name kind:(BTPlaylistKind)kind;
 + (instancetype)playlistWithDictionary:(NSDictionary *)dict;
 - (NSDictionary *)dictionaryRepresentation;

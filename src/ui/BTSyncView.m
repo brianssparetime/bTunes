@@ -166,15 +166,10 @@
 }
 
 - (void)markPlaylistsIn:(NSArray *)playlists whoseNamesAreIn:(NSSet *)names {
-    NSUInteger i;
-    for (i = 0; i < [playlists count]; i++) {
-        BTPlaylist *playlist = [playlists objectAtIndex:i];
-        if (playlist.kind == BTPlaylistKindFolder) {
-            [self markPlaylistsIn:playlist.children whoseNamesAreIn:names];
-        } else if ([names containsObject:playlist.name]) {
-            [_checked addObject:playlist.playlistID];
-        }
-    }
+    [BTPlaylist enumerate:playlists usingBlock:^(BTPlaylist *playlist, BOOL *stop) {
+        if (playlist.kind == BTPlaylistKindFolder) return;
+        if ([names containsObject:playlist.name]) [_checked addObject:playlist.playlistID];
+    }];
 }
 
 - (NSArray *)childrenOf:(id)item {
@@ -228,15 +223,10 @@
 }
 
 - (void)collectLeavesIn:(NSArray *)playlists into:(NSMutableArray *)out {
-    NSUInteger i;
-    for (i = 0; i < [playlists count]; i++) {
-        BTPlaylist *playlist = [playlists objectAtIndex:i];
-        if (playlist.kind == BTPlaylistKindFolder) {
-            [self collectLeavesIn:playlist.children into:out];
-        } else if ([_checked containsObject:playlist.playlistID]) {
-            [out addObject:playlist];
-        }
-    }
+    [BTPlaylist enumerate:playlists usingBlock:^(BTPlaylist *playlist, BOOL *stop) {
+        if (playlist.kind == BTPlaylistKindFolder) return;
+        if ([_checked containsObject:playlist.playlistID]) [out addObject:playlist];
+    }];
 }
 
 #pragma mark - Outline

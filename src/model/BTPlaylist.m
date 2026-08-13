@@ -148,7 +148,32 @@
 @end
 
 
+@interface BTPlaylist ()
++ (void)enumerate:(NSArray *)playlists
+       usingBlock:(void (^)(BTPlaylist *playlist, BOOL *stop))block
+             stop:(BOOL *)stop;
+@end
+
 @implementation BTPlaylist
+
++ (void)enumerate:(NSArray *)playlists usingBlock:(void (^)(BTPlaylist *playlist, BOOL *stop))block {
+    BOOL stop = NO;
+    [self enumerate:playlists usingBlock:block stop:&stop];
+}
+
++ (void)enumerate:(NSArray *)playlists
+       usingBlock:(void (^)(BTPlaylist *playlist, BOOL *stop))block
+             stop:(BOOL *)stop {
+    NSUInteger i;
+    for (i = 0; i < [playlists count] && !*stop; i++) {
+        BTPlaylist *playlist = [playlists objectAtIndex:i];
+        block(playlist, stop);
+        if (*stop) return;
+        if ([playlist.children count] > 0) {
+            [self enumerate:playlist.children usingBlock:block stop:stop];
+        }
+    }
+}
 
 + (instancetype)playlistWithName:(NSString *)name kind:(BTPlaylistKind)kind {
     BTPlaylist *p = [[BTPlaylist alloc] init];

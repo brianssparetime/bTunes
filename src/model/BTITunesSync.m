@@ -307,17 +307,14 @@
 - (void)collectPlaylists:(NSArray *)playlists
             intoBySource:(NSMutableDictionary *)bySource
                   byName:(NSMutableDictionary *)byName {
-    NSUInteger i;
-    for (i = 0; i < [playlists count]; i++) {
-        BTPlaylist *playlist = [playlists objectAtIndex:i];
+    [BTPlaylist enumerate:playlists usingBlock:^(BTPlaylist *playlist, BOOL *stop) {
         if ([playlist.sourcePersistentID length] > 0) {
             [bySource setObject:playlist forKey:playlist.sourcePersistentID];
         }
         if ([playlist.name length] > 0) {
             [byName setObject:playlist forKey:[playlist.name lowercaseString]];
         }
-        [self collectPlaylists:playlist.children intoBySource:bySource byName:byName];
-    }
+    }];
 }
 
 // The iTunes ids of what a BTunes playlist already holds, so a song placed here
