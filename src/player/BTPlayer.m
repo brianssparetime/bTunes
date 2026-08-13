@@ -6,8 +6,26 @@
 NSString *const BTPlayerDidChangeNotification = @"BTPlayerDidChange";
 NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
 
-@interface BTPlayer () <AVAudioPlayerDelegate>
-@property (nonatomic, strong) AVAudioPlayer *audio;
+// Playback runs through an engine rather than AVAudioPlayer because the
+// analyzer needs the samples, and AVAudioPlayer hands out a loudness figure and
+// nothing else. What that costs is here: elapsed time has to be worked out from
+// the render clock, seeking means rescheduling the file, and the end of a song
+// is noticed by watching the clock rather than by being told.
+@interface BTPlayer ()
+@property (nonatomic, strong) AVAudioEngine *engine;
+@property (nonatomic, strong) AVAudioPlayerNode *node;
+@property (nonatomic, strong) AVAudioFile *file;
+@property (nonatomic, strong) BTSpectrum *spectrum;
+@property (nonatomic, strong) AVAudioFormat *connectedFormat;
+@property (nonatomic, assign) BOOL tapInstalled;
+
+// Where the current scheduling began, and how far in it had reached when last
+// asked. The render clock counts from each scheduling, and answers nothing at
+// all once the node is paused, so both are needed to give a steady answer.
+@property (nonatomic, assign) AVAudioFramePosition seekFrame;
+@property (nonatomic, assign) NSTimeInterval lastKnownTime;
+@property (nonatomic, assign) BOOL playing;
+
 @property (nonatomic, strong) BTTrack *currentTrack;
 @property (nonatomic, strong) NSArray *queue;          // BTTrack, in list order
 @property (nonatomic, strong) NSMutableArray *order;   // indexes into queue
@@ -41,6 +59,8 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
 
 - (void)dealloc {
     [_tick invalidate];
+    if (_tapInstalled) [_node removeTapOnBus:0];
+    [_engine stop];
 }
 
 #pragma mark - Order
@@ -85,6 +105,98 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
     [self postChange];
 }
 
+#pragma mark - Engine
+
+// Built once, and rewired only when the next song is shaped differently from
+// the one the graph was built for. Tearing the graph down between two ordinary
+// tracks would put a silence between them that the music does not call for.
+- (BOOL)prepareEngineForFile:(AVAudioFile *)file error:(NSError **)error {
+    if (self.engine == nil) {
+        self.engine = [[AVAudioEngine alloc] init];
+        self.node = [[AVAudioPlayerNode alloc] init];
+        [self.engine attachNode:self.node];
+    }
+
+    [self.node stop];
+
+    AVAudioFormat *format = [file processingFormat];
+    if (![format isEqual:self.connectedFormat]) {
+        [self teardownTap];
+        [self.engine stop];
+        [self.engine connect:self.node to:[self.engine mainMixerNode] format:format];
+        self.connectedFormat = format;
+        self.spectrum = [[BTSpectrum alloc] initWithSampleRate:[format sampleRate]];
+        [self installTapWithFormat:format];
+        [self.engine prepare];
+    } else {
+        [self.spectrum reset];
+    }
+
+    [self.node setVolume:self.volume];
+
+    if (![self.engine isRunning] && ![self.engine startAndReturnError:error]) return NO;
+    return YES;
+}
+
+- (BOOL)ensureEngineRunning {
+    if (self.engine == nil) return NO;
+    if ([self.engine isRunning]) return YES;
+    NSError *error = nil;
+    if ([self.engine startAndReturnError:&error]) return YES;
+    NSLog(@"BTunes: cannot start audio (%@)", [error localizedDescription]);
+    return NO;
+}
+
+- (void)teardownTap {
+    if (!self.tapInstalled) return;
+    [self.node removeTapOnBus:0];
+    self.tapInstalled = NO;
+}
+
+- (void)installTapWithFormat:(AVAudioFormat *)format {
+    __weak BTPlayer *weakSelf = self;
+    [self.node installTapOnBus:0
+                    bufferSize:1024
+                        format:format
+                         block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
+        [weakSelf analyzeBuffer:buffer];
+    }];
+    self.tapInstalled = YES;
+}
+
+// Runs on the render thread, so it allocates nothing and takes no locks. The
+// channels are averaged because the analyzer shows one picture, not one a side.
+- (void)analyzeBuffer:(AVAudioPCMBuffer *)buffer {
+    BTSpectrum *spectrum = self.spectrum;
+    if (spectrum == nil || buffer == nil) return;
+
+    float * const *channels = [buffer floatChannelData];
+    if (channels == NULL) return;
+
+    NSUInteger channelCount = [[buffer format] channelCount];
+    NSUInteger stride = [buffer stride];
+    AVAudioFrameCount frames = [buffer frameLength];
+    if (channelCount == 0 || frames == 0) return;
+
+    float mono[1024];
+    AVAudioFrameCount done = 0;
+    while (done < frames) {
+        NSUInteger take = frames - done;
+        if (take > 1024) take = 1024;
+
+        NSUInteger i, c;
+        for (i = 0; i < take; i++) {
+            float sum = 0.0f;
+            for (c = 0; c < channelCount; c++) {
+                sum += channels[c][(done + i) * stride];
+            }
+            mono[i] = sum / (float)channelCount;
+        }
+        [spectrum consumeSamples:mono count:take];
+        done += (AVAudioFrameCount)take;
+    }
+}
+
 #pragma mark - Transport
 
 - (void)playTrack:(BTTrack *)track inList:(NSArray *)tracks {
@@ -115,25 +227,25 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
     }
 
     NSError *error = nil;
-    AVAudioPlayer *player = [[AVAudioPlayer alloc] initWithContentsOfURL:[track fileURL] error:&error];
-    if (player == nil) {
+    AVAudioFile *file = [[AVAudioFile alloc] initForReading:[track fileURL] error:&error];
+    if (file == nil || ![self prepareEngineForFile:file error:&error]) {
         NSLog(@"BTunes: cannot open %@ (%@)", [track resolvedPath], [error localizedDescription]);
         // A missing or unreadable file should not stall the queue.
         self.orderPosition = position;
         return [self advanceBy:1 allowRepeat:NO];
     }
 
-    [self.audio stop];
-    player.delegate = self;
-    player.volume = self.volume;
-    player.meteringEnabled = YES;
-    [player prepareToPlay];
-    // A song set to begin partway in starts there rather than at nothing.
-    NSTimeInterval from = [track playbackStart];
-    if (from > 0 && from < [player duration]) [player setCurrentTime:from];
-    [player play];
+    self.file = file;
 
-    self.audio = player;
+    // A song set to begin partway in starts there rather than at nothing.
+    double rate = [[file processingFormat] sampleRate];
+    AVAudioFramePosition from = (AVAudioFramePosition)([track playbackStart] * rate);
+    if (from < 0 || from >= [file length]) from = 0;
+
+    [self scheduleFromFrame:from];
+    [self.node play];
+    self.playing = YES;
+
     self.currentTrack = track;
     self.orderPosition = position;
 
@@ -144,6 +256,89 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
     [self startTick];
     [self postChange];
     return YES;
+}
+
+// The node's clock counts from each scheduling, so where the scheduling started
+// is recorded alongside it.
+- (void)scheduleFromFrame:(AVAudioFramePosition)frame {
+    AVAudioFile *file = self.file;
+    if (file == nil) return;
+    if (frame < 0) frame = 0;
+    if (frame > [file length]) frame = [file length];
+
+    self.seekFrame = frame;
+    self.lastKnownTime = (NSTimeInterval)frame / [[file processingFormat] sampleRate];
+
+    AVAudioFrameCount remaining = (AVAudioFrameCount)([file length] - frame);
+    if (remaining == 0) return;
+
+    [self.node scheduleSegment:file
+                 startingFrame:frame
+                    frameCount:remaining
+                        atTime:nil
+             completionHandler:nil];
+}
+
+- (void)togglePlayPause {
+    if (self.file == nil) return;
+    if (self.playing) {
+        [self pause];
+    } else {
+        [self resume];
+    }
+}
+
+- (void)pause {
+    // Read before pausing: once the node stops, its clock answers nothing and
+    // the last reading is all there is to go on.
+    [self currentTime];
+    [self.node pause];
+    self.playing = NO;
+    [self stopTick];
+    self.smoothedAverage = 0;
+    [self.spectrum reset];
+    [self postChange];
+}
+
+- (void)resume {
+    if (self.file == nil) return;
+    if (![self ensureEngineRunning]) return;
+    [self.node play];
+    self.playing = YES;
+    [self startTick];
+    [self postChange];
+}
+
+- (void)stop {
+    [self.node stop];
+    [self teardownTap];
+    [self.engine stop];
+
+    self.file = nil;
+    self.spectrum = nil;
+    self.connectedFormat = nil;
+    self.currentTrack = nil;
+    self.playing = NO;
+    self.seekFrame = 0;
+    self.lastKnownTime = 0;
+    self.smoothedAverage = 0;
+
+    [self stopTick];
+    [self postChange];
+}
+
+- (void)next {
+    if ([self.order count] == 0) return;
+    [self advanceBy:1 allowRepeat:YES];
+}
+
+- (void)previous {
+    if (self.file && [self currentTime] > 3.0) {
+        [self seekToTime:0];
+        return;
+    }
+    if ([self.order count] == 0) return;
+    [self advanceBy:-1 allowRepeat:YES];
 }
 
 - (BOOL)advanceBy:(NSInteger)delta allowRepeat:(BOOL)allowRepeat {
@@ -167,78 +362,68 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
     return [self startTrackAtOrderPosition:next];
 }
 
-- (void)togglePlayPause {
-    if (self.audio == nil) return;
-    if ([self.audio isPlaying]) {
-        [self pause];
-    } else {
-        [self resume];
-    }
-}
-
-- (void)pause {
-    [self.audio pause];
-    [self stopTick];
-    [self postChange];
-}
-
-- (void)resume {
-    if (self.audio == nil) return;
-    [self.audio play];
-    [self startTick];
-    [self postChange];
-}
-
-- (void)stop {
-    [self.audio stop];
-    self.audio = nil;
-    self.currentTrack = nil;
-    [self stopTick];
-    self.smoothedAverage = 0;
-    [self postChange];
-}
-
-- (void)next {
-    if ([self.order count] == 0) return;
-    [self advanceBy:1 allowRepeat:YES];
-}
-
-- (void)previous {
-    if (self.audio && [self.audio currentTime] > 3.0) {
-        [self.audio setCurrentTime:0];
-        [self postTime];
-        return;
-    }
-    if ([self.order count] == 0) return;
-    [self advanceBy:-1 allowRepeat:YES];
-}
-
+// Seeking means scheduling the file again from the new place, and stopping the
+// node first so its clock starts over from there.
 - (void)seekToTime:(NSTimeInterval)time {
-    if (self.audio == nil) return;
+    AVAudioFile *file = self.file;
+    if (file == nil) return;
+
+    NSTimeInterval total = [self duration];
     if (time < 0) time = 0;
-    if (time > [self.audio duration]) time = [self.audio duration];
-    [self.audio setCurrentTime:time];
+    if (time > total) time = total;
+
+    BOOL wasPlaying = self.playing;
+    [self.node stop];
+    [self.spectrum reset];
+    [self scheduleFromFrame:(AVAudioFramePosition)(time * [[file processingFormat] sampleRate])];
+    if (wasPlaying) {
+        [self ensureEngineRunning];
+        [self.node play];
+    }
     [self postTime];
 }
 
 #pragma mark - State
 
 - (BOOL)isPlaying {
-    return self.audio != nil && [self.audio isPlaying];
+    return self.file != nil && self.playing;
 }
 
+// Where the scheduling began plus what the node has rendered since. While the
+// node is paused it reports nothing, and the last good reading stands.
 - (NSTimeInterval)currentTime {
-    return self.audio ? [self.audio currentTime] : 0;
+    AVAudioFile *file = self.file;
+    if (file == nil) return 0;
+
+    AVAudioTime *nodeTime = [self.node lastRenderTime];
+    AVAudioTime *playerTime = nodeTime ? [self.node playerTimeForNodeTime:nodeTime] : nil;
+    if (playerTime == nil || [playerTime sampleRate] <= 0) return self.lastKnownTime;
+
+    NSTimeInterval base = (NSTimeInterval)self.seekFrame / [[file processingFormat] sampleRate];
+    NSTimeInterval elapsed = (NSTimeInterval)[playerTime sampleTime] / [playerTime sampleRate];
+    if (elapsed < 0) elapsed = 0;
+
+    NSTimeInterval now = base + elapsed;
+    NSTimeInterval total = [self duration];
+    if (now < 0) now = 0;
+    if (total > 0 && now > total) now = total;
+
+    self.lastKnownTime = now;
+    return now;
 }
 
 - (NSTimeInterval)duration {
-    if (self.audio) return [self.audio duration];
+    AVAudioFile *file = self.file;
+    if (file) {
+        double rate = [[file processingFormat] sampleRate];
+        if (rate > 0) return (NSTimeInterval)[file length] / rate;
+    }
     return self.currentTrack ? self.currentTrack.duration : 0;
 }
 
 - (void)setVolume:(float)volume {
     _volume = volume;
-    self.audio.volume = volume;
+    [self.node setVolume:volume];
     [[NSUserDefaults standardUserDefaults] setFloat:volume forKey:@"BTVolume"];
     // Moving the volume off zero by any route ends the mute.
     if (volume > 0.0f) _muted = NO;
@@ -258,11 +443,21 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
     [self postChange];
 }
 
-// Nothing sounding reads as silence. The meter is only sampled while the tick
-// runs, so a paused song otherwise leaves the last level standing and anything
-// driven from it carries on over a song that has stopped.
+// Nothing sounding reads as silence, so a paused song does not leave the last
+// reading standing for the display to go on showing.
 - (float)averageLevel {
     return [self isPlaying] ? self.smoothedAverage : 0.0f;
+}
+
+- (void)getBandLevels:(float *)bands {
+    if (bands == NULL) return;
+    BTSpectrum *spectrum = self.spectrum;
+    if (spectrum != nil && [self isPlaying]) {
+        [spectrum getBands:bands];
+        return;
+    }
+    NSUInteger i;
+    for (i = 0; i < BT_ANALYZER_BANDS; i++) bands[i] = 0.0f;
 }
 
 #pragma mark - Timer
@@ -282,21 +477,21 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
     self.tick = nil;
 }
 
-static float BTLevelFromDecibels(float db) {
-    // -60 dB and quieter reads as silence; 0 dB is full scale.
-    if (db < -60.0f) return 0.0f;
-    if (db > 0.0f) db = 0.0f;
-    return powf(10.0f, db / 40.0f);
-}
-
-// A song set to stop early is stopped here rather than by the file running out,
-// which is the only moment AVAudioPlayer tells anyone about. Twenty times a
-// second is close enough that no one hears the difference.
+// A song set to stop early is stopped here, and so is one that simply runs out:
+// the node reports the end of a file only after the fact, and both endings mean
+// the same thing to whatever comes next.
 - (BOOL)passedItsEnd {
+    if (self.file == nil || !self.playing) return NO;
+
+    NSTimeInterval now = [self currentTime];
     BTTrack *track = self.currentTrack;
-    if (track == nil || !track.usesEndTime || self.audio == nil) return NO;
-    NSTimeInterval end = [track playbackEnd];
-    return end > 0 && [self.audio currentTime] >= end;
+    if (track && track.usesEndTime) {
+        NSTimeInterval end = [track playbackEnd];
+        if (end > 0 && now >= end) return YES;
+    }
+
+    NSTimeInterval total = [self duration];
+    return total > 0 && now >= total - 0.02;
 }
 
 - (void)tickFired:(NSTimer *)timer {
@@ -304,16 +499,8 @@ static float BTLevelFromDecibels(float db) {
         [self reachedTheEnd];
         return;
     }
-    if (self.audio) {
-        [self.audio updateMeters];
-        NSUInteger channels = [self.audio numberOfChannels];
-        float averageSum = 0;
-        NSUInteger c;
-        for (c = 0; c < channels; c++) {
-            averageSum += BTLevelFromDecibels([self.audio averagePowerForChannel:c]);
-        }
-        float average = channels > 0 ? averageSum / channels : 0;
-
+    if (self.file) {
+        float average = [self.spectrum averageLevel];
         // Rise quickly, fall slowly, the way an analyzer reads.
         self.smoothedAverage = (average > self.smoothedAverage)
             ? average : self.smoothedAverage * 0.75f + average * 0.25f;
@@ -329,8 +516,6 @@ static float BTLevelFromDecibels(float db) {
     [[NSNotificationCenter defaultCenter] postNotificationName:BTPlayerDidChangeNotification object:self];
 }
 
-#pragma mark - AVAudioPlayerDelegate
-
 // Reached however it was reached: the file ran out, or the song's own end time
 // came round. Both mean the same thing to whatever comes next.
 - (void)reachedTheEnd {
@@ -338,15 +523,6 @@ static float BTLevelFromDecibels(float db) {
         [self startTrackAtOrderPosition:self.orderPosition];
         return;
     }
-    [self advanceBy:1 allowRepeat:YES];
-}
-
-- (void)audioPlayerDidFinishPlaying:(AVAudioPlayer *)player successfully:(BOOL)flag {
-    [self reachedTheEnd];
-}
-
-- (void)audioPlayerDecodeErrorDidOccur:(AVAudioPlayer *)player error:(NSError *)error {
-    NSLog(@"BTunes: decode error (%@)", [error localizedDescription]);
     [self advanceBy:1 allowRepeat:YES];
 }
 
