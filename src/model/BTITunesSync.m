@@ -4,11 +4,16 @@
 #import "BTPlaylist.h"
 
 @implementation BTITunesSyncTrack
-- (BOOL)eligible { return self.blocked == BTITunesBlockNone && !self.excludedBefore; }
+- (BOOL)eligible {
+    return self.blocked == BTITunesBlockNone && !self.excludedBefore && !self.alreadyHere;
+}
 @end
 
 @implementation BTITunesSyncPlaylist
-- (BOOL)eligible { return self.blocked == BTITunesBlockNone; }
+- (BOOL)alreadyHere { return self.change == BTITunesPlaylistUnchanged; }
+- (BOOL)eligible {
+    return self.blocked == BTITunesBlockNone && self.change != BTITunesPlaylistUnchanged;
+}
 @end
 
 
@@ -90,6 +95,42 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
     return sync;
 }
 
++ (void)syncWithLibraryAtPath:(NSString *)path
+                      against:(BTLibrary *)library
+                     progress:(void (^)(double fraction, NSString *stage))progress
+                   completion:(void (^)(BTITunesSync *sync))completion {
+    // The stages are named rather than counted, because the reading and the
+    // comparing take unlike amounts of time and a single bar creeping unevenly
+    // says less than a line saying which part is slow.
+    void (^report)(double, NSString *) = ^(double fraction, NSString *stage) {
+        if (progress == nil) return;
+        dispatch_async(dispatch_get_main_queue(), ^{ progress(fraction, stage); });
+    };
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        report(0.05, @"Reading the iTunes library");
+        BTITunesSync *sync = [[BTITunesSync alloc] init];
+
+        NSDictionary *root = [NSDictionary dictionaryWithContentsOfFile:path];
+        NSDictionary *entries = [root objectForKey:@"Tracks"];
+        if (root == nil) {
+            sync.error = [NSString stringWithFormat:@"Cannot read an iTunes library at %@", path];
+        } else if (![entries isKindOfClass:[NSDictionary class]]) {
+            sync.error = @"That file has no Tracks section.";
+        } else {
+            report(0.25, @"Looking for the songs on disk");
+            [sync compareTracks:entries against:library];
+            report(0.80, @"Comparing playlists");
+            [sync comparePlaylists:[root objectForKey:@"Playlists"] entries:entries against:library];
+        }
+
+        report(1.0, @"Finished");
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) completion(sync);
+        });
+    });
+}
+
 // What BTunes already holds, keyed both ways. A dictionary rather than a scan:
 // eleven thousand songs against a library of the same size is minutes of work
 // as a nested loop and no time at all as a lookup.
@@ -127,8 +168,8 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
         NSString *path = BTPathFromLocation(location);
 
         NSString *persistentID = BTStringFrom(entry, @"Persistent ID");
-        if ([persistentID length] > 0 && [haveByITunesID objectForKey:persistentID]) continue;
-        if (path && [havePaths containsObject:path]) continue;
+        BOOL here = ([persistentID length] > 0 && [haveByITunesID objectForKey:persistentID]) ||
+                    (path != nil && [havePaths containsObject:path]);
 
         BTITunesSyncTrack *incoming = [[BTITunesSyncTrack alloc] init];
         incoming.persistentID = persistentID;
@@ -136,8 +177,11 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
         incoming.title = BTStringFrom(entry, @"Name");
         incoming.artist = BTStringFrom(entry, @"Artist");
         incoming.album = BTStringFrom(entry, @"Album");
-        incoming.blocked = BTBlockForEntry(entry, path, files);
-        incoming.excludedBefore = ([persistentID length] > 0 &&
+        incoming.alreadyHere = here;
+        // A song already here is not asked about again, whatever else is true
+        // of it, so the reason it could not come across is not worked out.
+        incoming.blocked = here ? BTITunesBlockNone : BTBlockForEntry(entry, path, files);
+        incoming.excludedBefore = (!here && [persistentID length] > 0 &&
                                    [excluded containsObject:persistentID]);
         [_incomingTracks addObject:incoming];
     }
@@ -238,7 +282,6 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
             if (alreadyIn && [alreadyIn containsObject:persistent]) continue;
             [incoming addObject:persistent];
         }
-        if (existing && [incoming count] == 0) continue;      // unchanged since last time
 
         BTITunesSyncPlaylist *change = [[BTITunesSyncPlaylist alloc] init];
         change.name = name;
@@ -246,7 +289,12 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
         change.folderNames = [self folderPathFor:BTStringFrom(entry, @"Parent Persistent ID")
                                            names:folderNames
                                          parents:folderParents];
-        change.change = existing ? BTITunesPlaylistGrew : BTITunesPlaylistIsNew;
+        if (existing == nil) {
+            change.change = BTITunesPlaylistIsNew;
+        } else {
+            change.change = ([incoming count] > 0) ? BTITunesPlaylistGrew
+                                                   : BTITunesPlaylistUnchanged;
+        }
         change.incomingTrackIDs = incoming;
         // Named in the order a reader would want to hear it: what iTunes will
         // never give up, then what is merely not downloaded yet.

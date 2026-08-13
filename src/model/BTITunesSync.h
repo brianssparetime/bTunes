@@ -38,13 +38,16 @@ typedef NS_ENUM(NSInteger, BTITunesBlock) {
 @property (nonatomic, copy) NSString *album;
 @property (nonatomic, assign) BTITunesBlock blocked;
 @property (nonatomic, assign) BOOL excludedBefore;   // left behind in an earlier sync
-@property (nonatomic, readonly) BOOL eligible;       // neither blocked nor excluded
+@property (nonatomic, assign) BOOL alreadyHere;      // imported by an earlier sync
+// Something this sync could actually bring across.
+@property (nonatomic, readonly) BOOL eligible;
 @end
 
 
 typedef NS_ENUM(NSInteger, BTITunesPlaylistChange) {
     BTITunesPlaylistIsNew = 0,
-    BTITunesPlaylistGrew        // already here, and iTunes has songs it lacks
+    BTITunesPlaylistGrew,       // already here, and iTunes has songs it lacks
+    BTITunesPlaylistUnchanged   // already here with nothing to add
 };
 
 @interface BTITunesSyncPlaylist : NSObject
@@ -56,6 +59,7 @@ typedef NS_ENUM(NSInteger, BTITunesPlaylistChange) {
 @property (nonatomic, assign) BTITunesBlock blocked;
 // iTunes persistent ids of the songs this playlist would add, in iTunes order.
 @property (nonatomic, strong) NSArray *incomingTrackIDs;
+@property (nonatomic, readonly) BOOL alreadyHere;
 @property (nonatomic, readonly) BOOL eligible;
 @end
 
@@ -64,7 +68,18 @@ typedef NS_ENUM(NSInteger, BTITunesPlaylistChange) {
 
 // Reads the file and compares it against the library. Returns a sync whose
 // error is set when the file could not be read.
+//
+// This takes a few seconds on the target machine, nearly all of it spent asking
+// the filesystem about six thousand files, so a window should use the form
+// below instead and say what it is doing meanwhile.
 + (instancetype)syncWithLibraryAtPath:(NSString *)path against:(BTLibrary *)library;
+
+// The same comparison, off the main thread. Both blocks are called on the main
+// thread: progress several times as it goes, completion once at the end.
++ (void)syncWithLibraryAtPath:(NSString *)path
+                      against:(BTLibrary *)library
+                     progress:(void (^)(double fraction, NSString *stage))progress
+                   completion:(void (^)(BTITunesSync *sync))completion;
 
 @property (nonatomic, readonly) NSArray *incomingTracks;   // BTITunesSyncTrack
 @property (nonatomic, readonly) NSArray *playlists;    // BTITunesSyncPlaylist
