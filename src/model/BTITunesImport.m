@@ -1,15 +1,8 @@
 #import "BTITunesImport.h"
 #import "BTTrack.h"
-#import "BTPlaylist.h"
 #import "BTDetuneMap.h"
 
 @implementation BTLibrary (ITunesImport)
-
-+ (NSArray *)iTunesLibraryPathsForHome:(NSString *)home {
-    NSString *music = [home stringByAppendingPathComponent:@"Music/iTunes"];
-    return @[[music stringByAppendingPathComponent:@"iTunes Music Library.xml"],
-             [music stringByAppendingPathComponent:@"iTunes Library.xml"]];
-}
 
 static NSInteger BTIntFor(NSDictionary *d, NSString *key) {
     id v = [d objectForKey:key];
@@ -100,138 +93,6 @@ static NSDate *BTDateFor(NSDictionary *d, NSString *key) {
         [places setObject:read forKey:track.trackID];
     }
     return places;
-}
-
-- (NSDictionary *)importITunesLibraryAtPath:(NSString *)path trackLimit:(NSInteger)trackLimit {
-    NSDictionary *root = [NSDictionary dictionaryWithContentsOfFile:path];
-    if (root == nil) {
-        return @{@"error": [NSString stringWithFormat:@"Cannot read an iTunes library at %@", path]};
-    }
-
-    NSDictionary *entries = [root objectForKey:@"Tracks"];
-    NSArray *playlistEntries = [root objectForKey:@"Playlists"];
-    if (![entries isKindOfClass:[NSDictionary class]]) {
-        return @{@"error": @"That file has no Tracks section."};
-    }
-
-    NSMutableDictionary *byExistingPath = [NSMutableDictionary dictionary];
-    NSUInteger i, j;
-    for (i = 0; i < [self.tracks count]; i++) {
-        BTTrack *t = [self.tracks objectAtIndex:i];
-        [byExistingPath setObject:t forKey:[t resolvedPath]];
-    }
-
-    // iTunes track id (as a string) to the BTunes track it became, so playlist
-    // membership can be rebuilt afterwards.
-    NSMutableDictionary *byITunesID = [NSMutableDictionary dictionary];
-    NSUInteger added = 0, skipped = 0, protectedCount = 0;
-
-    NSArray *keys = [[entries allKeys] sortedArrayUsingComparator:^NSComparisonResult(id a, id b) {
-        return [a compare:b options:NSNumericSearch];
-    }];
-
-    // The same reading the sync uses, including the substitution of free
-    // recordings for locked purchases, so both ways of bringing music over point
-    // at the same file for the same song.
-    BTDetuneMap *detune = [BTDetuneMap currentMap];
-    NSFileManager *files = [NSFileManager defaultManager];
-
-    for (i = 0; i < [keys count]; i++) {
-        NSString *key = [keys objectAtIndex:i];
-        BTITunesEntry *source = [BTITunesEntry readEntry:[entries objectForKey:key]
-                                                  detune:detune
-                                                   files:files];
-        if (source == nil || [source.resolvedPath length] == 0) { skipped++; continue; }
-
-        BTTrack *existing = [byExistingPath objectForKey:source.resolvedPath];
-        if (existing) {
-            [byITunesID setObject:existing forKey:key];
-            skipped++;
-            continue;
-        }
-
-        if (trackLimit > 0 && (NSInteger)added >= trackLimit) { skipped++; continue; }
-
-        BTTrack *track = [self trackFromEntry:source];
-        if (track == nil) { skipped++; continue; }
-
-        [self.tracks addObject:track];
-        [byExistingPath setObject:track forKey:[track resolvedPath]];
-        [byITunesID setObject:track forKey:key];
-        added++;
-        if (track.isProtected) protectedCount++;
-    }
-
-    // Playlists, in two passes: build them all, then hang them off their parents.
-    NSMutableDictionary *playlistsByPersistentID = [NSMutableDictionary dictionary];
-    NSMutableArray *ordered = [NSMutableArray array];
-    NSUInteger playlistCount = 0, folderCount = 0, smartAsStatic = 0;
-
-    for (i = 0; playlistEntries != nil && i < [playlistEntries count]; i++) {
-        NSDictionary *entry = [playlistEntries objectAtIndex:i];
-        if (![entry isKindOfClass:[NSDictionary class]]) continue;
-
-        // The master library and the built-in category lists are not user playlists.
-        if ([[entry objectForKey:@"Master"] boolValue]) continue;
-        if ([entry objectForKey:@"Distinguished Kind"] != nil) continue;
-
-        NSString *name = BTITunesString(entry, @"Name");
-        if ([name length] == 0) continue;
-
-        BOOL isFolder = [[entry objectForKey:@"Folder"] boolValue];
-        BOOL wasSmart = ([entry objectForKey:@"Smart Info"] != nil ||
-                         [entry objectForKey:@"Smart Criteria"] != nil);
-
-        BTPlaylist *playlist = [BTPlaylist playlistWithName:name
-                                                       kind:(isFolder ? BTPlaylistKindFolder
-                                                                      : BTPlaylistKindStatic)];
-        if (isFolder) {
-            folderCount++;
-        } else {
-            playlistCount++;
-            if (wasSmart) smartAsStatic++;
-
-            NSArray *items = [entry objectForKey:@"Playlist Items"];
-            for (j = 0; [items isKindOfClass:[NSArray class]] && j < [items count]; j++) {
-                NSDictionary *item = [items objectAtIndex:j];
-                id trackID = [item objectForKey:@"Track ID"];
-                if (trackID == nil) continue;
-                BTTrack *track = [byITunesID objectForKey:[trackID description]];
-                if (track && ![playlist.trackIDs containsObject:track.trackID]) {
-                    [playlist.trackIDs addObject:track.trackID];
-                }
-            }
-        }
-
-        NSString *persistentID = BTITunesString(entry, @"Playlist Persistent ID");
-        playlist.sourcePersistentID = persistentID;
-        if (persistentID) [playlistsByPersistentID setObject:playlist forKey:persistentID];
-        [ordered addObject:@[playlist, (BTITunesString(entry, @"Parent Persistent ID")
-                                        ? BTITunesString(entry, @"Parent Persistent ID") : @"")]];
-    }
-
-    for (i = 0; i < [ordered count]; i++) {
-        NSArray *pair = [ordered objectAtIndex:i];
-        BTPlaylist *playlist = [pair objectAtIndex:0];
-        NSString *parentID = [pair objectAtIndex:1];
-        BTPlaylist *parent = [parentID length] > 0 ? [playlistsByPersistentID objectForKey:parentID] : nil;
-
-        if (parent && parent.kind == BTPlaylistKindFolder && parent != playlist) {
-            playlist.parent = parent;
-            [parent.children addObject:playlist];
-        } else {
-            [self.playlists addObject:playlist];
-        }
-    }
-
-    [self noteChanged];
-
-    return @{@"tracksAdded": @(added),
-             @"tracksSkipped": @(skipped),
-             @"protectedTracks": @(protectedCount),
-             @"playlistsAdded": @(playlistCount),
-             @"foldersAdded": @(folderCount),
-             @"smartAsStatic": @(smartAsStatic)};
 }
 
 @end

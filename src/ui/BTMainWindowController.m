@@ -2350,55 +2350,6 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     }];
 }
 
-- (void)importITunesLibrary:(id)sender {
-    NSOpenPanel *panel = [NSOpenPanel openPanel];
-    [panel setCanChooseFiles:YES];
-    [panel setCanChooseDirectories:NO];
-    [panel setAllowsMultipleSelection:NO];
-    [panel setAllowedFileTypes:@[@"xml"]];
-    [panel setPrompt:@"Import"];
-    [panel setMessage:@"Choose an iTunes library XML file. It is read, never written."];
-
-    NSArray *guesses = [BTLibrary iTunesLibraryPathsForHome:NSHomeDirectory()];
-    NSUInteger i;
-    for (i = 0; i < [guesses count]; i++) {
-        NSString *guess = [guesses objectAtIndex:i];
-        if ([[NSFileManager defaultManager] fileExistsAtPath:guess]) {
-            [panel setDirectoryURL:[NSURL fileURLWithPath:[guess stringByDeletingLastPathComponent]]];
-            break;
-        }
-    }
-
-    if ([panel runModal] != NSFileHandlingPanelOKButton) return;
-
-    NSString *path = [[[panel URLs] objectAtIndex:0] path];
-    NSDictionary *result = [[BTLibrary sharedLibrary] importITunesLibraryAtPath:path trackLimit:0];
-
-    NSAlert *alert = [[NSAlert alloc] init];
-    if ([result objectForKey:@"error"]) {
-        [alert setMessageText:@"Nothing was imported."];
-        [alert setInformativeText:[result objectForKey:@"error"]];
-    } else {
-        [alert setMessageText:@"Import finished."];
-        NSMutableString *detail = [NSMutableString string];
-        [detail appendFormat:@"%@ songs added, %@ already present.\n",
-         [result objectForKey:@"tracksAdded"], [result objectForKey:@"tracksSkipped"]];
-        [detail appendFormat:@"%@ playlists and %@ folders rebuilt.\n",
-         [result objectForKey:@"playlistsAdded"], [result objectForKey:@"foldersAdded"]];
-        if ([[result objectForKey:@"smartAsStatic"] integerValue] > 0) {
-            [detail appendFormat:@"%@ smart playlists came across as ordinary playlists holding their current songs.\n",
-             [result objectForKey:@"smartAsStatic"]];
-        }
-        if ([[result objectForKey:@"protectedTracks"] integerValue] > 0) {
-            [detail appendFormat:@"%@ locked purchases are listed but cannot play until they are converted.",
-             [result objectForKey:@"protectedTracks"]];
-        }
-        [alert setInformativeText:detail];
-    }
-    [alert runModal];
-    [self reloadEverything];
-}
-
 - (void)deleteSelection:(id)sender {
     if ([[self window] firstResponder] == _sourceList) {
         [self deleteSelectedPlaylist];

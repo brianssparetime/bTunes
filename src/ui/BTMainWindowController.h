@@ -13,7 +13,10 @@
 - (void)newPlaylistFolder:(id)sender;
 - (void)editSmartPlaylist:(id)sender;
 - (void)addToLibrary:(id)sender;
-- (void)importITunesLibrary:(id)sender;
+// Opens the pane that brings music over from iTunes, and closes it again if it
+// is already up. The only way in: the sync compares, shows what is new, and
+// lets it be chosen.
+- (void)showITunesSync:(id)sender;
 - (void)deleteSelection:(id)sender;
 - (void)playPause:(id)sender;
 - (void)nextTrack:(id)sender;

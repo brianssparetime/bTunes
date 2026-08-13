@@ -3,29 +3,19 @@
 
 @class BTTrack;
 
-// Reads an iTunes library XML file and reproduces its tracks, playlists, and
-// folder structure inside BTunes.
+// Reading an iTunes library: turning one of its entries into a track, and
+// finding a song again once the file has moved.
 //
 // The XML is read and never written. Ratings, play counts, and date-added
 // values are carried across, since those cannot be re-derived.
 //
-// Two limits are worth knowing about. Smart playlist criteria live in an
-// undocumented binary blob that iTunes does not publish in readable form, so a
-// smart playlist arrives as an ordinary playlist holding the songs it resolved
-// to at export time. Protected purchases arrive as entries that cannot play
-// until they are converted to an open format; keeping them preserves playlist
-// membership so a later conversion has somewhere to land.
+// Bringing music over is the sync's job and only the sync's. There used to be a
+// second way in from the File menu that took the whole file at once, with no
+// comparison and nothing to choose, and it disagreed with the sync about what
+// may come across: it imported locked purchases the sync blocks, and remembered
+// nothing about what had been turned down. Two importers with different rules
+// is the shape of a bug rather than a convenience.
 @interface BTLibrary (ITunesImport)
-
-// Paths worth trying, in order, inside a given home directory.
-+ (NSArray *)iTunesLibraryPathsForHome:(NSString *)home;
-
-// Adds everything found in the file to the current library. A track limit
-// above zero stops after that many new tracks, for trying the import out on a
-// sample; zero imports everything. Returns a summary with the keys
-// "tracksAdded", "tracksSkipped", "protectedTracks", "playlistsAdded",
-// "foldersAdded", "smartAsStatic", and "error".
-- (NSDictionary *)importITunesLibraryAtPath:(NSString *)path trackLimit:(NSInteger)trackLimit;
 
 // One iTunes entry turned into a track. Takes an entry that has already been
 // read, rather than the raw dictionary, so that the file a track points at is

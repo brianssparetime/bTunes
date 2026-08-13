@@ -223,7 +223,7 @@
 - (void)newPlaylistFolder:(id)sender { [_main newPlaylistFolder:sender]; }
 - (void)editSmartPlaylist:(id)sender { [_main editSmartPlaylist:sender]; }
 - (void)addToLibrary:(id)sender { [_main addToLibrary:sender]; }
-- (void)importITunesLibrary:(id)sender { [_main importITunesLibrary:sender]; }
+- (void)showITunesSync:(id)sender { [_main showITunesSync:sender]; }
 - (void)focusSearch:(id)sender { [_main focusSearch:sender]; }
 - (void)getInfo:(id)sender { [_main getInfo:sender]; }
 
@@ -282,7 +282,7 @@
                                    target:nil]];
     [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItem:[self itemWithTitle:@"Add to Library..." action:@selector(addToLibrary:) key:@"o" modifiers:NSCommandKeyMask target:nil]];
-    [fileMenu addItem:[self itemWithTitle:@"Import iTunes Library..." action:@selector(importITunesLibrary:) key:@"" modifiers:0 target:nil]];
+    [fileMenu addItem:[self itemWithTitle:@"iTunes Sync" action:@selector(showITunesSync:) key:@"" modifiers:0 target:nil]];
     [fileMenu addItem:[self itemWithTitle:@"Get Info" action:@selector(getInfo:) key:@"i" modifiers:NSCommandKeyMask target:nil]];
     [fileMenu addItem:[self itemWithTitle:@"Edit Smart Playlist..." action:@selector(editSmartPlaylist:) key:@"" modifiers:0 target:nil]];
     [fileMenu addItem:[NSMenuItem separatorItem]];
