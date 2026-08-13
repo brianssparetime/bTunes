@@ -5,11 +5,12 @@
 #import "BTControls.h"
 
 #define BT_PREFS_WIDTH  520.0
-#define BT_PREFS_HEIGHT 210.0
+#define BT_PREFS_HEIGHT 292.0
 
 @implementation BTPreferencesController {
     NSTextField *_musicField;
     NSTextField *_databaseField;
+    NSTextField *_iTunesField;
 }
 
 + (instancetype)sharedController {
@@ -45,6 +46,12 @@
                                 note:@"Where BTunes keeps its own database: ratings, play counts, and playlists. Songs are not moved."
                               action:@selector(chooseDatabaseFolder:)
                              inView:content];
+
+    _iTunesField = [self addRowAtY:&y
+                             label:@"iTunes:"
+                              note:@"The iTunes library file a sync reads. It is only ever read, never written. Point it at a copy while trying something out."
+                            action:@selector(chooseITunesLibrary:)
+                            inView:content];
 
     [self refresh];
     return self;
@@ -95,6 +102,7 @@
     BTPreferences *prefs = [BTPreferences sharedPreferences];
     [_musicField setStringValue:[prefs musicFolder]];
     [_databaseField setStringValue:[prefs databaseFolder]];
+    [_iTunesField setStringValue:[prefs iTunesLibraryPath]];
 }
 
 - (NSString *)chooseFolderStartingAt:(NSString *)current {
@@ -109,6 +117,27 @@
     }
     if ([panel runModal] != NSFileHandlingPanelOKButton) return nil;
     return [[[panel URLs] objectAtIndex:0] path];
+}
+
+// A file rather than a folder, and only an XML one.
+- (void)chooseITunesLibrary:(id)sender {
+    BTPreferences *prefs = [BTPreferences sharedPreferences];
+    NSOpenPanel *panel = [NSOpenPanel openPanel];
+    [panel setCanChooseFiles:YES];
+    [panel setCanChooseDirectories:NO];
+    [panel setAllowsMultipleSelection:NO];
+    [panel setAllowedFileTypes:@[@"xml"]];
+    [panel setPrompt:@"Choose"];
+    [panel setMessage:@"Choose an iTunes library XML file. It is read, never written."];
+
+    NSString *current = [prefs iTunesLibraryPath];
+    if ([current length] > 0) {
+        [panel setDirectoryURL:[NSURL fileURLWithPath:[current stringByDeletingLastPathComponent]]];
+    }
+    if ([panel runModal] != NSFileHandlingPanelOKButton) return;
+
+    [prefs setITunesLibraryPath:[[[panel URLs] objectAtIndex:0] path]];
+    [self refresh];
 }
 
 - (void)chooseMusicFolder:(id)sender {

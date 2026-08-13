@@ -22,8 +22,14 @@ extern NSString *const BTPreferencesDidChangeNotification;
 @property (nonatomic, copy) NSString *musicFolder;
 @property (nonatomic, copy) NSString *databaseFolder;
 
+// The iTunes library file a sync compares against. Read and never written, so
+// pointing it at the real one is safe; pointing it at a copy is safer still
+// while trying something out.
+@property (nonatomic, copy) NSString *iTunesLibraryPath;
+
 // What the setting falls back to when it has never been chosen.
 - (NSString *)defaultMusicFolder;
 - (NSString *)defaultDatabaseFolder;
+- (NSString *)defaultITunesLibraryPath;
 
 @end

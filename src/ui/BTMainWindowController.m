@@ -9,6 +9,7 @@
 #import "BTPlaylist.h"
 #import "BTIPod.h"
 #import "BTSyncView.h"
+#import "BTITunesSyncView.h"
 #import "BTPreferences.h"
 #import "BTTrack.h"
 #import "BTPlayer.h"
@@ -338,6 +339,9 @@ static CGFloat BTTitleBarHeight(void) {
     BTToggleButton *_shuffleButton;
     BTToggleButton *_repeatButton;
     BTToggleButton *_ejectButton;
+    BTToggleButton *_syncButton;
+    BTITunesSyncView *_iTunesSyncView;
+    BOOL _showingITunesSync;
 
     id _selectedSource;              // BTLibrarySource or a BTPlaylist
     NSArray *_visibleTracks;
@@ -835,9 +839,19 @@ static CGFloat BTTitleBarHeight(void) {
     [_repeatButton setToolTip:@"Repeat"];
     [_bottomBar addSubview:_repeatButton];
 
-    // The eject button lives in the gray at the bottom right, and only appears
-    // while a device is attached.
-    _ejectButton = [BTToggleButton buttonWithFrame:NSMakeRect(NSWidth(bounds) - 30, 2, 22, 20)
+    // Bringing music over from iTunes. Furthest right and always there, so it
+    // does not shift about as a device comes and goes.
+    _syncButton = [BTToggleButton buttonWithFrame:NSMakeRect(NSWidth(bounds) - 30, 2, buttonWidth, 20)
+                                            glyph:BTGlyphSync
+                                           target:self
+                                           action:@selector(showITunesSync:)];
+    [_syncButton setToolTip:@"Bring music over from iTunes"];
+    [_syncButton setAutoresizingMask:NSViewMinXMargin];
+    [_bottomBar addSubview:_syncButton];
+
+    // The eject button sits beside it, and only appears while a device is
+    // attached.
+    _ejectButton = [BTToggleButton buttonWithFrame:NSMakeRect(NSWidth(bounds) - 56, 2, 22, 20)
                                              glyph:BTGlyphEject
                                             target:self
                                             action:@selector(ejectIPod:)];
@@ -926,24 +940,50 @@ static CGFloat BTTitleBarHeight(void) {
 }
 
 // Selecting the iPod puts the sync pane where the browser and track list are.
+// Three things can occupy the right half: the songs, the iPod, or the iTunes
+// sync. Only one of them is put there at a time.
 - (void)updateRightPane {
-    BOOL wantsSync = [_selectedSource isKindOfClass:[BTIPod class]];
     NSArray *subviews = [_outerSplit subviews];
     if ([subviews count] != 2) return;
-
     NSView *current = [subviews objectAtIndex:1];
-    if (wantsSync) {
+
+    NSView *wanted = _innerSplit;
+    if (_showingITunesSync) {
+        if (_iTunesSyncView == nil) {
+            _iTunesSyncView = [[BTITunesSyncView alloc] initWithFrame:[current frame]];
+            __weak BTMainWindowController *weakSelf = self;
+            _iTunesSyncView.didFinish = ^{ [weakSelf closeITunesSync]; };
+        }
+        wanted = _iTunesSyncView;
+    } else if ([_selectedSource isKindOfClass:[BTIPod class]]) {
         if (_syncView == nil) _syncView = [[BTSyncView alloc] initWithFrame:[current frame]];
         _syncView.iPod = (BTIPod *)_selectedSource;
-        if (current != _syncView) {
-            [_outerSplit replaceSubview:current with:_syncView];
-            [_syncView setFrame:[current frame]];
-        }
-    } else if (current != _innerSplit) {
-        [_outerSplit replaceSubview:current with:_innerSplit];
-        [_innerSplit setFrame:[current frame]];
+        wanted = _syncView;
+    }
+
+    if (current != wanted) {
+        [_outerSplit replaceSubview:current with:wanted];
+        [wanted setFrame:[current frame]];
     }
     [_outerSplit adjustSubviews];
+}
+
+// The sync only ever occupies the right half, so picking anything on the left
+// leaves it by putting that source's songs back in its place.
+- (void)showITunesSync:(id)sender {
+    if (_showingITunesSync) return;
+    _showingITunesSync = YES;
+    _syncButton.on = YES;
+    [self updateRightPane];
+    [_iTunesSyncView beginComparing];
+}
+
+- (void)closeITunesSync {
+    if (!_showingITunesSync) return;
+    _showingITunesSync = NO;
+    _syncButton.on = NO;
+    [self updateRightPane];
+    [self reloadEverything];
 }
 
 - (void)iPodChanged:(NSNotification *)note {
@@ -1400,6 +1440,8 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     id item = (row >= 0) ? [_sourceList itemAtRow:row] : BTLibrarySource;
     if (item == nil) item = BTLibrarySource;
     _selectedSource = item;
+    _showingITunesSync = NO;
+    _syncButton.on = NO;
     [self adoptSortForSelectedSource];
     [self saveSessionState];
 
