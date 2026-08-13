@@ -18,6 +18,10 @@
 static NSString *const BTTrackPasteboardType = @"com.btunes.tracks";
 static NSString *const BTPlaylistPasteboardType = @"com.btunes.playlist";
 static NSString *const BTLibrarySource = @"Library";
+// The same songs as the library, held in the order iTunes recorded them being
+// added. Deliberately not the order BTunes learned of them, which for anything
+// a sync brings is one moment for thousands of songs and says nothing at all.
+static NSString *const BTRecentlyAddedSource = @"Recently Added";
 
 // Column widths and their arrangement are left to the table, which saves them
 // under this name. Which columns are shown is kept separately, because the #
@@ -87,6 +91,7 @@ static NSString *const BTLibrarySortAscendingKey = @"BTLibrarySortAscending";
 // two only have to avoid looking like one.
 static NSString *const BTLibraryWasSelected = @"library";
 static NSString *const BTIPodWasSelected = @"ipod";
+static NSString *const BTRecentWasSelected = @"recent";
 
 // Tall enough for two lines of text above the scrub bar without them meeting.
 #define BT_CHROME_HEIGHT 54.0
@@ -471,6 +476,22 @@ static CGFloat BTTitleBarHeight(void) {
         [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5, 2, 4, 4)] fill];
         [[NSColor colorWithCalibratedRed:0.62 green:0.76 blue:0.93 alpha:1.0] set];
         NSRectFill(NSMakeRect(5, 7.5, 4, 4));
+        [image unlockFocus];
+        return image;
+    }
+    if (item == BTRecentlyAddedSource) {
+        // A clock face, since the list is about when rather than what.
+        NSBezierPath *face = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 13, 13)];
+        [blue set];
+        [face fill];
+        [[NSColor whiteColor] set];
+        NSBezierPath *hands = [NSBezierPath bezierPath];
+        [hands setLineWidth:1.4];
+        [hands moveToPoint:NSMakePoint(7, 7)];
+        [hands lineToPoint:NSMakePoint(7, 10.5)];      // to the hour
+        [hands moveToPoint:NSMakePoint(7, 7)];
+        [hands lineToPoint:NSMakePoint(9.8, 7)];       // and past it
+        [hands stroke];
         [image unlockFocus];
         return image;
     }
@@ -1144,7 +1165,10 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     if (playlist == nil) {
         _sourceOrder = nil;
         _showsPlaylistOrder = NO;
-        return (_selectedSource == BTLibrarySource || _selectedSource == nil) ? library.tracks : @[];
+        BOOL wholeLibrary = (_selectedSource == BTLibrarySource ||
+                             _selectedSource == BTRecentlyAddedSource ||
+                             _selectedSource == nil);
+        return wholeLibrary ? library.tracks : @[];
     }
 
     NSArray *tracks = [playlist resolveTracks:library.tracks];
@@ -1160,7 +1184,19 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
 
 // A source opens the way it was last left. Until it has been sorted by hand it
 // opens the way its kind suggests.
+// Recently Added is one view with one order, and that order is the whole of
+// what it is for. There is nothing to sort it by and so nothing to remember.
+- (BOOL)selectedSourceSortIsFrozen {
+    return _selectedSource == BTRecentlyAddedSource;
+}
+
 - (void)adoptSortForSelectedSource {
+    if ([self selectedSourceSortIsFrozen]) {
+        _sortColumn = @"dateAdded";
+        _sortAscending = NO;              // newest at the top
+        return;
+    }
+
     BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 
@@ -1178,6 +1214,8 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
 }
 
 - (void)rememberSortForSelectedSource {
+    if ([self selectedSourceSortIsFrozen]) return;
+
     BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
     if (playlist) {
         playlist.sortColumn = _sortColumn;
@@ -1299,6 +1337,8 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
         source = playlist.playlistID;
     } else if ([_selectedSource isKindOfClass:[BTIPod class]]) {
         source = BTIPodWasSelected;
+    } else if (_selectedSource == BTRecentlyAddedSource) {
+        source = BTRecentWasSelected;
     }
     [defaults setObject:source forKey:BTSelectedSourceKey];
 
@@ -1323,6 +1363,8 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     NSString *source = [defaults stringForKey:BTSelectedSourceKey];
     if ([source isEqualToString:BTIPodWasSelected]) {
         if (_iPod) _selectedSource = _iPod;
+    } else if ([source isEqualToString:BTRecentWasSelected]) {
+        _selectedSource = BTRecentlyAddedSource;
     } else if ([source length] > 0 && ![source isEqualToString:BTLibraryWasSelected]) {
         BTPlaylist *playlist = [[BTLibrary sharedLibrary] playlistWithID:source];
         if (playlist) _selectedSource = playlist;
@@ -1455,7 +1497,8 @@ static void BTRedrawEverything(NSView *view) {
 
 - (NSArray *)childrenOfSourceItem:(id)item {
     if (item == nil) {
-        NSMutableArray *roots = [NSMutableArray arrayWithObject:BTLibrarySource];
+        NSMutableArray *roots = [NSMutableArray arrayWithObjects:BTLibrarySource,
+                                 BTRecentlyAddedSource, nil];
         // The iPod sits under the library, above the playlists.
         if (_iPod) [roots addObject:_iPod];
         [roots addObjectsFromArray:[BTLibrary sharedLibrary].playlists];
@@ -1481,6 +1524,7 @@ static void BTRedrawEverything(NSView *view) {
     objectValueForTableColumn:(NSTableColumn *)tableColumn
                        byItem:(id)item {
     if (item == BTLibrarySource) return @"Library";
+    if (item == BTRecentlyAddedSource) return @"Recently Added";
     if ([item isKindOfClass:[BTIPod class]]) return [(BTIPod *)item name];
     return [(BTPlaylist *)item name];
 }
@@ -1715,6 +1759,13 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
         [_trackTable setIndicatorImage:nil inTableColumn:[columns objectAtIndex:i]];
     }
 
+    // No mark on a frozen list. An arrow on a column head is an invitation to
+    // click it, and clicking it here does nothing.
+    if ([self selectedSourceSortIsFrozen]) {
+        [_trackTable setHighlightedTableColumn:nil];
+        return;
+    }
+
     NSTableColumn *sorted = [_sortColumn length] > 0
         ? [_trackTable tableColumnWithIdentifier:_sortColumn] : nil;
     [_trackTable setHighlightedTableColumn:sorted];
@@ -1730,6 +1781,7 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     NSString *identifier = [tableColumn identifier];
     // The mark is not a fact anyone would sort by.
     if ([identifier isEqualToString:@"playing"]) return;
+    if ([self selectedSourceSortIsFrozen]) return;
     if ([identifier isEqualToString:_sortColumn]) {
         _sortAscending = !_sortAscending;
     } else {
