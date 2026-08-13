@@ -57,7 +57,7 @@
     [column setEditable:NO];
     [table addTableColumn:column];
     [table setAllowsColumnSelection:NO];
-    [table setRowHeight:16.0];
+    [table setRowHeight:[BTStyle browserRowHeight]];
     [table setUsesAlternatingRowBackgroundColors:YES];
     [table setAllowsMultipleSelection:NO];
     [table setDataSource:self];

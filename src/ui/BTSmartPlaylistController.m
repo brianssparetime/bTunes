@@ -4,7 +4,23 @@
 #import "BTControls.h"
 
 #define BT_SHEET_WIDTH 540.0
-#define BT_ROW_HEIGHT  28.0
+
+// Every measurement below that follows the type, named so the arithmetic says
+// what it is made of. At the size this was drawn for they come to the numbers
+// that were written here before: 22, 18, 20, 28, 32, 30, 34.
+#define BT_FIELD    ([BTStyle fieldHeight])
+#define BT_LABEL    ([BTStyle labelHeight])
+#define BT_CHECK    ([BTStyle checkboxHeight])
+// A rule row: the controls, and six points of air beneath.
+#define BT_ROW_HEIGHT (BT_FIELD + 6.0)
+// One row of the sheet to the next.
+#define BT_ROW_STEP   (BT_FIELD + 10.0)
+#define BT_LIMIT_STEP (BT_CHECK + 10.0)
+// The top of the sheet down to the bottom of the first row.
+#define BT_FIRST_ROW  (BT_FIELD + 12.0)
+// A caption beside a field sits above the field's bottom edge, since the field
+// is taller than its words by the bezel drawn round them.
+#define BT_CAPTION_RISE 4.0
 
 @implementation BTSmartPlaylistController {
     BTPlaylist *_playlist;
@@ -120,7 +136,7 @@
         BTSmartRule *rule = [_workingRules objectAtIndex:i];
         CGFloat y = containerHeight - BT_ROW_HEIGHT * (CGFloat)(i + 1) + 3;
 
-        NSPopUpButton *fieldPopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, y, 130, 22)];
+        NSPopUpButton *fieldPopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, y, 130, BT_FIELD)];
         [fieldPopUp addItemsWithTitles:[BTSmartRule fieldNames]];
         [fieldPopUp selectItemAtIndex:rule.field];
         [[fieldPopUp cell] setControlSize:NSSmallControlSize];
@@ -130,7 +146,7 @@
         [fieldPopUp setAction:@selector(fieldChanged:)];
         [_rulesContainer addSubview:fieldPopUp];
 
-        NSPopUpButton *opPopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(136, y, 140, 22)];
+        NSPopUpButton *opPopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(136, y, 140, BT_FIELD)];
         [opPopUp addItemsWithTitles:[BTSmartRule operatorNamesForField:rule.field]];
         NSArray *ops = [BTSmartRule operatorsForField:rule.field];
         NSUInteger opIndex = [ops indexOfObject:@(rule.op)];
@@ -142,7 +158,7 @@
         [opPopUp setAction:@selector(operatorChanged:)];
         [_rulesContainer addSubview:opPopUp];
 
-        NSTextField *valueField = [[NSTextField alloc] initWithFrame:NSMakeRect(282, y, 160, 22)];
+        NSTextField *valueField = [[NSTextField alloc] initWithFrame:NSMakeRect(282, y, 160, BT_FIELD)];
         [valueField setFont:[BTStyle uiFont]];
         [valueField setStringValue:(rule.value ? rule.value : @"")];
         [valueField setTag:(NSInteger)i];
@@ -150,7 +166,7 @@
         [valueField setAction:@selector(valueChanged:)];
         [_rulesContainer addSubview:valueField];
 
-        NSButton *minus = [[NSButton alloc] initWithFrame:NSMakeRect(452, y, 24, 22)];
+        NSButton *minus = [[NSButton alloc] initWithFrame:NSMakeRect(452, y, 24, BT_FIELD)];
         [minus setTitle:@"-"];
         [minus setBezelStyle:NSRoundRectBezelStyle];
         [minus setFont:[BTStyle uiFont]];
@@ -160,7 +176,7 @@
         [minus setEnabled:([_workingRules count] > 1)];
         [_rulesContainer addSubview:minus];
 
-        NSButton *plus = [[NSButton alloc] initWithFrame:NSMakeRect(478, y, 24, 22)];
+        NSButton *plus = [[NSButton alloc] initWithFrame:NSMakeRect(478, y, 24, BT_FIELD)];
         [plus setTitle:@"+"];
         [plus setBezelStyle:NSRoundRectBezelStyle];
         [plus setFont:[BTStyle uiFont]];
@@ -177,28 +193,32 @@
 // block changes height. The buttons stay pinned to the bottom.
 - (void)layoutWindow {
     CGFloat rulesHeight = NSHeight([_rulesContainer frame]);
-    CGFloat height = 52 + 30 + 30 + rulesHeight + 30 + 46;
+    // The name row, the match row, the rules, the limit row, and the strip the
+    // buttons sit in. Each row is a control tall, so the sheet grows with the
+    // type rather than closing over it.
+    CGFloat height = (BT_FIELD + 30.0) + (BT_FIELD + 8.0) + (BT_FIELD + 8.0)
+                   + rulesHeight + (BT_CHECK + 10.0) + 46.0;
     NSWindow *window = [self window];
     NSRect frame = [window frame];
     NSRect contentRect = NSMakeRect(NSMinX(frame), NSMinY(frame), BT_SHEET_WIDTH, height);
     [window setFrame:[window frameRectForContentRect:contentRect] display:YES];
 
-    CGFloat y = height - 34;
-    [_nameLabel setFrame:NSMakeRect(20, y + 4, 50, 18)];
-    [_nameField setFrame:NSMakeRect(70, y, BT_SHEET_WIDTH - 90, 22)];
+    CGFloat y = height - BT_FIRST_ROW;
+    [_nameLabel setFrame:NSMakeRect(20, y + BT_CAPTION_RISE, 50, BT_LABEL)];
+    [_nameField setFrame:NSMakeRect(70, y, BT_SHEET_WIDTH - 90, BT_FIELD)];
 
-    y -= 32;
-    [_matchLabel setFrame:NSMakeRect(20, y + 4, 40, 18)];
-    [_matchPopUp setFrame:NSMakeRect(58, y, 60, 22)];
-    [_rulesLabel setFrame:NSMakeRect(124, y + 4, 200, 18)];
+    y -= BT_ROW_STEP;
+    [_matchLabel setFrame:NSMakeRect(20, y + BT_CAPTION_RISE, 40, BT_LABEL)];
+    [_matchPopUp setFrame:NSMakeRect(58, y, 60, BT_FIELD)];
+    [_rulesLabel setFrame:NSMakeRect(124, y + BT_CAPTION_RISE, 200, BT_LABEL)];
 
     y -= rulesHeight + 6;
     [_rulesContainer setFrameOrigin:NSMakePoint(20, y)];
 
-    y -= 30;
-    [_limitCheck setFrame:NSMakeRect(20, y, 90, 20)];
-    [_limitField setFrame:NSMakeRect(110, y, 60, 20)];
-    [_songsLabel setFrame:NSMakeRect(176, y + 3, 60, 18)];
+    y -= BT_LIMIT_STEP;
+    [_limitCheck setFrame:NSMakeRect(20, y, 90, BT_CHECK)];
+    [_limitField setFrame:NSMakeRect(110, y, 60, BT_CHECK)];
+    [_songsLabel setFrame:NSMakeRect(176, y + 3, 60, BT_LABEL)];
 }
 
 #pragma mark - Rule edits

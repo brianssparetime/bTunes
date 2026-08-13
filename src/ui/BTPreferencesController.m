@@ -5,7 +5,23 @@
 #import "BTControls.h"
 
 #define BT_PREFS_WIDTH  520.0
-#define BT_PREFS_HEIGHT 416.0
+
+// The parts that follow the type. At the size this was drawn for they come to
+// the numbers that used to be written out: 17, 22, 18, 28, 32, and the steps 24
+// and 56 that carry one setting to the next.
+#define BT_NAME     ([BTStyle lineHeight] + 4.0)     // "Music:" beside the path
+#define BT_FIELD    ([BTStyle fieldHeight])          // the path itself
+#define BT_BOX      ([BTStyle lineHeight] + 5.0)     // a tick box and its words
+#define BT_NOTE_1   ([BTStyle smallLineHeight] + 17.0)  // a note, one line or two
+#define BT_NOTE_2   ([BTStyle smallLineHeight] + 21.0)  // a note that runs to three
+#define BT_TO_NOTE  ([BTStyle smallLineHeight] + 13.0)  // the field down to its note
+#define BT_TO_NEXT  (BT_FIELD + BT_NOTE_2 + 2.0)     // one setting down to the next
+#define BT_BOX_TO_NOTE (BT_BOX + 8.0)                // the tick box down to its note
+
+// A top margin, four settings, then purple mode with its note and the margin
+// under it. Written as the stack it is, so a taller row makes a taller window
+// instead of the last note running off the bottom.
+#define BT_PREFS_HEIGHT (52.0 + 4.0 * (BT_TO_NOTE + BT_TO_NEXT) + BT_BOX_TO_NOTE + 18.0)
 
 @implementation BTPreferencesController {
     NSTextField *_musicField;
@@ -65,7 +81,7 @@
     // how the window looks, not about where something lives. The note sits
     // under it at the same left edge as the words beside the box, the way the
     // notes under the three paths do.
-    _purpleBox = [[NSButton alloc] initWithFrame:NSMakeRect(20, y, 300, 18)];
+    _purpleBox = [[NSButton alloc] initWithFrame:NSMakeRect(20, y, 300, BT_BOX)];
     [_purpleBox setButtonType:NSSwitchButton];
     [_purpleBox setFont:[BTStyle uiFont]];
     // Named in the colour it turns things, which says more than the words do.
@@ -78,7 +94,7 @@
     [content addSubview:_purpleBox];
 
     [content addSubview:[self labelWithText:@"Draws the main window in purple instead of blue. The mini player is purple either way."
-                                      frame:NSMakeRect(38, y - 26, BT_PREFS_WIDTH - 58, 28)
+                                      frame:NSMakeRect(38, y - BT_BOX_TO_NOTE, BT_PREFS_WIDTH - 58, BT_NOTE_1)
                                       small:YES]];
 
     [self refresh];
@@ -104,10 +120,10 @@
                     action:(SEL)action
                     inView:(NSView *)content {
     [content addSubview:[self labelWithText:labelText
-                                      frame:NSMakeRect(20, *y, 60, 17)
+                                      frame:NSMakeRect(20, *y, 60, BT_NAME)
                                       small:NO]];
 
-    NSTextField *path = [[NSTextField alloc] initWithFrame:NSMakeRect(84, *y - 3, BT_PREFS_WIDTH - 84 - 120, 22)];
+    NSTextField *path = [[NSTextField alloc] initWithFrame:NSMakeRect(84, *y - 3, BT_PREFS_WIDTH - 84 - 120, BT_FIELD)];
     [path setEditable:NO];
     [path setSelectable:YES];
     [path setFont:[BTStyle uiFont]];
@@ -118,11 +134,11 @@
     [choose setFrame:NSMakeRect(BT_PREFS_WIDTH - 112, *y - 3, 92, NSHeight([choose frame]))];
     [content addSubview:choose];
 
-    *y -= 24.0;
+    *y -= BT_TO_NOTE;
     [content addSubview:[self labelWithText:noteText
-                                      frame:NSMakeRect(84, *y - 18, BT_PREFS_WIDTH - 104, 32)
+                                      frame:NSMakeRect(84, *y - 18, BT_PREFS_WIDTH - 104, BT_NOTE_2)
                                       small:YES]];
-    *y -= 56.0;
+    *y -= BT_TO_NEXT;
     return path;
 }
 

@@ -391,7 +391,7 @@ static CGFloat BTTitleBarHeight(void) {
     [_sourceList addTableColumn:sourceColumn];
     [_sourceList setOutlineTableColumn:sourceColumn];
     [_sourceList setHeaderView:nil];
-    [_sourceList setRowHeight:18.0];
+    [_sourceList setRowHeight:[BTStyle sourceRowHeight]];
     [_sourceList setIndentationPerLevel:14.0];
     [_sourceList setDataSource:self];
     [_sourceList setDelegate:self];
@@ -439,7 +439,7 @@ static CGFloat BTTitleBarHeight(void) {
     _trackTable = [[BTKeyTableView alloc] initWithFrame:[[trackScroll contentView] bounds]];
     [_trackTable setFocusRingType:NSFocusRingTypeNone];
     BTAddTrackColumns(_trackTable);
-    [_trackTable setRowHeight:17.0];
+    [_trackTable setRowHeight:[BTStyle listRowHeight]];
     [_trackTable setUsesAlternatingRowBackgroundColors:YES];
     [_trackTable setAllowsMultipleSelection:YES];
     [_trackTable setAllowsColumnSelection:NO];

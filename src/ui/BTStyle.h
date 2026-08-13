@@ -4,11 +4,40 @@
 // interface draws goes through here so the palette stays in one place.
 @interface BTStyle : NSObject
 
-+ (NSFont *)uiFont;
-+ (NSFont *)boldFont;
-+ (NSFont *)smallFont;
-+ (NSFont *)displayFont;
+// The one size every other size here comes from. Change this and the fonts, the
+// row heights, the captions and the fields all move together.
+//
+// The face is Lucida Grande because that is what iTunes 4 was set in. The rest
+// of this section exists because changing the size used to mean finding the
+// same decision written out in fifteen places and getting all fifteen right.
++ (CGFloat)baseFontSize;
+
++ (NSFont *)uiFont;             // the base size: lists, captions, buttons
++ (NSFont *)boldFont;           // the same, for a heading
++ (NSFont *)smallFont;          // two under: a note beneath a field
++ (NSFont *)displayFont;        // one under: the readout at the top
 + (NSFont *)displayBoldFont;
+
+// How tall one line of the base font is, asked of the font rather than assumed.
+// It is not a straight multiple of the size: Lucida Grande goes 13 points at
+// size 11 and 15 at size 12, so anything that adds one to a row height for one
+// extra point of type is already wrong.
++ (CGFloat)lineHeight;
++ (CGFloat)smallLineHeight;
+
+// A row in a list, in the three weights the window uses. The differences are
+// deliberate: the browser columns are tight, the songs are ordinary, and a
+// source row carries an icon and wants the air.
++ (CGFloat)browserRowHeight;
++ (CGFloat)listRowHeight;
++ (CGFloat)sourceRowHeight;
+
+// The frame a caption needs, and the frame a control needs. A control is taller
+// than its words because it draws a border and a background around them.
++ (CGFloat)labelHeight;
++ (CGFloat)smallLabelHeight;
++ (CGFloat)fieldHeight;         // text field, popup button
++ (CGFloat)checkboxHeight;
 
 // The one purple everything purple is made from: the logo, the mini player, and
 // the whole of the main window while purple mode is on. Change this and the

@@ -41,7 +41,7 @@
 
     _outline = [[BTListOutlineView alloc] initWithFrame:NSZeroRect];
     [_outline setFocusRingType:NSFocusRingTypeNone];
-    [_outline setRowHeight:18.0];
+    [_outline setRowHeight:[BTStyle sourceRowHeight]];
     [_outline setIndentationPerLevel:14.0];
     [_outline setHeaderView:nil];
     [_outline setAllowsColumnSelection:NO];

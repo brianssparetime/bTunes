@@ -118,9 +118,20 @@ void BTAddTrackColumns(NSTableView *table) {
         NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:spec->identifier];
         [[column headerCell] setStringValue:spec->heading];
         [[column headerCell] setFont:[BTStyle uiFont]];
-        [column setWidth:spec->width];
-        [column setMinWidth:spec->minimum];
-        [column setMaxWidth:spec->maximum];
+        // The narrowest a column may go is whichever is larger: the number below,
+        // or enough room for its own heading. Written out, the numbers were
+        // right for one size of type and would have cut the headings short at
+        // any other.
+        CGFloat headingRoom = 0.0;
+        if ([spec->heading length] > 0) {
+            NSDictionary *attrs = @{NSFontAttributeName: [BTStyle uiFont]};
+            headingRoom = ceil([spec->heading sizeWithAttributes:attrs].width) + 16.0;
+        }
+        CGFloat minimum = MAX(spec->minimum, headingRoom);
+
+        [column setWidth:MAX(spec->width, minimum)];
+        [column setMinWidth:minimum];
+        [column setMaxWidth:MAX(spec->maximum, minimum)];
         [column setHidden:!spec->shown];
         [column setEditable:NO];
 

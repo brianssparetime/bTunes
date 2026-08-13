@@ -22,11 +22,38 @@ static NSColor *BTShiftColor(NSColor *color, CGFloat saturationScale, CGFloat br
 
 @implementation BTStyle
 
-+ (NSFont *)uiFont        { return BTFontNamed(@"Lucida Grande", 11.0, NO); }
-+ (NSFont *)boldFont      { return BTFontNamed(@"Lucida Grande Bold", 11.0, YES); }
-+ (NSFont *)smallFont     { return BTFontNamed(@"Lucida Grande", 9.0, NO); }
-+ (NSFont *)displayFont   { return BTFontNamed(@"Lucida Grande", 10.0, NO); }
-+ (NSFont *)displayBoldFont { return BTFontNamed(@"Lucida Grande Bold", 10.0, YES); }
++ (CGFloat)baseFontSize   { return 11.0; }
+
++ (NSFont *)uiFont        { return BTFontNamed(@"Lucida Grande", [self baseFontSize], NO); }
++ (NSFont *)boldFont      { return BTFontNamed(@"Lucida Grande Bold", [self baseFontSize], YES); }
++ (NSFont *)smallFont     { return BTFontNamed(@"Lucida Grande", [self baseFontSize] - 2.0, NO); }
++ (NSFont *)displayFont   { return BTFontNamed(@"Lucida Grande", [self baseFontSize] - 1.0, NO); }
++ (NSFont *)displayBoldFont { return BTFontNamed(@"Lucida Grande Bold", [self baseFontSize] - 1.0, YES); }
+
+// Asked of the type rather than worked out from the point size, because the
+// answer is not proportional: 11 point gives 13 and 12 point gives 15.
+static CGFloat BTLineHeightOf(NSFont *font) {
+    static NSLayoutManager *layout = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ layout = [[NSLayoutManager alloc] init]; });
+    return [layout defaultLineHeightForFont:font];
+}
+
++ (CGFloat)lineHeight      { return BTLineHeightOf([self uiFont]); }
++ (CGFloat)smallLineHeight { return BTLineHeightOf([self smallFont]); }
+
+// A line, plus the air around it. The three weights differ by two points each,
+// which is the whole of what separates a browser row from a source row.
++ (CGFloat)browserRowHeight { return [self lineHeight] + 3.0; }
++ (CGFloat)listRowHeight    { return [self lineHeight] + 4.0; }
++ (CGFloat)sourceRowHeight  { return [self lineHeight] + 5.0; }
+
++ (CGFloat)labelHeight      { return [self lineHeight] + 5.0; }
++ (CGFloat)smallLabelHeight { return [self smallLineHeight] + 3.0; }
+// A field is its line plus the bezel drawn round it, which is why it is so much
+// taller than a caption saying the same words.
++ (CGFloat)fieldHeight      { return [self lineHeight] + 9.0; }
++ (CGFloat)checkboxHeight   { return [self lineHeight] + 7.0; }
 
 // #8400FF. Change this alongside the palette at the top of tools/make_logo.py
 // and every purple in the application follows it.

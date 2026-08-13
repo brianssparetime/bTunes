@@ -214,7 +214,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 // never appeared.
 - (NSScrollView *)scrollHolding:(NSTableView *)list columns:(NSArray *)specs {
     [list setFocusRingType:NSFocusRingTypeNone];
-    [list setRowHeight:17.0];
+    [list setRowHeight:[BTStyle listRowHeight]];
     [list setUsesAlternatingRowBackgroundColors:YES];
     [list setAllowsMultipleSelection:NO];
     [list setAllowsColumnSelection:NO];

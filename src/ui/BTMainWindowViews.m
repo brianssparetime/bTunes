@@ -30,7 +30,9 @@
                                 NSParagraphStyleAttributeName: centered};
         // Leave the right end clear for the three buttons.
         CGFloat reserved = 84.0;
-        [self.statusText drawInRect:NSMakeRect(reserved, NSMidY(bounds) - 7, NSWidth(bounds) - reserved * 2, 14)
+        CGFloat line = [BTStyle lineHeight] + 1.0;
+        [self.statusText drawInRect:NSMakeRect(reserved, NSMidY(bounds) - line / 2.0,
+                                               NSWidth(bounds) - reserved * 2, line)
                      withAttributes:attrs];
     }
 }

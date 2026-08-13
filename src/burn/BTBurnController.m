@@ -9,6 +9,16 @@
 
 #define BT_BURN_SHEET_WIDTH 460.0
 
+// The parts that follow the type. At the size this was drawn for they come to
+// the numbers that used to be written out: 18, 22, 20, 28, 36, and the steps.
+#define BT_LABEL  ([BTStyle labelHeight])          // a caption on its own line
+#define BT_FIELD  ([BTStyle fieldHeight])          // the drive and the gap
+#define BT_BOX    ([BTStyle checkboxHeight])       // verify after burning
+#define BT_NOTE   ([BTStyle smallLineHeight] + 17.0)   // the start-and-end note
+#define BT_STATUS ([BTStyle lineHeight] * 2.0 + 10.0)  // the reason, up to two lines
+// A caption sits above the bottom edge of the control beside it.
+#define BT_RISE   4.0
+
 // The gap between songs, in the order the popup offers it. Two is the default,
 // which is what a commercial disc uses and what iTunes wrote.
 static const NSUInteger BTBurnGapChoices[] = { 2, 1, 0 };
@@ -166,8 +176,12 @@ static BTBurnController *sRunning = nil;
 // Placed from the top down, since only the two wrapping lines change height.
 // The buttons stay pinned to the bottom.
 - (void)layoutWindow {
-    CGFloat noteHeight = ([[_note stringValue] length] > 0) ? 28 : 0;
-    CGFloat height = 34 + 24 + noteHeight + 12 + 30 + 30 + 28 + 40 + 46;
+    CGFloat noteHeight = ([[_note stringValue] length] > 0) ? BT_NOTE : 0;
+    // Heading, summary, the note when there is one, then the drive, the gap, the
+    // tick box, the reason, and the strip the buttons sit in.
+    CGFloat height = (BT_LABEL + 16) + (BT_LABEL + 6) + noteHeight + 12
+                   + (BT_FIELD + 8) + (BT_FIELD + 8) + (BT_BOX + 8)
+                   + (BT_STATUS + 4) + 46;
 
     NSWindow *window = [self window];
     NSRect frame = [window frame];
@@ -178,11 +192,11 @@ static BTBurnController *sRunning = nil;
     if (fabs(NSHeight(wanted) - NSHeight(frame)) > 0.5) [window setFrame:wanted display:YES];
 
     CGFloat right = BT_BURN_SHEET_WIDTH - 20;
-    CGFloat y = height - 34;
-    [_heading setFrame:NSMakeRect(20, y, right - 20, 18)];
+    CGFloat y = height - (BT_LABEL + 16);
+    [_heading setFrame:NSMakeRect(20, y, right - 20, BT_LABEL)];
 
-    y -= 24;
-    [_summary setFrame:NSMakeRect(20, y, right - 20, 18)];
+    y -= BT_LABEL + 6;
+    [_summary setFrame:NSMakeRect(20, y, right - 20, BT_LABEL)];
 
     if (noteHeight > 0) {
         y -= noteHeight;
@@ -190,19 +204,19 @@ static BTBurnController *sRunning = nil;
     }
     [_note setHidden:(noteHeight == 0)];
 
-    y -= 42;
-    [_driveLabel setFrame:NSMakeRect(20, y + 4, 130, 18)];
-    [_drivePopUp setFrame:NSMakeRect(150, y, right - 150, 22)];
+    y -= BT_FIELD + 20;
+    [_driveLabel setFrame:NSMakeRect(20, y + BT_RISE, 130, BT_LABEL)];
+    [_drivePopUp setFrame:NSMakeRect(150, y, right - 150, BT_FIELD)];
 
-    y -= 30;
-    [_gapLabel setFrame:NSMakeRect(20, y + 4, 130, 18)];
-    [_gapPopUp setFrame:NSMakeRect(150, y, 130, 22)];
+    y -= BT_FIELD + 8;
+    [_gapLabel setFrame:NSMakeRect(20, y + BT_RISE, 130, BT_LABEL)];
+    [_gapPopUp setFrame:NSMakeRect(150, y, 130, BT_FIELD)];
 
-    y -= 28;
-    [_verifyCheck setFrame:NSMakeRect(150, y, right - 150, 20)];
+    y -= BT_BOX + 8;
+    [_verifyCheck setFrame:NSMakeRect(150, y, right - 150, BT_BOX)];
 
-    y -= 40;
-    [_status setFrame:NSMakeRect(20, y, right - 20, 36)];
+    y -= BT_STATUS + 4;
+    [_status setFrame:NSMakeRect(20, y, right - 20, BT_STATUS)];
 }
 
 #pragma mark - Drives, and what they hold
