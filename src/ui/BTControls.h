@@ -65,12 +65,27 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume);
 // because the source list is an outline view and cannot inherit it, and a list
 // drawing the system's own blue is exactly what purple mode cannot reach.
 void BTDrawListSelection(NSTableView *list, NSRect clipRect);
-// Redraws the list when its window gains or loses focus, since the selection is
-// a different colour either side of that.
-void BTWatchWindowFocus(NSView *list);
+
+// Whether this list draws the strong selection: its window is the one being
+// used and this is the list the keyboard is talking to. Everything else draws
+// the gray one.
+//
+// The fill and the text have to agree about this, so both ask here. White words
+// on the gray fill are barely words at all.
+BOOL BTListHasFocus(NSTableView *list);
+
+// Redraws the list when the window gains or loses focus, and when the keyboard
+// moves between lists, since the selection is a different colour either side of
+// both.
+void BTWatchListFocus(NSView *list);
+
+// Posted after the keyboard moves from one list to another.
+extern NSString *const BTListFocusDidChangeNotification;
+// Says the keyboard has moved. Called by a list as it takes or gives up focus.
+void BTNoteListFocusChanged(void);
 
 @interface NSView (BTListFocus)
-- (void)btWindowFocusChanged:(NSNotification *)note;
+- (void)btListFocusChanged:(NSNotification *)note;
 @end
 
 // A list that draws its own selection, so every pane highlights the same colour

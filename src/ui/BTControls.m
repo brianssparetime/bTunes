@@ -309,15 +309,33 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume) 
 
 #pragma mark - List
 
+NSString *const BTListFocusDidChangeNotification = @"BTListFocusDidChange";
+
+// One list at a time draws the strong colour: the one the keyboard is talking
+// to, in the window being used. Two lists filling rows in the same colour at
+// once read as one list, and where their rows nearly line up across a divider
+// the two fills merge into a single band with tabs on it, which is what gave
+// this away. The grids cannot be made to line up either, since the two lists
+// have different row heights and one of them sits below a column header.
+BOOL BTListHasFocus(NSTableView *list) {
+    NSWindow *window = [list window];
+    if (![window isKeyWindow]) return NO;
+
+    id responder = [window firstResponder];
+    if (responder == list) return YES;
+
+    // While a name is being edited the field editor holds focus, and it belongs
+    // to the list being edited rather than to nothing.
+    return [responder isKindOfClass:[NSView class]] &&
+           [(NSView *)responder isDescendantOf:list];
+}
+
 void BTDrawListSelection(NSTableView *list, NSRect clipRect) {
     NSIndexSet *selected = [list selectedRowIndexes];
     if ([selected count] == 0) return;
 
-    // The whole window agrees on one selection colour, and on gray when the
-    // window is not the one being used. Which pane holds focus does not change
-    // it, and neither does whether the list is a table or an outline.
-    NSColor *color = [[list window] isKeyWindow] ? [BTStyle selection]
-                                                 : [BTStyle inactiveSelection];
+    NSColor *color = BTListHasFocus(list) ? [BTStyle selection]
+                                          : [BTStyle inactiveSelection];
     [color set];
 
     NSRange rows = [list rowsInRect:clipRect];
@@ -333,17 +351,32 @@ void BTDrawListSelection(NSTableView *list, NSRect clipRect) {
 // takes a BOOL, and handing it a notification passes a pointer where a single
 // byte is read, which is a coin toss rather than a redraw.
 @implementation NSView (BTListFocus)
-- (void)btWindowFocusChanged:(NSNotification *)note {
+- (void)btListFocusChanged:(NSNotification *)note {
     [self setNeedsDisplay:YES];
 }
 @end
 
-void BTWatchWindowFocus(NSView *list) {
-    if ([list window] == nil) return;
+// Sent on the next turn of the run loop rather than at once. A list is told it
+// is becoming first responder before the window has finished believing it, so a
+// redraw taken at that moment asks who has focus and is given the old answer.
+void BTNoteListFocusChanged(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName:BTListFocusDidChangeNotification object:nil];
+    });
+}
+
+void BTWatchListFocus(NSView *list) {
     NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
-    [nc addObserver:list selector:@selector(btWindowFocusChanged:)
+    // Any list moving the keyboard repaints every list, since the one losing
+    // focus has to turn gray at the same moment the other turns.
+    [nc addObserver:list selector:@selector(btListFocusChanged:)
+               name:BTListFocusDidChangeNotification object:nil];
+
+    if ([list window] == nil) return;
+    [nc addObserver:list selector:@selector(btListFocusChanged:)
                name:NSWindowDidBecomeKeyNotification object:[list window]];
-    [nc addObserver:list selector:@selector(btWindowFocusChanged:)
+    [nc addObserver:list selector:@selector(btListFocusChanged:)
                name:NSWindowDidResignKeyNotification object:[list window]];
 }
 
@@ -353,9 +386,21 @@ void BTWatchWindowFocus(NSView *list) {
     BTDrawListSelection(self, clipRect);
 }
 
+- (BOOL)becomeFirstResponder {
+    BOOL became = [super becomeFirstResponder];
+    if (became) BTNoteListFocusChanged();
+    return became;
+}
+
+- (BOOL)resignFirstResponder {
+    BOOL resigned = [super resignFirstResponder];
+    if (resigned) BTNoteListFocusChanged();
+    return resigned;
+}
+
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
-    BTWatchWindowFocus(self);
+    BTWatchListFocus(self);
 }
 
 - (void)dealloc {

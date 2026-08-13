@@ -275,9 +275,21 @@ static CGFloat BTTitleBarHeight(void) {
     BTDrawListSelection(self, clipRect);
 }
 
+- (BOOL)becomeFirstResponder {
+    BOOL became = [super becomeFirstResponder];
+    if (became) BTNoteListFocusChanged();
+    return became;
+}
+
+- (BOOL)resignFirstResponder {
+    BOOL resigned = [super resignFirstResponder];
+    if (resigned) BTNoteListFocusChanged();
+    return resigned;
+}
+
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
-    BTWatchWindowFocus(self);
+    BTWatchListFocus(self);
 }
 
 - (void)dealloc {
@@ -1402,6 +1414,11 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
             }
         }
     }
+
+    // The songs get the keyboard to open with. Only the list holding it draws
+    // the strong selection, so leaving it nowhere would open the window with
+    // every selection gray and nothing looking chosen.
+    [[self window] makeFirstResponder:_trackTable];
 }
 
 - (void)tableViewSelectionDidChange:(NSNotification *)note {
@@ -1582,7 +1599,10 @@ static void BTRedrawEverything(NSView *view) {
 
         BOOL selected = ([outlineView selectedRow] == [outlineView rowForItem:item]);
         [sourceCell setHighlighted:NO];
-        [sourceCell setTextColor:(selected ? [NSColor whiteColor] : [NSColor blackColor])];
+        // White words on the gray fill are barely words, so the text follows
+        // the fill rather than the selection.
+        BOOL strong = (selected && BTListHasFocus(outlineView));
+        [sourceCell setTextColor:(strong ? [NSColor whiteColor] : [NSColor blackColor])];
     }
 }
 
@@ -1777,7 +1797,8 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     }
     NSColor *color = track.isProtected ? [NSColor colorWithCalibratedWhite:0.55 alpha:1.0]
                                        : [NSColor blackColor];
-    [(NSTextFieldCell *)cell setTextColor:(selected ? [NSColor whiteColor] : color)];
+    [(NSTextFieldCell *)cell setTextColor:((selected && BTListHasFocus(tableView)) ? [NSColor whiteColor]
+                                                                                   : color)];
 }
 
 // Marks the column the list is sorted by, so a source that opened the way it
