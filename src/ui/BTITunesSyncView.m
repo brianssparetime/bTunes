@@ -5,6 +5,7 @@
 #import "BTLibrary.h"
 #import "BTPreferences.h"
 #import "BTPlaylist.h"
+#import "BTDisplayView.h"
 
 // Which columns are shown is remembered, since a reader who hides the ones that
 // cannot come across wants them to stay hidden next time as well.
@@ -19,8 +20,6 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     BOOL _comparing;
 
     NSTextField *_summary;
-    NSProgressIndicator *_progress;
-    NSTextField *_stage;
 
     NSButton *_hideIneligible;
     NSButton *_hideAlreadySynced;
@@ -41,6 +40,12 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     // been turned off has to be remembered.
     NSMutableSet *_uncheckedSongs;
     NSMutableSet *_uncheckedLists;
+
+    // Which of a playlist's songs are still up for choosing, worked out once
+    // when the comparison lands. Asking the question row by row meant walking
+    // all twelve thousand incoming songs for every row drawn, which is why
+    // ticking a box used to stop the window for seconds at a time.
+    NSDictionary *_choosableByPlaylist;   // playlist id to song ids
 }
 
 #pragma mark - Building
@@ -56,18 +61,6 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
     _summary = BTLabelWithText(@"", [BTStyle boldFont]);
     [self addSubview:_summary];
-
-    _stage = BTLabelWithText(@"", [BTStyle uiFont]);
-    [_stage setTextColor:[NSColor colorWithCalibratedWhite:0.35 alpha:1.0]];
-    [self addSubview:_stage];
-
-    _progress = [[NSProgressIndicator alloc] initWithFrame:NSZeroRect];
-    [_progress setStyle:NSProgressIndicatorBarStyle];
-    [_progress setIndeterminate:NO];
-    [_progress setMinValue:0.0];
-    [_progress setMaxValue:1.0];
-    [_progress setHidden:YES];
-    [self addSubview:_progress];
 
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     _hideIneligible = [self checkboxTitled:@"Hide ineligible"
@@ -206,14 +199,11 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     CGFloat y = NSMaxY(bounds) - 28;
 
     [_summary setFrame:NSMakeRect(margin, y, width, 17)];
-    y -= 20;
-    [_stage setFrame:NSMakeRect(margin, y, width - 160, 15)];
-    [_progress setFrame:NSMakeRect(NSMaxX(bounds) - margin - 150, y, 150, 14)];
 
-    y -= 26;
+    y -= 28;
     [_hideIneligible setFrame:NSMakeRect(margin, y, 130, 18)];
     [_hideAlreadySynced setFrame:NSMakeRect(margin + 138, y, 160, 18)];
-    [_checkAll setFrame:NSMakeRect(NSMaxX(bounds) - margin - 110, y - 4, 110, 26)];
+    [_checkAll setFrame:NSMakeRect(NSMaxX(bounds) - margin - 110, y - 2, 110, 22)];
 
     y -= 22;
     CGFloat halves = (width - 12) / 2.0;
@@ -227,7 +217,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
     [_songsScroll setFrame:NSMakeRect(margin, footer, halves, listHeight)];
     [_playlistsScroll setFrame:NSMakeRect(margin + halves + 12, footer, halves, listHeight)];
-    [_syncButton setFrame:NSMakeRect(NSMaxX(bounds) - margin - 92, 10, 92, 28)];
+    [_syncButton setFrame:NSMakeRect(NSMaxX(bounds) - margin - 92, 12, 92, 22)];
 
     [self sizeColumnsOf:_songsTable in:_songsScroll fixedFirst:20.0];
     [self sizeColumnsOf:_playlistsTable in:_playlistsScroll fixedFirst:20.0];
@@ -266,10 +256,12 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     [BTITunesSync syncWithLibraryAtPath:path
                                 against:[BTLibrary sharedLibrary]
                                progress:^(double fraction, NSString *stage) {
-        BTITunesSyncView *me = weakSelf;
-        if (me == nil) return;
-        [me->_progress setDoubleValue:fraction];
-        [me->_stage setStringValue:stage];
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName:BTDisplayProgressNotification
+                          object:nil
+                        userInfo:@{@"title": @"Analyzing iTunes",
+                                   @"message": (stage ? stage : @""),
+                                   @"fraction": @(fraction)}];
     } completion:^(BTITunesSync *sync) {
         BTITunesSyncView *me = weakSelf;
         if (me == nil) return;
@@ -281,17 +273,14 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
 - (void)showComparingState {
     [_summary setStringValue:@"Analyzing iTunes"];
-    [_stage setStringValue:@"Starting"];
-    [_progress setDoubleValue:0.0];
-    [_progress setHidden:NO];
     [_syncButton setEnabled:NO];
     [_checkAll setEnabled:NO];
     [_checkAll setTitle:@"Uncheck All"];
 }
 
 - (void)finishedComparing {
-    [_progress setHidden:YES];
-    [_stage setStringValue:@""];
+    [[NSNotificationCenter defaultCenter]
+        postNotificationName:BTDisplayProgressDidEndNotification object:nil];
     [_checkAll setEnabled:YES];
 
     if (_sync.error) {
@@ -300,6 +289,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
         return;
     }
 
+    [self indexChoosableSongs];
     [_summary setStringValue:[_sync summary]];
     [self rebuildLists];
 }
@@ -350,17 +340,34 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     return [track eligible] && ![_uncheckedSongs containsObject:track.persistentID];
 }
 
-// The songs a playlist would bring with it that are still up for choosing. One
-// already in the library comes along regardless, so it does not count here.
-- (NSArray *)choosableSongsOf:(BTITunesSyncPlaylist *)playlist {
-    NSMutableArray *choosable = [NSMutableArray array];
-    NSUInteger i;
+// The songs each playlist would bring that are still up for choosing. A song
+// already in the library comes along regardless, so it is not one of them.
+- (void)indexChoosableSongs {
+    NSMutableSet *choosableIDs = [NSMutableSet set];
+    NSUInteger i, j;
     for (i = 0; i < [_sync.incomingTracks count]; i++) {
         BTITunesSyncTrack *track = [_sync.incomingTracks objectAtIndex:i];
-        if (![track eligible]) continue;
-        if ([playlist.incomingTrackIDs containsObject:track.persistentID]) [choosable addObject:track];
+        if ([track eligible] && track.persistentID) [choosableIDs addObject:track.persistentID];
     }
-    return choosable;
+
+    NSMutableDictionary *byPlaylist = [NSMutableDictionary dictionary];
+    for (i = 0; i < [_sync.playlists count]; i++) {
+        BTITunesSyncPlaylist *playlist = [_sync.playlists objectAtIndex:i];
+        if (playlist.persistentID == nil) continue;
+        NSMutableArray *mine = [NSMutableArray array];
+        for (j = 0; j < [playlist.incomingTrackIDs count]; j++) {
+            NSString *songID = [playlist.incomingTrackIDs objectAtIndex:j];
+            if ([choosableIDs containsObject:songID]) [mine addObject:songID];
+        }
+        [byPlaylist setObject:mine forKey:playlist.persistentID];
+    }
+    _choosableByPlaylist = byPlaylist;
+}
+
+- (NSArray *)choosableSongsOf:(BTITunesSyncPlaylist *)playlist {
+    NSArray *songIDs = playlist.persistentID
+        ? [_choosableByPlaylist objectForKey:playlist.persistentID] : nil;
+    return songIDs ? songIDs : @[];
 }
 
 // A playlist follows its songs: ticked when all of them are, empty when none
@@ -374,7 +381,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
     NSUInteger i, chosen = 0;
     for (i = 0; i < [choosable count]; i++) {
-        if ([self songIsChosen:[choosable objectAtIndex:i]]) chosen++;
+        if (![_uncheckedSongs containsObject:[choosable objectAtIndex:i]]) chosen++;
     }
     if (chosen == 0) return NSOffState;
     return (chosen == [choosable count]) ? NSOnState : NSMixedState;
@@ -390,14 +397,10 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     // Ticking a playlist ticks its music, which is the whole point of the two
     // panes standing side by side.
     NSArray *choosable = [self choosableSongsOf:playlist];
-    NSUInteger i;
-    for (i = 0; i < [choosable count]; i++) {
-        BTITunesSyncTrack *track = [choosable objectAtIndex:i];
-        if (chosen) {
-            [_uncheckedSongs removeObject:track.persistentID];
-        } else {
-            [_uncheckedSongs addObject:track.persistentID];
-        }
+    if (chosen) {
+        [_uncheckedSongs minusSet:[NSSet setWithArray:choosable]];
+    } else {
+        [_uncheckedSongs addObjectsFromArray:choosable];
     }
 }
 

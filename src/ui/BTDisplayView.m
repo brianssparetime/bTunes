@@ -11,12 +11,16 @@
 #define BT_MARQUEE_SPEED 26.0   // points per second
 #define BT_MARQUEE_REST   2.0
 
+NSString *const BTDisplayProgressNotification = @"BTDisplayProgress";
+NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd";
+
 @implementation BTDisplayView {
     BOOL _showRemaining;
     BOOL _scrubbing;
     BOOL _syncing;
     double _syncFraction;
     NSString *_syncMessage;
+    NSString *_syncTitle;
     NSDate *_lineShownAt;
     NSString *_lineTrackID;
 }
@@ -30,6 +34,8 @@
         [nc addObserver:self selector:@selector(refresh) name:BTPlayerTimeDidChangeNotification object:nil];
         [nc addObserver:self selector:@selector(syncProgress:) name:BTIPodSyncProgressNotification object:nil];
         [nc addObserver:self selector:@selector(syncFinished:) name:BTIPodSyncDidFinishNotification object:nil];
+        [nc addObserver:self selector:@selector(progress:) name:BTDisplayProgressNotification object:nil];
+        [nc addObserver:self selector:@selector(syncFinished:) name:BTDisplayProgressDidEndNotification object:nil];
     }
     return self;
 }
@@ -46,8 +52,18 @@
 
 // While a sync runs the readout shows it instead of the song, since the whole
 // window is about the iPod at that point.
+// Anything else with something slow to report, naming itself as it goes.
+- (void)progress:(NSNotification *)note {
+    _syncing = YES;
+    _syncTitle = [[note userInfo] objectForKey:@"title"];
+    _syncFraction = [[[note userInfo] objectForKey:@"fraction"] doubleValue];
+    _syncMessage = [[note userInfo] objectForKey:@"message"];
+    [self setNeedsDisplay:YES];
+}
+
 - (void)syncProgress:(NSNotification *)note {
     _syncing = YES;
+    _syncTitle = @"Syncing iPod";
     _syncFraction = [[[note userInfo] objectForKey:@"fraction"] doubleValue];
     _syncMessage = [[note userInfo] objectForKey:@"message"];
     [self setNeedsDisplay:YES];
@@ -56,6 +72,7 @@
 - (void)syncFinished:(NSNotification *)note {
     _syncing = NO;
     _syncMessage = nil;
+    _syncTitle = nil;
     [self setNeedsDisplay:YES];
 }
 
@@ -67,8 +84,9 @@
     NSDictionary *attrs = @{NSFontAttributeName: [BTStyle displayBoldFont],
                             NSForegroundColorAttributeName: [BTStyle displayText],
                             NSParagraphStyleAttributeName: centered};
-    [@"Syncing iPod" drawInRect:NSMakeRect(NSMinX(bounds) + 6, NSMaxY(bounds) - 15, NSWidth(bounds) - 12, 12)
-                 withAttributes:attrs];
+    NSString *title = [_syncTitle length] > 0 ? _syncTitle : @"Working";
+    [title drawInRect:NSMakeRect(NSMinX(bounds) + 6, NSMaxY(bounds) - 15, NSWidth(bounds) - 12, 12)
+       withAttributes:attrs];
 
     if ([_syncMessage length] > 0) {
         NSDictionary *lineAttrs = @{NSFontAttributeName: [BTStyle displayFont],

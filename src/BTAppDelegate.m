@@ -46,10 +46,11 @@
     }
 }
 
+// An empty library used to be greeted with an alert offering to add a folder of
+// music. It stood in front of the window on every launch until something was
+// imported, and it blocked quitting while it was up. Bringing music over from
+// iTunes is a button on the window, which says the same thing without a dialog.
 - (void)finishLaunching {
-    if ([[BTLibrary sharedLibrary].tracks count] == 0) {
-        [self performSelector:@selector(offerFirstImport) withObject:nil afterDelay:0.3];
-    }
 }
 
 // Running the executable directly, rather than through the bundle, leaves the
@@ -59,17 +60,6 @@
     if (path == nil) return;
     NSImage *icon = [[NSImage alloc] initWithContentsOfFile:path];
     if (icon) [NSApp setApplicationIconImage:icon];
-}
-
-- (void)offerFirstImport {
-    NSAlert *alert = [[NSAlert alloc] init];
-    [alert setMessageText:@"The library is empty."];
-    [alert setInformativeText:@"Choose a folder of music to add. BTunes reads the files and never writes to them."];
-    [alert addButtonWithTitle:@"Add Music"];
-    [alert addButtonWithTitle:@"Later"];
-    if ([alert runModal] == NSAlertFirstButtonReturn) {
-        [_main addToLibrary:nil];
-    }
 }
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
