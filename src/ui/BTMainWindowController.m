@@ -2043,19 +2043,25 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 - (void)playPause:(id)sender {
     BTPlayer *player = [BTPlayer sharedPlayer];
 
-    // Starting play uses what is on screen: whatever source is selected on the
-    // left, filtered by the browser and the search field. That list is also
-    // what next and previous walk, so a playlist plays its own songs and stops
-    // at the end of them rather than running on into the library.
-    if ([player currentTrack] == nil || ![_visibleTracks containsObject:[player currentTrack]]) {
-        NSInteger row = [_trackTable selectedRow];
-        if (row < 0 || row >= (NSInteger)[_visibleTracks count]) row = 0;
-        if ([_visibleTracks count] == 0) return;
-
-        [player playTrack:[_visibleTracks objectAtIndex:(NSUInteger)row] inList:_visibleTracks];
+    // A song already loaded is what this button controls, whatever list happens
+    // to be on screen. Looking at another playlist is not asking to play it: the
+    // button showed a pause mark, so it pauses. Starting the other playlist is
+    // what double-clicking a song in it is for.
+    if ([player currentTrack]) {
+        [player togglePlayPause];
         return;
     }
-    [player togglePlayPause];
+
+    // Nothing loaded, so this starts what is on screen: whatever source is
+    // selected on the left, narrowed by the browser and the search field. That
+    // list is also what next and previous walk, so a playlist plays its own
+    // songs and stops at the end of them rather than running on into the
+    // library.
+    NSInteger row = [_trackTable selectedRow];
+    if (row < 0 || row >= (NSInteger)[_visibleTracks count]) row = 0;
+    if ([_visibleTracks count] == 0) return;
+
+    [player playTrack:[_visibleTracks objectAtIndex:(NSUInteger)row] inList:_visibleTracks];
 }
 
 - (void)nextTrack:(id)sender { [[BTPlayer sharedPlayer] next]; }
