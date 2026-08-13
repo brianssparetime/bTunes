@@ -188,6 +188,11 @@
     // Edit, with the standard text editing keys the search field expects.
     NSMenuItem *editItem = [[NSMenuItem alloc] initWithTitle:@"Edit" action:NULL keyEquivalent:@""];
     NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+    // Titled by the undo manager as it validates, so the menu names the thing
+    // it will take back.
+    [editMenu addItem:[self itemWithTitle:@"Undo" action:@selector(undo:) key:@"z" modifiers:NSCommandKeyMask target:nil]];
+    [editMenu addItem:[self itemWithTitle:@"Redo" action:@selector(redo:) key:@"Z" modifiers:NSCommandKeyMask target:nil]];
+    [editMenu addItem:[NSMenuItem separatorItem]];
     [editMenu addItem:[self itemWithTitle:@"Cut" action:@selector(cut:) key:@"x" modifiers:NSCommandKeyMask target:nil]];
     [editMenu addItem:[self itemWithTitle:@"Copy" action:@selector(copy:) key:@"c" modifiers:NSCommandKeyMask target:nil]];
     [editMenu addItem:[self itemWithTitle:@"Paste" action:@selector(paste:) key:@"v" modifiers:NSCommandKeyMask target:nil]];
@@ -206,6 +211,14 @@
     [controlsMenu addItem:[NSMenuItem separatorItem]];
     [controlsMenu addItem:[self itemWithTitle:@"Shuffle" action:@selector(toggleShuffle:) key:@"s" modifiers:NSCommandKeyMask target:nil]];
     [controlsMenu addItem:[self itemWithTitle:@"Repeat" action:@selector(cycleRepeat:) key:@"r" modifiers:NSCommandKeyMask target:nil]];
+    [controlsMenu addItem:[NSMenuItem separatorItem]];
+    // Deliberately not forwarded from the mini player: renumbering a playlist
+    // nobody can see is not something to offer.
+    [controlsMenu addItem:[self itemWithTitle:@"Sync Playlist Order to Album/Track Order"
+                                       action:@selector(syncPlaylistOrder:)
+                                          key:@""
+                                    modifiers:0
+                                       target:nil]];
     [controlsMenu addItem:[NSMenuItem separatorItem]];
     // Plain M is handled by the windows, since a menu key equivalent would fire
     // while typing in the search field.

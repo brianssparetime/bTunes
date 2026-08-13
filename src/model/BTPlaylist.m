@@ -315,6 +315,42 @@
                                   NSMakeRange((NSUInteger)index, [moving count])]];
 }
 
+- (void)arrangeByAlbumUsingTracks:(NSArray *)allTracks {
+    NSArray *resolved = [self resolveTracks:allTracks];
+
+    // Disc comes between album and track: track one of the second disc belongs
+    // after track twelve of the first, not before it.
+    NSArray *sorted = [resolved sortedArrayUsingComparator:^NSComparisonResult(id a, id b) {
+        BTTrack *left = a, *right = b;
+        NSComparisonResult result = [[left displayAlbum] caseInsensitiveCompare:[right displayAlbum]];
+        if (result != NSOrderedSame) return result;
+
+        if (left.discNumber != right.discNumber) {
+            return left.discNumber < right.discNumber ? NSOrderedAscending : NSOrderedDescending;
+        }
+        if (left.trackNumber != right.trackNumber) {
+            return left.trackNumber < right.trackNumber ? NSOrderedAscending : NSOrderedDescending;
+        }
+        return [[left displayTitle] caseInsensitiveCompare:[right displayTitle]];
+    }];
+
+    NSMutableArray *arranged = [NSMutableArray arrayWithCapacity:[self.trackIDs count]];
+    NSUInteger i;
+    for (i = 0; i < [sorted count]; i++) {
+        [arranged addObject:[[sorted objectAtIndex:i] trackID]];
+    }
+
+    // Anything the library could not resolve is kept. Rearranging a playlist is
+    // not a reason to lose a song whose file happens to be missing today.
+    for (i = 0; i < [self.trackIDs count]; i++) {
+        NSString *trackID = [self.trackIDs objectAtIndex:i];
+        if (![arranged containsObject:trackID]) [arranged addObject:trackID];
+    }
+
+    [self.trackIDs removeAllObjects];
+    [self.trackIDs addObjectsFromArray:arranged];
+}
+
 - (BOOL)isDescendantOf:(BTPlaylist *)other {
     BTPlaylist *p = self.parent;
     while (p) {

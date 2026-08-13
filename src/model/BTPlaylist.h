@@ -89,6 +89,11 @@ typedef NS_ENUM(NSInteger, BTRuleOperator) {
 // the songs means the end. Songs not in this playlist are ignored.
 - (void)moveTrackIDs:(NSArray *)trackIDs toIndex:(NSInteger)index;
 
+// Renumbers the playlist into album order: albums by name, and within an album
+// by disc and then track number. Songs whose files have gone missing keep their
+// places at the end rather than being dropped.
+- (void)arrangeByAlbumUsingTracks:(NSArray *)allTracks;
+
 - (BOOL)isDescendantOf:(BTPlaylist *)other;
 
 @end

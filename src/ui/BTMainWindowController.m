@@ -269,7 +269,7 @@ static CGFloat BTTitleBarHeight(void) {
 @interface BTMainWindowController () <NSOutlineViewDataSource, NSOutlineViewDelegate,
                                       NSTableViewDataSource, NSTableViewDelegate,
                                       NSSplitViewDelegate, BTBrowserViewDelegate,
-                                      BTKeyTableDelegate>
+                                      NSWindowDelegate, BTKeyTableDelegate>
 @end
 
 @implementation BTMainWindowController {
@@ -309,6 +309,7 @@ static CGFloat BTTitleBarHeight(void) {
     NSMutableSet *_closedFolders;
     NSImage *_speakerImage;
     BTSmartPlaylistController *_sheetController;
+    NSUndoManager *_undoManager;
 }
 
 #pragma mark Construction
@@ -340,6 +341,11 @@ static CGFloat BTTitleBarHeight(void) {
 
     self = [super initWithWindow:window];
     if (self == nil) return nil;
+
+    // The window hands out this controller's undo manager, so the search field
+    // and the playlist edits share one stack and Command-Z means the last thing
+    // done either way.
+    [window setDelegate:self];
 
     _selectedSource = BTLibrarySource;
     _sortColumn = @"track";
@@ -658,21 +664,18 @@ static CGFloat BTTitleBarHeight(void) {
     }
 }
 
-// A playlist leads with its own order and puts the album number out of the way
-// at the end. Everything else leads with the album number and has no playlist
-// order to show.
+// The track number sits at the far end everywhere. It is a fact about the song
+// rather than about the list, so it stays out of the way of the reading order.
+// A playlist adds its own numbering at the near end; nothing else has one.
 - (void)updateColumnLayout {
     NSTableColumn *order = [_trackTable tableColumnWithIdentifier:@"order"];
-    NSTableColumn *track = [_trackTable tableColumnWithIdentifier:@"track"];
-    if (order == nil || track == nil) return;
+    if (order == nil) return;
 
     [order setHidden:!_showsPlaylistOrder];
 
-    // A hidden column still occupies a place in the list, so the track number
-    // sits just past it to come out leftmost on screen.
-    NSInteger wanted = _showsPlaylistOrder ? (NSInteger)[[_trackTable tableColumns] count] - 1 : 1;
+    NSInteger last = (NSInteger)[[_trackTable tableColumns] count] - 1;
     NSInteger current = [_trackTable columnWithIdentifier:@"track"];
-    if (current >= 0 && current != wanted) [_trackTable moveColumn:current toColumn:wanted];
+    if (current >= 0 && current != last) [_trackTable moveColumn:current toColumn:last];
 }
 
 - (void)buildBottomBar {
@@ -896,34 +899,8 @@ static CGFloat BTTitleBarHeight(void) {
         [order setObject:@(i + 1) forKey:[[tracks objectAtIndex:i] trackID]];
     }
     _sourceOrder = order;
-    _showsPlaylistOrder = (playlist.kind != BTPlaylistKindSmart) && ![self playlistIsAnAlbum:tracks];
+    _showsPlaylistOrder = YES;
     return tracks;
-}
-
-// Whether a playlist is one album, whole. That decides what it shows before any
-// column is clicked: an album keeps the album's own order, while a playlist that
-// merely draws from an album, like a disc burned from a selection, keeps the
-// order it was built in, because that order was chosen.
-- (BOOL)playlistIsAnAlbum:(NSArray *)tracks {
-    if ([tracks count] < 2) return NO;
-
-    NSString *album = [[tracks objectAtIndex:0] displayAlbum];
-    NSInteger disc = [[tracks objectAtIndex:0] discNumber];
-    NSMutableIndexSet *numbers = [NSMutableIndexSet indexSet];
-
-    NSUInteger i;
-    for (i = 0; i < [tracks count]; i++) {
-        BTTrack *track = [tracks objectAtIndex:i];
-        if (![[track displayAlbum] isEqualToString:album]) return NO;
-        if (track.discNumber != disc) return NO;
-        if (track.trackNumber < 1) return NO;
-        if ([numbers containsIndex:(NSUInteger)track.trackNumber]) return NO;
-        [numbers addIndex:(NSUInteger)track.trackNumber];
-    }
-
-    // One unbroken run from the first track: the album as pressed, not a
-    // selection out of it.
-    return [numbers firstIndex] == 1 && [numbers lastIndex] == [tracks count];
 }
 
 // A source opens the way it was last left. Until it has been sorted by hand it
@@ -958,15 +935,9 @@ static CGFloat BTTitleBarHeight(void) {
     [defaults setBool:_sortAscending forKey:BTLibrarySortAscendingKey];
 }
 
-// A playlist opens in its own order, which is the order it was built in. An
-// album, and anything that is not a playlist, opens by track number.
+// A playlist opens in its own order. Everything else opens by track number.
 - (NSString *)defaultSortColumnForSelectedSource {
-    BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
-    if (playlist && (playlist.kind == BTPlaylistKindStatic || playlist.kind == BTPlaylistKindFolder)) {
-        NSArray *tracks = [playlist resolveTracks:[BTLibrary sharedLibrary].tracks];
-        return [self playlistIsAnAlbum:tracks] ? @"track" : @"order";
-    }
-    return @"track";
+    return BTPlaylistFromSource(_selectedSource) ? @"order" : @"track";
 }
 
 - (NSArray *)sortTracks:(NSArray *)tracks {
@@ -1498,6 +1469,45 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     return YES;
 }
 
+#pragma mark - Taking it back
+
+- (NSUndoManager *)undoManager {
+    if (_undoManager == nil) _undoManager = [[NSUndoManager alloc] init];
+    return _undoManager;
+}
+
+- (NSUndoManager *)windowWillReturnUndoManager:(NSWindow *)window {
+    return [self undoManager];
+}
+
+// Named differently from the selector they answer would be the usual caution,
+// but these do the work themselves rather than passing it along, so there is
+// nothing to recurse into.
+- (void)undo:(id)sender { [[self undoManager] undo]; }
+- (void)redo:(id)sender { [[self undoManager] redo]; }
+
+// Every rearrangement goes through here, so all of them can be taken back the
+// same way. Restoring registers the arrangement it replaced, which is what
+// makes redo work without a second path through the code.
+- (void)restoreOrder:(NSArray *)order ofPlaylist:(BTPlaylist *)playlist named:(NSString *)name {
+    NSUndoManager *undo = [self undoManager];
+    [[undo prepareWithInvocationTarget:self]
+        restoreOrder:[NSArray arrayWithArray:playlist.trackIDs] ofPlaylist:playlist named:name];
+    [undo setActionName:name];
+
+    [playlist.trackIDs removeAllObjects];
+    [playlist.trackIDs addObjectsFromArray:order];
+    [[BTLibrary sharedLibrary] noteChanged];
+}
+
+// Records what a playlist looked like before it was changed. Call it with the
+// order as it stood, then make the change.
+- (void)recordOrder:(NSArray *)previous ofPlaylist:(BTPlaylist *)playlist named:(NSString *)name {
+    NSUndoManager *undo = [self undoManager];
+    [[undo prepareWithInvocationTarget:self] restoreOrder:previous ofPlaylist:playlist named:name];
+    [undo setActionName:name];
+}
+
 #pragma mark - Rearranging a playlist
 
 // A playlist can be rearranged only while it is showing its own order. Sorted
@@ -1547,6 +1557,9 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
         if (found != NSNotFound) target = (NSInteger)found;
     }
 
+    [self recordOrder:[NSArray arrayWithArray:playlist.trackIDs]
+           ofPlaylist:playlist
+                named:@"Rearrange"];
     [playlist moveTrackIDs:dragged toIndex:target];
 
     // The library reloads the window as it changes, so the numbers are already
@@ -1753,6 +1766,20 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     [self updateTransport];
 }
 
+// Renumbers a playlist into album order. Only a playlist arranged by hand has
+// an order to renumber: a folder takes its from its children and a smart
+// playlist from its rules, and the library has none at all.
+- (void)syncPlaylistOrder:(id)sender {
+    BTPlaylist *playlist = [self selectedPlaylist];
+    if (playlist == nil || playlist.kind != BTPlaylistKindStatic) return;
+
+    [self recordOrder:[NSArray arrayWithArray:playlist.trackIDs]
+           ofPlaylist:playlist
+                named:@"Sync Playlist Order"];
+    [playlist arrangeByAlbumUsingTracks:[BTLibrary sharedLibrary].tracks];
+    [[BTLibrary sharedLibrary] noteChanged];
+}
+
 - (void)toggleMute:(id)sender {
     [[BTPlayer sharedPlayer] toggleMute];
     [self updateTransport];
@@ -1942,6 +1969,20 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     if (action == @selector(editSmartPlaylist:)) {
         BTPlaylist *selected = [self selectedPlaylist];
         return (selected != nil && selected.kind == BTPlaylistKindSmart);
+    }
+    if (action == @selector(syncPlaylistOrder:)) {
+        BTPlaylist *selected = [self selectedPlaylist];
+        return (selected != nil && selected.kind == BTPlaylistKindStatic &&
+                [selected.trackIDs count] > 1);
+    }
+    // The menu says what it will take back, rather than a bare "Undo".
+    if (action == @selector(undo:)) {
+        [item setTitle:[[self undoManager] undoMenuItemTitle]];
+        return [[self undoManager] canUndo];
+    }
+    if (action == @selector(redo:)) {
+        [item setTitle:[[self undoManager] redoMenuItemTitle]];
+        return [[self undoManager] canRedo];
     }
     return YES;
 }
