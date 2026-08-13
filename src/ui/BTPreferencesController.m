@@ -5,12 +5,13 @@
 #import "BTControls.h"
 
 #define BT_PREFS_WIDTH  520.0
-#define BT_PREFS_HEIGHT 292.0
+#define BT_PREFS_HEIGHT 336.0
 
 @implementation BTPreferencesController {
     NSTextField *_musicField;
     NSTextField *_databaseField;
     NSTextField *_iTunesField;
+    NSButton *_purpleBox;
 }
 
 + (instancetype)sharedController {
@@ -53,8 +54,26 @@
                             action:@selector(chooseITunesLibrary:)
                             inView:content];
 
+    // Its own row rather than a third path to choose: this one is a choice
+    // about how the window looks, not about where something lives.
+    _purpleBox = [[NSButton alloc] initWithFrame:NSMakeRect(20, y + 6, 300, 18)];
+    [_purpleBox setButtonType:NSSwitchButton];
+    [_purpleBox setTitle:@"Purple mode"];
+    [_purpleBox setFont:[BTStyle uiFont]];
+    [_purpleBox setTarget:self];
+    [_purpleBox setAction:@selector(purpleModeChanged:)];
+    [content addSubview:_purpleBox];
+
+    [content addSubview:[self labelWithText:@"Draws the main window in purple instead of blue. The mini player is purple either way."
+                                      frame:NSMakeRect(38, y - 14, BT_PREFS_WIDTH - 58, 28)
+                                      small:YES]];
+
     [self refresh];
     return self;
+}
+
+- (void)purpleModeChanged:(id)sender {
+    [[BTPreferences sharedPreferences] setPurpleMode:([_purpleBox state] == NSOnState)];
 }
 
 // The note under each row is the small gray one; the row's own name is not.
@@ -99,6 +118,7 @@
     [_musicField setStringValue:[prefs musicFolder]];
     [_databaseField setStringValue:[prefs databaseFolder]];
     [_iTunesField setStringValue:[prefs iTunesLibraryPath]];
+    [_purpleBox setState:([prefs purpleMode] ? NSOnState : NSOffState)];
 }
 
 - (NSString *)chooseFolderStartingAt:(NSString *)current {

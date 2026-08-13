@@ -1,9 +1,22 @@
 #import "BTStyle.h"
+#import "BTPreferences.h"
 
 static NSFont *BTFontNamed(NSString *name, CGFloat size, BOOL bold) {
     NSFont *font = [NSFont fontWithName:name size:size];
     if (font) return font;
     return bold ? [NSFont boldSystemFontOfSize:size] : [NSFont systemFontOfSize:size];
+}
+
+// The same colour with its strength and its light scaled. Hue is left alone, so
+// a purple stays that purple and only its weight changes.
+static NSColor *BTShiftColor(NSColor *color, CGFloat saturationScale, CGFloat brightnessScale) {
+    NSColor *rgb = [color colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
+    CGFloat h = 0, s = 0, b = 0, a = 1;
+    [rgb getHue:&h saturation:&s brightness:&b alpha:&a];
+    return [NSColor colorWithCalibratedHue:h
+                                saturation:MIN(1.0, s * saturationScale)
+                                brightness:MIN(1.0, b * brightnessScale)
+                                     alpha:a];
 }
 
 @implementation BTStyle
@@ -14,11 +27,15 @@ static NSFont *BTFontNamed(NSString *name, CGFloat size, BOOL bold) {
 + (NSFont *)displayFont   { return BTFontNamed(@"Lucida Grande", 10.0, NO); }
 + (NSFont *)displayBoldFont { return BTFontNamed(@"Lucida Grande Bold", 10.0, YES); }
 
-// #8400FF, with the same lit edge and shadow the logo is drawn from. Change
-// these alongside the palette at the top of tools/make_logo.py.
-+ (NSColor *)accent      { return [NSColor colorWithCalibratedRed:0.518 green:0.000 blue:1.000 alpha:1.0]; }
-+ (NSColor *)accentLight { return [NSColor colorWithCalibratedRed:0.729 green:0.478 blue:1.000 alpha:1.0]; }
-+ (NSColor *)accentDark  { return [NSColor colorWithCalibratedRed:0.196 green:0.000 blue:0.549 alpha:1.0]; }
+// #8400FF. Change this alongside the palette at the top of tools/make_logo.py
+// and every purple in the application follows it.
++ (NSColor *)accent { return [NSColor colorWithCalibratedRed:0.518 green:0.000 blue:1.000 alpha:1.0]; }
+
+// Taken off the accent rather than chosen next to it: the lit edge is the same
+// purple with the colour drained out of it, and the shadow is the same purple
+// with the light taken out.
++ (NSColor *)accentLight { return BTShiftColor([self accent], 0.52, 1.0); }
++ (NSColor *)accentDark  { return BTShiftColor([self accent], 1.0, 0.55); }
 
 // Weighted toward the older gray chrome rather than the near-white the current
 // system draws, so the window reads as something from a few releases back.
@@ -37,7 +54,55 @@ static NSFont *BTFontNamed(NSString *name, CGFloat size, BOOL bold) {
     (void)reason;
     return [NSColor colorWithCalibratedWhite:0.55 alpha:1.0];
 }
-+ (NSColor *)selection       { return [NSColor colorWithCalibratedRed:0.220 green:0.459 blue:0.843 alpha:1.0]; }
+// A blue keeps everything about itself but its hue, which becomes the accent's.
+// Two blues that differed in lightness or strength give two purples that differ
+// the same way, so nothing that was told apart stops being told apart.
++ (NSColor *)tinted:(NSColor *)blue {
+    if (![[BTPreferences sharedPreferences] purpleMode]) return blue;
+
+    NSColor *from = [blue colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
+    NSColor *base = [[self accent] colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
+    CGFloat h = 0, s = 0, b = 0, a = 1, bh = 0, bs = 0, bb = 0, ba = 1;
+    [from getHue:&h saturation:&s brightness:&b alpha:&a];
+    [base getHue:&bh saturation:&bs brightness:&bb alpha:&ba];
+
+    // Scaled by the accent's own strength and light as well, so a quieter
+    // accent gives a quieter window rather than only a different hue.
+    return [NSColor colorWithCalibratedHue:bh
+                                saturation:MIN(1.0, s * bs)
+                                brightness:MIN(1.0, b * bb)
+                                     alpha:a];
+}
+
++ (NSColor *)selection {
+    return [self tinted:[NSColor colorWithCalibratedRed:0.220 green:0.459 blue:0.843 alpha:1.0]];
+}
+
++ (NSColor *)progressFill {
+    return [self tinted:[NSColor colorWithCalibratedRed:0.36 green:0.55 blue:0.86 alpha:1.0]];
+}
+
++ (NSColor *)sourceIcon {
+    return [self tinted:[NSColor colorWithCalibratedRed:0.24 green:0.44 blue:0.78 alpha:1.0]];
+}
+
+// Already a purple, and it stays one either way. Kept darker and quieter than
+// the plain source mark so the two do not become the same thing in purple mode.
++ (NSColor *)smartPlaylistIcon {
+    return [self tinted:[NSColor colorWithCalibratedRed:0.45 green:0.30 blue:0.70 alpha:1.0]];
+}
+
++ (NSColor *)defaultButtonTop {
+    return [self tinted:[NSColor colorWithCalibratedRed:0.48 green:0.71 blue:0.96 alpha:1.0]];
+}
+
++ (NSColor *)defaultButtonBottom {
+    return [self tinted:[NSColor colorWithCalibratedRed:0.22 green:0.48 blue:0.86 alpha:1.0]];
+}
+
++ (NSColor *)defaultButtonEdge {
+    return [self tinted:[NSColor colorWithCalibratedRed:0.20 green:0.38 blue:0.66 alpha:1.0]];
+}
 + (NSColor *)inactiveSelection { return [NSColor colorWithCalibratedWhite:0.702 alpha:1.0]; }
 // The readout carries a faint green cast so it reads as a small screen rather
 // than another gray panel.
@@ -233,9 +298,9 @@ static NSImage *BTSteelGrain(void) {
     NSColor *top, *bottom, *edge;
     if (isDefault) {
         // The one blue button, the way 2010 drew it.
-        top    = [NSColor colorWithCalibratedRed:0.48 green:0.71 blue:0.96 alpha:1.0];
-        bottom = [NSColor colorWithCalibratedRed:0.22 green:0.48 blue:0.86 alpha:1.0];
-        edge   = [NSColor colorWithCalibratedRed:0.20 green:0.38 blue:0.66 alpha:1.0];
+        top    = [self defaultButtonTop];
+        bottom = [self defaultButtonBottom];
+        edge   = [self defaultButtonEdge];
     } else {
         // Barely a gradient. Enough to say the light is above, and no more.
         top    = [NSColor colorWithCalibratedWhite:0.99 alpha:1.0];

@@ -27,6 +27,11 @@ extern NSString *const BTPreferencesDidChangeNotification;
 // while trying something out.
 @property (nonatomic, copy) NSString *iTunesLibraryPath;
 
+// Whether the main window is drawn in purple rather than blue. Off unless asked
+// for, and remembered. The mini player is purple either way, so this does not
+// touch it.
+@property (nonatomic, assign) BOOL purpleMode;
+
 // What the setting falls back to when it has never been chosen.
 - (NSString *)defaultMusicFolder;
 - (NSString *)defaultDatabaseFolder;

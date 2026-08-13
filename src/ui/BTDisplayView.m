@@ -105,7 +105,7 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
 
     NSRect filled = groove;
     filled.size.width = NSWidth(groove) * MAX(0.0, MIN(1.0, _syncFraction));
-    [[NSColor colorWithCalibratedRed:0.36 green:0.55 blue:0.86 alpha:1.0] set];
+    [[BTStyle progressFill] set];
     [[NSBezierPath bezierPathWithRoundedRect:filled xRadius:3 yRadius:3] fill];
 }
 
@@ -271,7 +271,7 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
         NSRect filled = groove;
         filled.size.width = NSWidth(groove) * fraction;
         NSBezierPath *filledPath = [NSBezierPath bezierPathWithRoundedRect:filled xRadius:3 yRadius:3];
-        [[NSColor colorWithCalibratedRed:0.36 green:0.55 blue:0.86 alpha:1.0] set];
+        [[BTStyle progressFill] set];
         [filledPath fill];
 
         // A round knob centred on the groove, rather than a tall oval whose

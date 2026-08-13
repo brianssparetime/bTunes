@@ -416,6 +416,7 @@ static CGFloat BTTitleBarHeight(void) {
     [nc addObserver:self selector:@selector(libraryChanged:) name:BTLibraryDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(playerChanged:) name:BTPlayerDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(iPodChanged:) name:BTIPodDidChangeNotification object:nil];
+    [nc addObserver:self selector:@selector(settingsChanged:) name:BTPreferencesDidChangeNotification object:nil];
 
     [self iPodChanged:nil];
     [self reloadEverything];
@@ -440,7 +441,7 @@ static CGFloat BTTitleBarHeight(void) {
     NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(14, 14)];
     [image lockFocus];
 
-    NSColor *blue = [NSColor colorWithCalibratedRed:0.24 green:0.44 blue:0.78 alpha:1.0];
+    NSColor *blue = [BTStyle sourceIcon];
     if ([item isKindOfClass:[BTIPod class]]) {
         // A little white slab with a wheel on it.
         NSBezierPath *body = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(3.5, 0.5, 7, 13)
@@ -484,7 +485,7 @@ static CGFloat BTTitleBarHeight(void) {
             [[NSColor colorWithCalibratedWhite:0.45 alpha:1.0] set];
             [page stroke];
             NSColor *ink = (playlist.kind == BTPlaylistKindSmart)
-                ? [NSColor colorWithCalibratedRed:0.45 green:0.30 blue:0.70 alpha:1.0] : blue;
+                ? [BTStyle smartPlaylistIcon] : blue;
             [ink set];
             NSRectFill(NSMakeRect(8, 5, 1.4, 5));
             NSBezierPath *head = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5.6, 3.6, 3.6, 2.8)];
@@ -1396,6 +1397,22 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
 
 - (void)libraryChanged:(NSNotification *)note {
     [self reloadEverything];
+}
+
+// Purple mode reaches colours that are drawn rather than stored, so every view
+// has to be told, not only the ones that reload their contents.
+static void BTRedrawEverything(NSView *view) {
+    [view setNeedsDisplay:YES];
+    NSArray *subviews = [view subviews];
+    NSUInteger i;
+    for (i = 0; i < [subviews count]; i++) {
+        BTRedrawEverything([subviews objectAtIndex:i]);
+    }
+}
+
+- (void)settingsChanged:(NSNotification *)note {
+    [self reloadEverything];
+    BTRedrawEverything([[self window] contentView]);
 }
 
 - (void)playerChanged:(NSNotification *)note {

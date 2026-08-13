@@ -10,10 +10,28 @@
 + (NSFont *)displayFont;
 + (NSFont *)displayBoldFont;
 
-// The accent, shared with the logo: body, lit edge, and shadow.
+// The one purple everything purple is made from: the logo, the mini player, and
+// the whole of the main window while purple mode is on. Change this and the
+// rest follows.
 + (NSColor *)accent;
+// The lit edge and the shadow, worked out from the accent rather than picked
+// beside it, so they move when it does.
 + (NSColor *)accentLight;
 + (NSColor *)accentDark;
+
+// A blue turned purple while purple mode is on, and left alone otherwise. The
+// blue keeps its own lightness and strength and only changes hue, so whatever
+// told two blues apart still tells the two purples apart.
++ (NSColor *)tinted:(NSColor *)blue;
+
+// Every blue the main window draws comes from one of these, so purple mode has
+// one place to turn them all.
++ (NSColor *)progressFill;        // how far into a song, and sync progress
++ (NSColor *)sourceIcon;          // the mark beside a source in the left pane
++ (NSColor *)smartPlaylistIcon;   // the same, for one built from rules
++ (NSColor *)defaultButtonTop;
++ (NSColor *)defaultButtonBottom;
++ (NSColor *)defaultButtonEdge;
 
 + (NSColor *)windowBackground;
 + (NSColor *)chromeTop;

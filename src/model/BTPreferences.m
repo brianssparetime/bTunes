@@ -6,6 +6,7 @@ NSString *const BTPreferencesDidChangeNotification = @"BTPreferencesDidChange";
 static NSString *const BTMusicFolderKey = @"BTMusicFolder";
 static NSString *const BTDatabaseFolderKey = @"BTDatabaseFolder";
 static NSString *const BTITunesLibraryPathKey = @"BTITunesLibraryPath";
+static NSString *const BTPurpleModeKey = @"BTPurpleMode";
 
 @implementation BTPreferences
 
@@ -55,6 +56,16 @@ static NSString *const BTITunesLibraryPathKey = @"BTITunesLibraryPath";
 
 - (void)setITunesLibraryPath:(NSString *)path {
     [[NSUserDefaults standardUserDefaults] setObject:path forKey:BTITunesLibraryPathKey];
+    [[NSNotificationCenter defaultCenter] postNotificationName:BTPreferencesDidChangeNotification
+                                                        object:self];
+}
+
+- (BOOL)purpleMode {
+    return [[NSUserDefaults standardUserDefaults] boolForKey:BTPurpleModeKey];
+}
+
+- (void)setPurpleMode:(BOOL)purpleMode {
+    [[NSUserDefaults standardUserDefaults] setBool:purpleMode forKey:BTPurpleModeKey];
     [[NSNotificationCenter defaultCenter] postNotificationName:BTPreferencesDidChangeNotification
                                                         object:self];
 }
