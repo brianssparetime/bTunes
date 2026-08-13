@@ -709,74 +709,95 @@ static CGFloat BTTitleBarHeight(void) {
     [_outerSplit addSubview:_innerSplit];
 }
 
-// Two numbers that are easy to confuse, so they are two columns.
+// Everything a column is, in one place.
 //
-// Track is the song's place on its album. It belongs to the song and is the
-// same wherever the song appears.
+// Two numbers here are easy to confuse, so they are two columns. Track is the
+// song's place on its album: it belongs to the song and reads the same wherever
+// the song appears. Order is the song's place in the playlist, and the same song
+// sits at a different number in every playlist that holds it. Both are made and
+// one is hidden at a time, since making them once keeps whatever width they have
+// been dragged to.
 //
-// Order is the song's place in the playlist. It belongs to the playlist, and
-// the same song sits at a different number in every playlist that holds it.
+// Three separate lists of identifiers used to say what is written here: which
+// columns count something, which have no heading, and which may be hidden. A
+// column added to the specs and forgotten in one of the three was wrong in a way
+// nothing reported.
 //
-// Both are made here and one is hidden at a time. Making them once keeps any
-// width the columns have been dragged to, which rebuilding them on every change
-// of source would throw away.
-//
-// identifier, heading, width, smallest, largest, shown to begin with
-- (void)addTrackColumns {
-    NSArray *specs = @[@[@"playing",     @"",             @18,  @18,  @18,  @YES],
-                       @[@"order",       @"#",            @38,  @30,  @54,  @YES],
-                       @[@"title",       @"Song Name",    @240, @80,  @900, @YES],
-                       @[@"time",        @"Time",         @52,  @44,  @72,  @YES],
-                       @[@"artist",      @"Artist",       @160, @70,  @600, @YES],
-                       @[@"albumArtist", @"Album Artist", @160, @70,  @600, @NO],
-                       @[@"album",       @"Album",        @160, @70,  @600, @YES],
-                       @[@"genre",       @"Genre",        @110, @60,  @400, @YES],
-                       @[@"composer",    @"Composer",     @140, @70,  @500, @NO],
-                       @[@"year",        @"Year",         @54,  @46,  @80,  @NO],
-                       @[@"kind",        @"Kind",         @120, @60,  @300, @NO],
-                       @[@"disc",        @"Disc",         @46,  @38,  @70,  @NO],
-                       @[@"rating",      @"My Rating",    @84,  @60,  @120, @NO],
-                       @[@"playCount",   @"Play Count",   @80,  @66,  @110, @YES],
-                       @[@"lastPlayed",  @"Last Played",  @110, @80,  @180, @NO],
-                       @[@"dateAdded",   @"Date Added",   @110, @80,  @180, @NO],
-                       @[@"size",        @"Size",         @70,  @56,  @100, @NO],
-                       // Last on purpose. It can be dragged anywhere and stays
-                       // where it is put; this is only where it starts.
-                       @[@"track",       @"Track",        @46,  @38,  @62,  @YES]];
+// Two things are still said elsewhere and have to be: what a column sorts by,
+// and how its value is read off a song. Neither is a fact about the column that
+// a table can hold, so both are chains further down, and a new column needs an
+// arm in each.
+typedef struct {
+    __unsafe_unretained NSString *identifier;
+    __unsafe_unretained NSString *heading;
+    CGFloat width;
+    CGFloat minimum;
+    CGFloat maximum;
+    BOOL shown;         // before the reader has hidden or shown anything
+    BOOL counts;        // a number: set to the right, and kept narrow
+    BOOL isPosition;    // may carry the speaker for the row that is playing
+    BOOL canBeHidden;   // offered in the menu on the header
+} BTColumnSpec;
 
-    NSArray *numeric = @[@"order", @"track", @"time", @"playCount",
-                         @"year", @"disc", @"size"];
-    // Nothing to sort by, nothing to widen, and no heading to say so.
-    NSArray *fixed = @[@"playing"];
+// Song Name cannot be hidden, since a list of songs with no names is not a view
+// anyone wants. Neither can the two the source decides: the mark, and #, which
+// is there for a playlist and not for the library.
+//
+// Track is last on purpose. It can be dragged anywhere and stays where it is
+// put; this is only where it starts.
+static const BTColumnSpec BTTrackColumns[] = {
+//    identifier      heading         width  min  max  shown  counts  position  hideable
+    { @"playing",     @"",             18,   18,  18,  YES,   NO,     YES,      NO  },
+    { @"order",       @"#",            38,   30,  54,  YES,   YES,    YES,      NO  },
+    { @"title",       @"Song Name",   240,   80, 900,  YES,   NO,     NO,       NO  },
+    { @"time",        @"Time",         52,   44,  72,  YES,   YES,    NO,       YES },
+    { @"artist",      @"Artist",      160,   70, 600,  YES,   NO,     NO,       YES },
+    { @"albumArtist", @"Album Artist",160,   70, 600,  NO,    NO,     NO,       YES },
+    { @"album",       @"Album",       160,   70, 600,  YES,   NO,     NO,       YES },
+    { @"genre",       @"Genre",       110,   60, 400,  YES,   NO,     NO,       YES },
+    { @"composer",    @"Composer",    140,   70, 500,  NO,    NO,     NO,       YES },
+    { @"year",        @"Year",         54,   46,  80,  NO,    YES,    NO,       YES },
+    { @"kind",        @"Kind",        120,   60, 300,  NO,    NO,     NO,       YES },
+    { @"disc",        @"Disc",         46,   38,  70,  NO,    YES,    NO,       YES },
+    { @"rating",      @"My Rating",    84,   60, 120,  NO,    NO,     NO,       YES },
+    { @"playCount",   @"Play Count",   80,   66, 110,  YES,   YES,    NO,       YES },
+    { @"lastPlayed",  @"Last Played", 110,   80, 180,  NO,    NO,     NO,       YES },
+    { @"dateAdded",   @"Date Added",  110,   80, 180,  NO,    NO,     NO,       YES },
+    { @"size",        @"Size",         70,   56, 100,  NO,    YES,    NO,       YES },
+    { @"track",       @"Track",        46,   38,  62,  YES,   YES,    YES,      YES },
+};
+
+#define BT_TRACK_COLUMN_COUNT (sizeof(BTTrackColumns) / sizeof(BTTrackColumns[0]))
+
+static const BTColumnSpec *BTColumnSpecFor(NSString *identifier) {
     NSUInteger i;
-    for (i = 0; i < [specs count]; i++) {
-        NSArray *spec = [specs objectAtIndex:i];
-        NSString *identifier = [spec objectAtIndex:0];
+    for (i = 0; i < BT_TRACK_COLUMN_COUNT; i++) {
+        if ([BTTrackColumns[i].identifier isEqualToString:identifier]) return &BTTrackColumns[i];
+    }
+    return NULL;
+}
 
-        NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:identifier];
-        [[column headerCell] setStringValue:[spec objectAtIndex:1]];
+- (void)addTrackColumns {
+    NSUInteger i;
+    for (i = 0; i < BT_TRACK_COLUMN_COUNT; i++) {
+        const BTColumnSpec *spec = &BTTrackColumns[i];
+
+        NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:spec->identifier];
+        [[column headerCell] setStringValue:spec->heading];
         [[column headerCell] setFont:[BTStyle uiFont]];
-        [column setWidth:[[spec objectAtIndex:2] doubleValue]];
-        [column setMinWidth:[[spec objectAtIndex:3] doubleValue]];
-        [column setMaxWidth:[[spec objectAtIndex:4] doubleValue]];
-        [column setHidden:![[spec objectAtIndex:5] boolValue]];
+        [column setWidth:spec->width];
+        [column setMinWidth:spec->minimum];
+        [column setMaxWidth:spec->maximum];
+        [column setHidden:!spec->shown];
         [column setEditable:NO];
 
-        // The two numbers carry the speaker for the row that is playing, so
-        // whichever of them leads the row can show it.
-        BOOL countsSomething = [numeric containsObject:identifier];
-        BOOL isPosition = ([identifier isEqualToString:@"order"] ||
-                           [identifier isEqualToString:@"track"] ||
-                           [identifier isEqualToString:@"playing"]);
-        if ([fixed containsObject:identifier]) [[column headerCell] setStringValue:@""];
-
-        NSTextFieldCell *cell = isPosition ? [[BTTrackNumberCell alloc] init]
-                                           : [[NSTextFieldCell alloc] init];
+        NSTextFieldCell *cell = spec->isPosition ? [[BTTrackNumberCell alloc] init]
+                                                 : [[NSTextFieldCell alloc] init];
         [cell setFont:[BTStyle uiFont]];
         // Truncated with an ellipsis rather than clipped: a clipped cell cuts
         // mid-word and reads as though the tag itself is broken.
-        if (!isPosition) [cell setLineBreakMode:NSLineBreakByTruncatingTail];
-        if (countsSomething) {
+        if (!spec->isPosition) [cell setLineBreakMode:NSLineBreakByTruncatingTail];
+        if (spec->counts) {
             [cell setAlignment:NSRightTextAlignment];
             [[column headerCell] setAlignment:NSRightTextAlignment];
         }
@@ -785,10 +806,6 @@ static CGFloat BTTitleBarHeight(void) {
     }
 }
 
-// The # column belongs to a playlist and nothing else has one, so the source
-// decides whether it is there. Every other column is the reader's business:
-// where it sits, how wide it is, and whether it is shown at all are left alone
-// here, or dragging a column somewhere would only have it snap back.
 - (void)updateColumnLayout {
     NSTableColumn *order = [_trackTable tableColumnWithIdentifier:@"order"];
     [order setHidden:!_showsPlaylistOrder];
@@ -796,14 +813,9 @@ static CGFloat BTTitleBarHeight(void) {
 
 #pragma mark - Choosing columns
 
-// Song Name is not offered, since a list of songs with no names is not a view
-// anyone wants. The # column is not offered either, because the source decides
-// it rather than the reader.
 - (BOOL)columnCanBeHidden:(NSTableColumn *)column {
-    NSString *identifier = [column identifier];
-    return !([identifier isEqualToString:@"title"] ||
-             [identifier isEqualToString:@"order"] ||
-             [identifier isEqualToString:@"playing"]);
+    const BTColumnSpec *spec = BTColumnSpecFor([column identifier]);
+    return spec ? spec->canBeHidden : NO;
 }
 
 - (NSMenuItem *)sourceItemTitled:(NSString *)title action:(SEL)action {
