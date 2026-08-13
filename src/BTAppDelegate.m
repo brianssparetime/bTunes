@@ -283,6 +283,11 @@
     [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItem:[self itemWithTitle:@"Add to Library..." action:@selector(addToLibrary:) key:@"o" modifiers:NSCommandKeyMask target:nil]];
     [fileMenu addItem:[self itemWithTitle:@"iTunes Sync" action:@selector(showITunesSync:) key:@"" modifiers:0 target:nil]];
+    [fileMenu addItem:[self itemWithTitle:@"Burn Playlist to Disc..."
+                                   action:@selector(burnPlaylist:)
+                                      key:@"b"
+                                modifiers:NSCommandKeyMask
+                                   target:nil]];
     [fileMenu addItem:[self itemWithTitle:@"Get Info" action:@selector(getInfo:) key:@"i" modifiers:NSCommandKeyMask target:nil]];
     [fileMenu addItem:[self itemWithTitle:@"Edit Smart Playlist..." action:@selector(editSmartPlaylist:) key:@"" modifiers:0 target:nil]];
     [fileMenu addItem:[NSMenuItem separatorItem]];

@@ -27,6 +27,11 @@ order it was built, because that order was chosen.
 Mini mode is a compact dark panel with an analyzer, floating above other windows
 and over full screen spaces. Clicking its logo returns to the full window.
 
+A playlist can be burned to an audio CD, playable in anything that plays CDs.
+The drive, the gap between songs, and whether to verify the disc are all chosen
+in one dialog before anything is written, and a playlist that cannot be burned
+says why rather than failing partway through.
+
 An attached iPod appears under the library with an eject mark beside its name.
 Selecting it opens a pane listing the playlists with a checkbox each, folders
 reflecting what is inside them, and the ones already on the device checked, so
@@ -152,6 +157,10 @@ the music stays where it is and BTunes owns only the database.
   arrives as an ordinary playlist holding the songs it resolved to, because
   iTunes stores the rules themselves in an undocumented form. What is turned down
   starts unticked next time.
+- Burn Playlist to Disc, Command-B, makes an audio CD of the selected playlist.
+  The dialog says how much of the disc the playlist uses and holds Burn dead
+  until it fits a blank disc actually in the drive. The playlist name and each
+  song's title and artist are written as CD-Text where the drive supports it.
 - New Playlist is Command-N, new smart playlist adds Option, new folder adds
   Shift. Double-click a playlist to rename it.
 - Space plays or pauses. Left and right skip tracks, up and down change volume,

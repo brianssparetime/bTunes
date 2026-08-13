@@ -53,6 +53,8 @@ clang \
     -framework CoreMedia \
     -framework AudioToolbox \
     -framework Accelerate \
+    -framework DiscRecording \
+    -framework DiscRecordingUI \
     -o "$APP/Contents/MacOS/BTunes" \
     $SOURCES
 

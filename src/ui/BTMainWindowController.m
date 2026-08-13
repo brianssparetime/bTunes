@@ -4,6 +4,8 @@
 #import "BTDisplayView.h"
 #import "BTBrowserView.h"
 #import "BTSmartPlaylistController.h"
+#import "BTBurnPlan.h"
+#import "BTBurnController.h"
 #import "BTTrackInfoController.h"
 #import "BTLibrary.h"
 #import "BTITunesImport.h"
@@ -2364,6 +2366,14 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     }];
 }
 
+// One playlist, one disc. A folder takes its contents from its children and the
+// library never fits, so neither is offered; the menu is dead for both.
+- (void)burnPlaylist:(id)sender {
+    BTPlaylist *playlist = [self selectedPlaylist];
+    if (![BTBurnPlan canBurnPlaylist:playlist]) return;
+    [BTBurnController burnPlaylist:playlist modalForWindow:[self window]];
+}
+
 - (void)deleteSelection:(id)sender {
     if ([[self window] firstResponder] == _sourceList) {
         [self deleteSelectedPlaylist];
@@ -2406,6 +2416,13 @@ static BOOL BTSomethingIsBeingTyped(NSWindow *window) {
         }
         [item setTitle:@"Get Info"];
         return [self trackForInfo] != nil;
+    }
+    // Alive for any playlist a disc could be made from. Why a particular one
+    // cannot be burned is a sentence, and a grey menu item cannot say it, so
+    // the dialog says it and holds the Burn button dead instead.
+    if (action == @selector(burnPlaylist:)) {
+        if ([BTBurnController isBusy]) return NO;
+        return [BTBurnPlan canBurnPlaylist:[self selectedPlaylist]];
     }
     if (action == @selector(syncPlaylistOrder:)) {
         BTPlaylist *selected = [self selectedPlaylist];
