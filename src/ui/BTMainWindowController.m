@@ -1495,17 +1495,47 @@ static void BTRedrawEverything(NSView *view) {
 
 #pragma mark - Source list data
 
+// Playlists come in three kinds and each kind sits together: the smart ones
+// first, then the folders, then the ones built by hand. The same order applies
+// inside a folder as at the top, so a smart playlist is at the top of whatever
+// holds it.
+//
+// Within a kind nothing is rearranged. Whatever arrangement is there is somebody
+// having put it there, and grouping is no reason to lose it.
+- (NSArray *)sourcesArranged:(NSArray *)playlists {
+    NSMutableArray *smart = [NSMutableArray array];
+    NSMutableArray *folders = [NSMutableArray array];
+    NSMutableArray *byHand = [NSMutableArray array];
+
+    NSUInteger i;
+    for (i = 0; i < [playlists count]; i++) {
+        BTPlaylist *playlist = [playlists objectAtIndex:i];
+        if (playlist.kind == BTPlaylistKindSmart) {
+            [smart addObject:playlist];
+        } else if (playlist.kind == BTPlaylistKindFolder) {
+            [folders addObject:playlist];
+        } else {
+            [byHand addObject:playlist];
+        }
+    }
+
+    [smart addObjectsFromArray:folders];
+    [smart addObjectsFromArray:byHand];
+    return smart;
+}
+
 - (NSArray *)childrenOfSourceItem:(id)item {
     if (item == nil) {
         NSMutableArray *roots = [NSMutableArray arrayWithObjects:BTLibrarySource,
                                  BTRecentlyAddedSource, nil];
-        // The iPod sits under the library, above the playlists.
+        // The iPod sits under the two library views, above the playlists.
         if (_iPod) [roots addObject:_iPod];
-        [roots addObjectsFromArray:[BTLibrary sharedLibrary].playlists];
+        [roots addObjectsFromArray:[self sourcesArranged:[BTLibrary sharedLibrary].playlists]];
         return roots;
     }
     BTPlaylist *playlist = BTPlaylistFromSource(item);
-    return (playlist && playlist.kind == BTPlaylistKindFolder) ? playlist.children : @[];
+    if (playlist == nil || playlist.kind != BTPlaylistKindFolder) return @[];
+    return [self sourcesArranged:playlist.children];
 }
 
 - (NSInteger)outlineView:(NSOutlineView *)outlineView numberOfChildrenOfItem:(id)item {
