@@ -74,6 +74,18 @@ typedef NS_ENUM(NSInteger, BTPathRoot) {
 - (NSTimeInterval)playbackStart;
 - (NSTimeInterval)playbackEnd;
 
+// Whole seconds as a clock reads them: m:ss, and h:mm:ss once there is an hour.
+//
+// Takes seconds already worked out rather than an interval, because how a
+// fraction of a second is dealt with is the caller's business and the callers
+// disagree on purpose: a song's length rounds to the nearest second, and the
+// elapsed time truncates, since a readout that reaches 3:29 before the song
+// does is wrong.
+//
+// The burn does not use this. A disc holds eighty minutes and says so, where
+// this would say 1:20:00.
++ (NSString *)clockStringFromSeconds:(NSInteger)seconds;
+
 // How long a list of songs runs, said the way a person would say it: the
 // largest unit that gives a number worth saying, and the same time in minutes
 // after it.

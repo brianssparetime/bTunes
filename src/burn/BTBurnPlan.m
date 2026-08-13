@@ -476,6 +476,10 @@ static NSString *BTWriteTrimmedCopy(BTTrack *song, NSString *directory,
     return nil;
 }
 
+// Minutes and seconds, and minutes never roll into hours: a disc holds eighty
+// minutes, and "1:20:00" is not how anyone says that. This is why the clock
+// BTTrack keeps is not used here, close as the two look.
+//
 // Rounded up, not down. A playlist of 80:00.4 that reads as "80:00" beside a
 // disc that also reads as "80:00" is refused for no reason the reader can see.
 + (NSString *)stringFromSectors:(NSUInteger)sectors {

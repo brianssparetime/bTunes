@@ -266,12 +266,7 @@ static NSString *BTMinuteCount(double minutes) {
 
 + (NSString *)textFromTime:(NSTimeInterval)time {
     if (time < 0) time = 0;
-    NSInteger total = (NSInteger)(time + 0.5);
-    if (total >= 3600) {
-        return [NSString stringWithFormat:@"%ld:%02ld:%02ld",
-                (long)(total / 3600), (long)((total % 3600) / 60), (long)(total % 60)];
-    }
-    return [NSString stringWithFormat:@"%ld:%02ld", (long)(total / 60), (long)(total % 60)];
+    return [BTTrack clockStringFromSeconds:(NSInteger)(time + 0.5)];
 }
 
 - (NSURL *)fileURL {
@@ -296,16 +291,21 @@ static NSString *BTMinuteCount(double minutes) {
     return [self.genre length] > 0 ? self.genre : @"Unknown Genre";
 }
 
++ (NSString *)clockStringFromSeconds:(NSInteger)seconds {
+    if (seconds < 0) seconds = 0;
+    NSInteger hours = seconds / 3600;
+    if (hours > 0) {
+        return [NSString stringWithFormat:@"%ld:%02ld:%02ld",
+                (long)hours, (long)((seconds % 3600) / 60), (long)(seconds % 60)];
+    }
+    return [NSString stringWithFormat:@"%ld:%02ld", (long)(seconds / 60), (long)(seconds % 60)];
+}
+
+// A length nobody knows is said as unknown rather than as zero, which is the
+// one thing this adds to the clock above.
 - (NSString *)durationString {
     if (self.duration <= 0) return @"-:--";
-    NSInteger total = (NSInteger)(self.duration + 0.5);
-    NSInteger hours = total / 3600;
-    NSInteger minutes = (total % 3600) / 60;
-    NSInteger seconds = total % 60;
-    if (hours > 0) {
-        return [NSString stringWithFormat:@"%ld:%02ld:%02ld", (long)hours, (long)minutes, (long)seconds];
-    }
-    return [NSString stringWithFormat:@"%ld:%02ld", (long)minutes, (long)seconds];
+    return [BTTrack clockStringFromSeconds:(NSInteger)(self.duration + 0.5)];
 }
 
 - (BOOL)matchesSearchString:(NSString *)needle {

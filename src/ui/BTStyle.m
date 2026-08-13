@@ -1,4 +1,5 @@
 #import "BTStyle.h"
+#import "BTTrack.h"
 #import "BTPreferences.h"
 
 static NSFont *BTFontNamed(NSString *name, CGFloat size, BOOL bold) {
@@ -742,14 +743,11 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
 
 #pragma mark - Time
 
+// Truncated rather than rounded, because this is the time a song has been
+// playing for and a readout that reaches 3:29 before the song does is wrong.
 + (NSString *)timeStringFromInterval:(NSTimeInterval)interval {
     if (interval < 0) interval = 0;
-    NSInteger total = (NSInteger)interval;
-    NSInteger hours = total / 3600;
-    NSInteger minutes = (total % 3600) / 60;
-    NSInteger seconds = total % 60;
-    if (hours > 0) return [NSString stringWithFormat:@"%ld:%02ld:%02ld", (long)hours, (long)minutes, (long)seconds];
-    return [NSString stringWithFormat:@"%ld:%02ld", (long)minutes, (long)seconds];
+    return [BTTrack clockStringFromSeconds:(NSInteger)interval];
 }
 
 @end
