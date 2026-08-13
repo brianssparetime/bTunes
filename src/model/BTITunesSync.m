@@ -59,6 +59,16 @@ static BOOL BTEntryIsProtected(NSDictionary *entry, NSString *path) {
                                options:NSCaseInsensitiveSearch].location != NSNotFound;
 }
 
+// A song is blocked if it is locked, or if there is no file here to point at.
+// Not being on disk covers both a cloud copy and a file that has since gone:
+// either way there is nothing to play.
+static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFileManager *files) {
+    if (path == nil) return BTITunesBlockNotOnDisk;
+    if (BTEntryIsProtected(entry, path)) return BTITunesBlockProtected;
+    if (![files fileExistsAtPath:path]) return BTITunesBlockNotOnDisk;
+    return BTITunesBlockNone;
+}
+
 #pragma mark - Comparing
 
 + (instancetype)syncWithLibraryAtPath:(NSString *)path against:(BTLibrary *)library {
@@ -98,6 +108,7 @@ static BOOL BTEntryIsProtected(NSDictionary *entry, NSString *path) {
     }
 
     NSSet *excluded = [library excludedFromImport];
+    NSFileManager *files = [NSFileManager defaultManager];
 
     // Sorted numerically so the listing comes out in the order iTunes numbered
     // them, which is roughly the order they were added.
@@ -109,12 +120,15 @@ static BOOL BTEntryIsProtected(NSDictionary *entry, NSString *path) {
         NSDictionary *entry = [entries objectForKey:[keys objectAtIndex:i]];
         if (![entry isKindOfClass:[NSDictionary class]]) continue;
 
-        NSString *path = BTPathFromLocation(BTStringFrom(entry, @"Location"));
-        if (path == nil) continue;          // not a local file, so nothing to reference
+        NSString *location = BTStringFrom(entry, @"Location");
+        if ([location length] == 0) continue;      // no file and no cloud copy either
+
+        // Nil for a cloud copy, which BTunes has nothing to point at.
+        NSString *path = BTPathFromLocation(location);
 
         NSString *persistentID = BTStringFrom(entry, @"Persistent ID");
         if ([persistentID length] > 0 && [haveByITunesID objectForKey:persistentID]) continue;
-        if ([havePaths containsObject:path]) continue;
+        if (path && [havePaths containsObject:path]) continue;
 
         BTITunesSyncTrack *incoming = [[BTITunesSyncTrack alloc] init];
         incoming.persistentID = persistentID;
@@ -122,8 +136,7 @@ static BOOL BTEntryIsProtected(NSDictionary *entry, NSString *path) {
         incoming.title = BTStringFrom(entry, @"Name");
         incoming.artist = BTStringFrom(entry, @"Artist");
         incoming.album = BTStringFrom(entry, @"Album");
-        incoming.blocked = BTEntryIsProtected(entry, path) ? BTITunesBlockProtected
-                                                           : BTITunesBlockNone;
+        incoming.blocked = BTBlockForEntry(entry, path, files);
         incoming.excludedBefore = ([persistentID length] > 0 &&
                                    [excluded containsObject:persistentID]);
         [_incomingTracks addObject:incoming];
@@ -137,20 +150,26 @@ static BOOL BTEntryIsProtected(NSDictionary *entry, NSString *path) {
                  against:(BTLibrary *)library {
     if (![playlistEntries isKindOfClass:[NSArray class]]) return;
 
-    // iTunes track id to its persistent id, and to whether it is locked.
+    // iTunes track id to its persistent id, and to why it cannot come across.
+    // Every entry with a location is kept, including the ones that are blocked,
+    // because a playlist has to know it holds them.
     NSMutableDictionary *persistentForTrackID = [NSMutableDictionary dictionary];
-    NSMutableSet *lockedTrackIDs = [NSMutableSet set];
+    NSMutableDictionary *blockForTrackID = [NSMutableDictionary dictionary];
+    NSFileManager *files = [NSFileManager defaultManager];
     NSArray *trackKeys = [entries allKeys];
     NSUInteger i, j;
     for (i = 0; i < [trackKeys count]; i++) {
         NSString *key = [trackKeys objectAtIndex:i];
         NSDictionary *entry = [entries objectForKey:key];
         if (![entry isKindOfClass:[NSDictionary class]]) continue;
-        NSString *path = BTPathFromLocation(BTStringFrom(entry, @"Location"));
-        if (path == nil) continue;
+        NSString *location = BTStringFrom(entry, @"Location");
+        if ([location length] == 0) continue;
+
         NSString *persistentID = BTStringFrom(entry, @"Persistent ID");
-        if ([persistentID length] > 0) [persistentForTrackID setObject:persistentID forKey:key];
-        if (BTEntryIsProtected(entry, path)) [lockedTrackIDs addObject:key];
+        if ([persistentID length] == 0) continue;
+        [persistentForTrackID setObject:persistentID forKey:key];
+        [blockForTrackID setObject:@(BTBlockForEntry(entry, BTPathFromLocation(location), files))
+                            forKey:key];
     }
 
     // Folder names by their own persistent id, so a playlist can name its path.
@@ -189,16 +208,22 @@ static BOOL BTEntryIsProtected(NSDictionary *entry, NSString *path) {
         // Membership in iTunes order, and whether any of it is locked.
         NSArray *items = [entry objectForKey:@"Playlist Items"];
         NSMutableArray *members = [NSMutableArray array];
-        BOOL holdsLocked = NO;
+        BOOL holdsLocked = NO, holdsMissing = NO;
         for (j = 0; [items isKindOfClass:[NSArray class]] && j < [items count]; j++) {
             id trackID = [[items objectAtIndex:j] objectForKey:@"Track ID"];
             if (trackID == nil) continue;
             NSString *key = [trackID description];
-            if ([lockedTrackIDs containsObject:key]) holdsLocked = YES;
             NSString *persistent = [persistentForTrackID objectForKey:key];
-            if ([persistent length] > 0) [members addObject:persistent];
+            if ([persistent length] == 0) continue;
+
+            switch ((BTITunesBlock)[[blockForTrackID objectForKey:key] integerValue]) {
+                case BTITunesBlockProtected:  holdsLocked = YES;  break;
+                case BTITunesBlockNotOnDisk:  holdsMissing = YES; break;
+                default: break;
+            }
+            [members addObject:persistent];
         }
-        if ([members count] == 0 && !holdsLocked) continue;   // nothing to bring across
+        if ([members count] == 0) continue;   // nothing in it worth reporting
 
         BTPlaylist *existing = nil;
         if ([persistentID length] > 0) existing = [haveByPersistent objectForKey:persistentID];
@@ -223,8 +248,17 @@ static BOOL BTEntryIsProtected(NSDictionary *entry, NSString *path) {
                                          parents:folderParents];
         change.change = existing ? BTITunesPlaylistGrew : BTITunesPlaylistIsNew;
         change.incomingTrackIDs = incoming;
-        change.blocked = isSmart ? BTITunesBlockSmart
-                       : (holdsLocked ? BTITunesBlockHoldsProtected : BTITunesBlockNone);
+        // Named in the order a reader would want to hear it: what iTunes will
+        // never give up, then what is merely not downloaded yet.
+        if (isSmart) {
+            change.blocked = BTITunesBlockSmart;
+        } else if (holdsLocked) {
+            change.blocked = BTITunesBlockHoldsProtected;
+        } else if (holdsMissing) {
+            change.blocked = BTITunesBlockHoldsNotOnDisk;
+        } else {
+            change.blocked = BTITunesBlockNone;
+        }
         [_playlists addObject:change];
     }
 }

@@ -14,17 +14,25 @@
 
 // Why something cannot be brought across yet. Blocked things are listed and
 // shown, greyed, rather than hidden, so it is clear they exist and are waiting.
+//
+// The reasons are kept apart rather than collapsed into one flag. They all draw
+// the same grey today, decided in a single place, so giving one its own colour
+// later is a change there and nowhere else.
 typedef NS_ENUM(NSInteger, BTITunesBlock) {
     BTITunesBlockNone = 0,
-    BTITunesBlockProtected,        // a locked purchase nothing here can decode
-    BTITunesBlockHoldsProtected,   // a playlist holding one
-    BTITunesBlockSmart             // rules iTunes does not publish
+    BTITunesBlockProtected,         // a locked purchase nothing here can decode
+    BTITunesBlockNotOnDisk,         // in the cloud, or the file has gone
+    BTITunesBlockHoldsProtected,    // a playlist holding a locked song
+    BTITunesBlockHoldsNotOnDisk,    // a playlist holding one that is not here
+    BTITunesBlockSmart              // rules iTunes does not publish
 };
 
 // A song iTunes has that BTunes does not.
 @interface BTITunesSyncTrack : NSObject
 @property (nonatomic, copy) NSString *persistentID;
-@property (nonatomic, copy) NSString *path;          // where it already sits
+// Where the file already sits. Nil when iTunes holds only a cloud copy, which
+// is a thing BTunes has nothing to point at.
+@property (nonatomic, copy) NSString *path;
 @property (nonatomic, copy) NSString *title;
 @property (nonatomic, copy) NSString *artist;
 @property (nonatomic, copy) NSString *album;

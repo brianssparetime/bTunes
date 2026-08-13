@@ -29,6 +29,14 @@ static NSFont *BTFontNamed(NSString *name, CGFloat size, BOOL bold) {
 // cut through the window rather than as the edge of the bar.
 + (NSColor *)chromeEdge      { return [NSColor colorWithCalibratedWhite:0.588 alpha:1.0]; }
 + (NSColor *)listBackground  { return [NSColor whiteColor]; }
+
+// Locked, not downloaded, holding one of those, or smart: one gray for all of
+// them for now. The same gray the track list already uses for a song that
+// cannot play, so the two agree about what gray means.
++ (NSColor *)ineligibleTextForReason:(NSInteger)reason {
+    (void)reason;
+    return [NSColor colorWithCalibratedWhite:0.55 alpha:1.0];
+}
 + (NSColor *)selection       { return [NSColor colorWithCalibratedRed:0.220 green:0.459 blue:0.843 alpha:1.0]; }
 + (NSColor *)inactiveSelection { return [NSColor colorWithCalibratedWhite:0.702 alpha:1.0]; }
 // The readout carries a faint green cast so it reads as a small screen rather

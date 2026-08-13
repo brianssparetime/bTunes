@@ -21,6 +21,13 @@
 + (NSColor *)chromeEdge;
 + (NSColor *)listBackground;
 + (NSColor *)selection;
+
+// A row that cannot be imported yet, or a song that cannot play. Every reason
+// draws the same gray today. The reason is passed in rather than decided
+// beforehand, so giving one its own color later is a change to this method and
+// to nowhere else. Takes the reason as a plain integer to keep the palette from
+// having to know what the reasons are.
++ (NSColor *)ineligibleTextForReason:(NSInteger)reason;
 + (NSColor *)inactiveSelection;
 + (NSColor *)displayBackground;
 + (NSColor *)displayEdge;
