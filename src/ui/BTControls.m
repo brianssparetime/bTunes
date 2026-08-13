@@ -216,26 +216,41 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume) 
     return NSZeroRect;
 }
 
+// The band one line of text sits in, centred in whatever it is given.
+//
+// Both the placeholder and the field editor are placed through this, because
+// they have to agree. A line is laid along the top of the rect it is handed, not
+// centred in it, so a rect the height of the capsule leaves the words riding
+// high by the slack between the two. The placeholder was already being handed a
+// band this size and looked right; the field editor was handed the whole capsule
+// and the typed word sat above the magnifier, which is a difference nobody
+// reading the field would call anything but a fault.
+//
+// Handing it a rect already one line tall changes nothing, so the placeholder
+// path passing through here a second time is harmless.
+- (NSRect)lineBandInRect:(NSRect)rect {
+    NSFont *font = [self font];
+    CGFloat line = ceil([font ascender] - [font descender]);
+    CGFloat slack = (NSHeight(rect) - line) / 2.0;
+    if (slack <= 0) return rect;
+    return NSMakeRect(NSMinX(rect), NSMinY(rect) + slack, NSWidth(rect), line);
+}
+
 - (NSRect)searchTextRectForBounds:(NSRect)rect {
     CGFloat left = BT_SEARCH_LEFT + BT_SEARCH_GLYPH + 5.0;
     CGFloat right = 20.0;
 
-    // The whole height of the capsule, less a hair top and bottom. The cell
-    // centres its line within whatever rect it is handed, which is why every
-    // attempt to place the line by hand came out low: a rect one line tall,
-    // positioned by eye, only moved the word half as far as it was moved.
-    // Handing over the full height lets the centring that is already there do
-    // the work, and the word lands on the same line as the magnifier.
-    // The capsule's own height, unshifted. The cell centres its line inside
-    // whatever rect it is handed, so handing it the whole capsule puts the word
-    // on the middle without any arithmetic here.
+    // Room for the magnifier on the left and the clear mark on the right, and
+    // the line put on the middle by the band above.
     //
     // Every correction tried before this was measured by drawing the field
-    // offscreen, which places the line differently from a field inside a window.
+    // offscreen, which places a line differently from a field inside a window.
     // The offscreen answer and the running one differed by five points, so the
-    // measurements were confidently wrong twice. This is measured from the app.
-    return NSMakeRect(NSMinX(rect) + left, NSMinY(rect),
-                      NSWidth(rect) - left - right, NSHeight(rect));
+    // measurements were confidently wrong twice. This one is measured from a
+    // field with the keyboard in it.
+    NSRect band = [self lineBandInRect:rect];
+    return NSMakeRect(NSMinX(band) + left, NSMinY(band),
+                      NSWidth(band) - left - right, NSHeight(band));
 }
 
 // The field editor has to be given the same rect the text is drawn in, or the
@@ -291,18 +306,11 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume) 
     [BTStyle drawMagnifierGlyphInRect:glyph
                                 color:[NSColor colorWithCalibratedWhite:0.35 alpha:1.0]];
 
-    // A band exactly one line tall, centred. The cell lays its line along the
-    // top of the interior it is handed, so a frame the full height of the
-    // capsule leaves the word riding above the middle by the slack between them.
-    //
-    // This is what actually places the word. searchTextRectForBounds: places the
-    // field editor while typing, and changing it moved nothing at all on screen,
-    // which is how three attempts at this missed.
-    NSFont *font = [self font];
-    CGFloat line = ceil([font ascender] - [font descender]);
-    CGFloat slack = (NSHeight(frame) - line) / 2.0;
-    NSRect interior = (slack > 0) ? NSInsetRect(frame, 0.0, slack) : frame;
-    [self drawInteriorWithFrame:interior inView:view];
+    // The placeholder, on the same band the typed word is given. This is what
+    // places the words when nothing is being typed; searchTextRectForBounds:
+    // places them when something is. Changing one and expecting the other to
+    // move is how three attempts at this missed.
+    [self drawInteriorWithFrame:[self lineBandInRect:frame] inView:view];
 }
 
 @end
