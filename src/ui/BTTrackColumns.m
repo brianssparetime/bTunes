@@ -124,6 +124,29 @@ void BTAddTrackColumns(NSTableView *table) {
         [column setHidden:!spec->shown];
         [column setEditable:NO];
 
+        // Who may change this column's width, which is two questions rather than
+        // one, and they had the same answer when they should not have.
+        //
+        // Dragging it is somebody deciding. That is allowed on everything except
+        // the mark, which has no width worth choosing.
+        //
+        // The window getting wider is not somebody deciding, and it used to
+        // change every column, so a width set by hand was recomputed away by the
+        // next resize. Now the words take the slack and the numbers keep what
+        // they were given. A column of numbers has a right size: a two-digit
+        // count stretched to fill the window reads as a mistake, and stretched
+        // far enough it hits the widest it is allowed and sits there, which is
+        // how a # column dragged to its narrowest kept coming back at its
+        // widest.
+        //
+        // Capping the numbers was the old way of saying this and it did not
+        // work, because a cap only limits how wrong the sharing out can go. Not
+        // taking part is the thing that was meant.
+        NSUInteger mask = NSTableColumnUserResizingMask;
+        if (!spec->counts) mask |= NSTableColumnAutoresizingMask;
+        if ([spec->identifier isEqualToString:@"playing"]) mask = 0;
+        [column setResizingMask:mask];
+
         NSTextFieldCell *cell = spec->isPosition ? [[BTTrackNumberCell alloc] init]
                                                  : [[NSTextFieldCell alloc] init];
         [cell setFont:[BTStyle uiFont]];

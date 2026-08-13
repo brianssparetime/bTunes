@@ -29,7 +29,9 @@ static NSString *const BTLibrarySource = @"Library";
 static NSString *const BTRecentlyAddedSource = @"Recently Added";
 
 // Column widths and their arrangement are left to the table, which saves them
-// under this name. Which columns are shown is kept separately, because the #
+// under this name. What the table is allowed to change on its own is set per
+// column in BTTrackColumns: a saved width that anything may recompute is not a
+// saved width. Which columns are shown is kept separately, because the #
 // column is decided by the source rather than by preference and must not be
 // restored over that decision.
 static NSString *const BTColumnsAutosaveName = @"BTunesTrackColumns2";
@@ -683,9 +685,11 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     [_outerSplit adjustSubviews];
     [_innerSplit adjustSubviews];
 
-    // Same reason as the browser columns: no gap between the last column and
-    // the edge of the table. Spread across the columns rather than given to the
-    // last, which is a number column in a playlist.
+    // No gap between the last column and the edge of the table. The slack is
+    // shared among the columns that hold words, since those are the only ones
+    // carrying the autoresizing mask; the numbers keep the width they were
+    // given. That is what stopped the columns walking two points to the right on
+    // every launch over whatever had been set by hand.
     [_trackTable sizeToFit];
     [self sizeSourceColumn];
 }
