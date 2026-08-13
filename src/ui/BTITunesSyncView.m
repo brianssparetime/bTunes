@@ -612,21 +612,30 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     return songIDs ? songIDs : @[];
 }
 
-// A playlist follows its songs: ticked when all of them are, empty when none
-// are, and dashed in between. Turning one off by hand turns it off outright.
+// A playlist's tick is its own, and says one thing: whether this playlist comes
+// across.
+//
+// It is deliberately not worked out from which of its songs are ticked. A song
+// sits in many playlists, so reading the tick back off the songs meant ticking
+// one song ticked every playlist holding it, and each of those then arrived
+// holding that song alone. Ticking one playlist ticked its songs, which ticked
+// every other playlist sharing any of them. One song in common was enough to
+// drag a playlist across that the reader never chose.
 - (NSInteger)stateOfPlaylist:(BTITunesSyncPlaylist *)playlist {
     if (![playlist eligible]) return NSOffState;
-    if ([_uncheckedLists containsObject:playlist.persistentID]) return NSOffState;
+    return [_uncheckedLists containsObject:playlist.persistentID] ? NSOffState : NSOnState;
+}
 
-    NSArray *choosable = [self choosableSongsOf:playlist];
-    if ([choosable count] == 0) return NSOnState;
-
-    NSUInteger i, chosen = 0;
-    for (i = 0; i < [choosable count]; i++) {
-        if (![_uncheckedSongs containsObject:[choosable objectAtIndex:i]]) chosen++;
+// Every song the still-ticked playlists would bring.
+- (NSSet *)songsWantedByCheckedPlaylists {
+    NSMutableSet *wanted = [NSMutableSet set];
+    NSUInteger i;
+    for (i = 0; i < [_sync.playlists count]; i++) {
+        BTITunesSyncPlaylist *playlist = [_sync.playlists objectAtIndex:i];
+        if ([self stateOfPlaylist:playlist] == NSOffState) continue;
+        [wanted addObjectsFromArray:[self choosableSongsOf:playlist]];
     }
-    if (chosen == 0) return NSOffState;
-    return (chosen == [choosable count]) ? NSOnState : NSMixedState;
+    return wanted;
 }
 
 // Every playlist under a folder, however deep.
@@ -672,19 +681,28 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 }
 
 - (void)setPlaylist:(BTITunesSyncPlaylist *)playlist chosen:(BOOL)chosen {
+    // Ticking a playlist ticks its music, which is the whole point of the two
+    // panes standing side by side. It ticks nothing else: no other playlist is
+    // touched, however much music they have in common.
     if (chosen) {
         [_uncheckedLists removeObject:playlist.persistentID];
-    } else {
-        [_uncheckedLists addObject:playlist.persistentID];
+        [_uncheckedSongs minusSet:[NSSet setWithArray:[self choosableSongsOf:playlist]]];
+        return;
     }
 
-    // Ticking a playlist ticks its music, which is the whole point of the two
-    // panes standing side by side.
-    NSArray *choosable = [self choosableSongsOf:playlist];
-    if (chosen) {
-        [_uncheckedSongs minusSet:[NSSet setWithArray:choosable]];
-    } else {
-        [_uncheckedSongs addObjectsFromArray:choosable];
+    // Off first, so the playlist being turned off is not counted among the ones
+    // still wanting its songs.
+    [_uncheckedLists addObject:playlist.persistentID];
+
+    // Its songs go with it, except any that a playlist still ticked would
+    // bring. Taking those too would empty a playlist the reader never touched,
+    // which is the same fault the other way round.
+    NSArray *mine = [self choosableSongsOf:playlist];
+    NSSet *stillWanted = [self songsWantedByCheckedPlaylists];
+    NSUInteger i;
+    for (i = 0; i < [mine count]; i++) {
+        NSString *songID = [mine objectAtIndex:i];
+        if (![stillWanted containsObject:songID]) [_uncheckedSongs addObject:songID];
     }
 }
 
