@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import "BTSpectrum.h"
 
 @class BTTrack;
 
@@ -37,8 +38,13 @@ extern NSString *const BTPlayerTimeDidChangeNotification;
 - (void)previous;      // restarts the track if more than three seconds in
 - (void)seekToTime:(NSTimeInterval)time;
 
-// Playback level, smoothed, in the range 0 to 1. Drives the mini-mode bars,
-// which derive their own per-band peaks from it rather than asking for one.
+// Playback level, smoothed, in the range 0 to 1. Silent when nothing is
+// sounding, so a paused song does not leave a reading standing.
 - (float)averageLevel;
+
+// The analyzer's latest reading: BT_ANALYZER_BANDS levels, each 0 to 1, low
+// frequencies first. Taken from the audio as it is rendered, so the mini-mode
+// bars show what is actually being played. All silence when nothing is playing.
+- (void)getBandLevels:(float *)bands;
 
 @end

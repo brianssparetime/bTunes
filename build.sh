@@ -52,6 +52,7 @@ clang \
     -framework AVFoundation \
     -framework CoreMedia \
     -framework AudioToolbox \
+    -framework Accelerate \
     -o "$APP/Contents/MacOS/BTunes" \
     $SOURCES
 
@@ -82,11 +83,13 @@ if [ "$BUILD_TOOLS" -eq 1 ]; then
     echo "==> Building command line tools"
     # The whole model, plus the iPod database reader. Found rather than listed,
     # so a new model file does not have to be remembered here as well.
-    MODEL_SOURCES="$(find "$SCRIPT_DIR/src/model" -name '*.m' | sort) $SCRIPT_DIR/src/ipod/BTIPodDatabase.m"
+    # The analyzer comes along too. It answers on its own, without a window or a
+    # sound card, which makes it the one piece of the audio path testable here.
+    MODEL_SOURCES="$(find "$SCRIPT_DIR/src/model" -name '*.m' | sort) $SCRIPT_DIR/src/ipod/BTIPodDatabase.m $SCRIPT_DIR/src/player/BTSpectrum.m"
 
     # These live in tools/local, which belongs to the machine rather than to the
     # project. Building them is optional and quietly skipped when they are absent.
-    for tool in bt-import smoke_test; do
+    for tool in bt-import smoke_test spectrum_check; do
         if [ ! -f "$SCRIPT_DIR/tools/local/$tool.m" ]; then
             echo "    skipping $tool, not present"
             continue
@@ -100,10 +103,12 @@ if [ "$BUILD_TOOLS" -eq 1 ]; then
             $CONFIG_FLAGS \
             -I"$SCRIPT_DIR/src/model" \
             -I"$SCRIPT_DIR/src/ipod" \
+            -I"$SCRIPT_DIR/src/player" \
             -framework Foundation \
             -framework AVFoundation \
             -framework CoreMedia \
             -framework AudioToolbox \
+            -framework Accelerate \
             -o "$BUILD_DIR/$tool" \
             "$SCRIPT_DIR/tools/local/$tool.m" $MODEL_SOURCES
         echo "    $BUILD_DIR/$tool"

@@ -2,10 +2,10 @@
 
 // The mini-mode analyzer: green-through-red bars with falling peak caps.
 //
-// The bars are driven by the playback level meter rather than a Fourier
-// transform. Each band fires on its own, with its own gain, its own chance of
-// firing, and its own rate of decay, so neighboring bars do not move as one. It
-// reads like a spectrum without decoding a second copy of the audio.
+// One bar per band of a Fourier transform of the audio as it is rendered, low
+// frequencies on the left. The bars rise the moment their band does and fall in
+// their own time, the bass hanging and the treble snapping back, so the display
+// shows what is being played rather than only how loud it is.
 @interface BTFireBarView : NSView
 
 // Bar geometry. The classic look is narrow bars: three points wide with a

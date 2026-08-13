@@ -1,7 +1,9 @@
 #import "BTFireBarView.h"
 #import "BTPlayer.h"
 
-#define BT_BAR_COUNT 31
+// One bar per band the analyzer reports. Tied together so the two cannot drift
+// apart and leave bars standing for bands that do not exist.
+#define BT_BAR_COUNT BT_ANALYZER_BANDS
 
 @implementation BTFireBarView {
     NSTimer *_timer;
@@ -10,7 +12,6 @@
     CGFloat _capFall[BT_BAR_COUNT];
     NSInteger _capHold[BT_BAR_COUNT];
     CGFloat _ceiling;
-    CGFloat _average;
     BOOL _settled;
 }
 
@@ -47,28 +48,11 @@
     _timer = nil;
 }
 
-// How loud a band gets when it fires. Bass carries most of the energy in most
-// recordings, so the left of the display sits higher than the right.
-static CGFloat BTBandGain(NSInteger index) {
-    CGFloat t = (CGFloat)index / (CGFloat)(BT_BAR_COUNT - 1);
-    return 1.02f - 0.55f * t * t;
-}
-
-// How often a band fires. Treble is busy and constant, bass is occasional and
-// tied to the beat, which is what gives an analyzer its texture.
-static CGFloat BTBandActivity(NSInteger index) {
-    CGFloat t = (CGFloat)index / (CGFloat)(BT_BAR_COUNT - 1);
-    return 0.16f + 0.62f * t;
-}
-
-// And how fast it falls away afterwards. Bass hangs, treble snaps back.
+// How fast a bar falls once its band has gone quiet. Bass hangs, treble snaps
+// back, which is what gives an analyzer its texture.
 static CGFloat BTBandDecay(NSInteger index) {
     CGFloat t = (CGFloat)index / (CGFloat)(BT_BAR_COUNT - 1);
-    return 0.86f - 0.16f * t;
-}
-
-static CGFloat BTRandomFraction(void) {
-    return (CGFloat)arc4random_uniform(10000) / 10000.0f;
+    return 0.90f - 0.12f * t;
 }
 
 // Everything down and nothing left to fall.
@@ -81,13 +65,19 @@ static CGFloat BTRandomFraction(void) {
 }
 
 - (void)step:(NSTimer *)timer {
-    BTPlayer *player = [BTPlayer sharedPlayer];
-    CGFloat level = [player averageLevel];
+    float bands[BT_ANALYZER_BANDS];
+    [[BTPlayer sharedPlayer] getBandLevels:bands];
+
+    CGFloat loudest = 0.0f;
+    NSInteger band;
+    for (band = 0; band < BT_BAR_COUNT; band++) {
+        if ((CGFloat)bands[band] > loudest) loudest = (CGFloat)bands[band];
+    }
 
     // A pause reads as silence, so the bars fall away and the caps drop after
     // them. Once the display is empty it is left alone rather than repainted
     // twenty-five times a second for as long as the window is open.
-    if (level <= 0.0f && [self atRest]) {
+    if (loudest <= 0.0f && [self atRest]) {
         if (!_settled) {
             NSInteger i;
             for (i = 0; i < BT_BAR_COUNT; i++) {
@@ -103,43 +93,33 @@ static CGFloat BTRandomFraction(void) {
     }
     _settled = NO;
 
-    // A recording's loudness barely moves, so a fixed scale either pegs on a
-    // loud track or barely lifts on a quiet one. The bars are measured against
-    // a ceiling that follows the loudest recent moment and sags back down,
-    // which is what keeps the display using its whole range on any material.
-    if (level > _ceiling) {
-        _ceiling = level;
+    // Recordings differ in loudness by far more than the display has height, so
+    // a fixed scale either pegs on a loud track or barely lifts on a quiet one.
+    // The bars are measured against a ceiling that follows the loudest recent
+    // band and sags back down, which keeps the whole range in use on any
+    // material without flattening one band against another.
+    if (loudest > _ceiling) {
+        _ceiling = loudest;
     } else {
-        _ceiling = _ceiling * 0.995f + level * 0.005f;
+        _ceiling = _ceiling * 0.995f + loudest * 0.005f;
     }
     if (_ceiling < 0.12f) _ceiling = 0.12f;
 
-    CGFloat relative = level / _ceiling;
-    if (relative > 1.0f) relative = 1.0f;
-
-    // A transient is loudness above where it has been sitting, and that is what
-    // an analyzer is really showing. Tracked separately from the ceiling, which
-    // moves too slowly to notice a beat.
-    _average = _average * 0.90f + relative * 0.10f;
-    CGFloat transient = relative - _average;
-    if (transient < 0) transient = 0;
-
     NSInteger i;
     for (i = 0; i < BT_BAR_COUNT; i++) {
-        // Each band fires on its own, with its own chance and its own height.
-        // Driving every bar from one number is what made the display move as a
-        // block and sit full: with nothing falling, the caps rest on the bars
-        // and are never seen.
-        CGFloat chance = relative * BTBandActivity(i) + transient * 1.6f * (1.0f - BTBandActivity(i));
-        if (BTRandomFraction() < chance) {
-            CGFloat height = relative * BTBandGain(i) * (0.45f + 0.75f * BTRandomFraction());
-            if (transient > 0.02f && i < BT_BAR_COUNT / 3) height += transient * 1.4f;
-            if (height > _values[i]) _values[i] = height;
-        }
+        CGFloat value = (CGFloat)bands[i] / _ceiling;
+        if (value > 1.0f) value = 1.0f;
+        if (value < 0.0f) value = 0.0f;
 
-        _values[i] *= BTBandDecay(i);
-        if (_values[i] > 1.0f) _values[i] = 1.0f;
-        if (_values[i] < 0.0f) _values[i] = 0.0f;
+        // Straight up to whatever the band is doing, and down in its own time.
+        // A bar that fell on its own schedule regardless would read as slower
+        // than the music it is drawn from.
+        if (value >= _values[i]) {
+            _values[i] = value;
+        } else {
+            _values[i] *= BTBandDecay(i);
+            if (_values[i] < value) _values[i] = value;
+        }
 
         // The cap holds where the bar last reached, waits, then falls away
         // picking up speed, the way the original analyzer's markers did.
