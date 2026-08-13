@@ -93,6 +93,12 @@ void BTNoteListFocusChanged(void);
 @interface BTListTableView : NSTableView
 @end
 
+// A tick box drawn in the window's own colour. The system draws its checkboxes
+// blue whatever else has been asked for, which leaves a purple window full of
+// blue ticks. Handles the three states and an optional title beside the box.
+@interface BTCheckboxCell : NSButtonCell
+@end
+
 // Volume slider with the two speaker glyphs on either side.
 @interface BTVolumeView : NSView
 @property (nonatomic, assign) float volume;

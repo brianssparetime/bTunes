@@ -409,6 +409,32 @@ void BTWatchListFocus(NSView *list) {
 
 @end
 
+@implementation BTCheckboxCell
+
+- (void)drawWithFrame:(NSRect)frame inView:(NSView *)view {
+    CGFloat side = MIN(13.0, NSHeight(frame));
+    NSRect box = NSMakeRect(NSMinX(frame), NSMinY(frame) + (NSHeight(frame) - side) / 2.0,
+                            side, side);
+    [BTStyle drawCheckboxInRect:box state:[self state] enabled:[self isEnabled]];
+
+    NSString *title = [self title];
+    if ([title length] == 0) return;
+
+    // The words sit beside the box on the same line, which is where a checkbox
+    // has always put them.
+    NSColor *ink = [self isEnabled] ? [NSColor blackColor]
+                                    : [NSColor colorWithCalibratedWhite:0.55 alpha:1.0];
+    NSDictionary *attributes = @{NSFontAttributeName: ([self font] ?: [BTStyle uiFont]),
+                                 NSForegroundColorAttributeName: ink};
+    NSSize size = [title sizeWithAttributes:attributes];
+    NSRect where = NSMakeRect(NSMaxX(box) + 4.0,
+                              NSMinY(frame) + (NSHeight(frame) - size.height) / 2.0,
+                              NSWidth(frame) - side - 4.0, size.height);
+    [title drawInRect:where withAttributes:attributes];
+}
+
+@end
+
 #pragma mark - Volume
 
 // Drawn rather than assembled from a stock slider. The system control brings

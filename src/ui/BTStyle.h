@@ -86,6 +86,11 @@
 + (void)drawShrinkGlyphInRect:(NSRect)rect color:(NSColor *)color;
 + (void)drawEjectGlyphInRect:(NSRect)rect color:(NSColor *)color;
 // Two arrows chasing each other round a circle, for bringing music over.
+// A tick box, drawn rather than left to the system, which paints its own blue
+// and pays no attention to which colour the window has been asked to use.
+// State is NSOffState, NSOnState, or NSMixedState.
++ (void)drawCheckboxInRect:(NSRect)rect state:(NSInteger)state enabled:(BOOL)enabled;
+
 + (void)drawSyncGlyphInRect:(NSRect)rect color:(NSColor *)color;
 + (void)drawShuffleGlyphInRect:(NSRect)rect color:(NSColor *)color;
 + (void)drawRepeatGlyphInRect:(NSRect)rect one:(BOOL)one color:(NSColor *)color;

@@ -35,6 +35,34 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
 @implementation BTSyncOutlineView
 
+// An outline view cannot inherit the table subclass, so the shared fill has to
+// be called by hand. Without it this list alone draws the system's own blue,
+// which is exactly what purple mode cannot reach.
+- (void)highlightSelectionInClipRect:(NSRect)clipRect {
+    BTDrawListSelection(self, clipRect);
+}
+
+- (BOOL)becomeFirstResponder {
+    BOOL became = [super becomeFirstResponder];
+    if (became) BTNoteListFocusChanged();
+    return became;
+}
+
+- (BOOL)resignFirstResponder {
+    BOOL resigned = [super resignFirstResponder];
+    if (resigned) BTNoteListFocusChanged();
+    return resigned;
+}
+
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    BTWatchListFocus(self);
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
 - (NSRect)frameOfOutlineCellAtRow:(NSInteger)row {
     NSRect frame = [super frameOfOutlineCellAtRow:row];
     // Up one, since a table draws top down and the triangle sat below the
@@ -190,6 +218,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
 - (NSButton *)checkboxTitled:(NSString *)title action:(SEL)action on:(BOOL)on {
     NSButton *box = [[NSButton alloc] initWithFrame:NSZeroRect];
+    [box setCell:[[BTCheckboxCell alloc] init]];
     [box setButtonType:NSSwitchButton];
     [box setTitle:title];
     [box setFont:[BTStyle uiFont]];
@@ -232,7 +261,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
         [column setWidth:[[spec objectAtIndex:2] doubleValue]];
 
         if ([identifier isEqualToString:@"check"]) {
-            NSButtonCell *cell = [[NSButtonCell alloc] init];
+            NSButtonCell *cell = [[BTCheckboxCell alloc] init];
             [cell setButtonType:NSSwitchButton];
             [cell setAllowsMixedState:YES];
             [cell setTitle:@""];
@@ -285,7 +314,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
         [column setWidth:[[spec objectAtIndex:2] doubleValue]];
 
         if ([identifier isEqualToString:@"check"]) {
-            NSButtonCell *cell = [[NSButtonCell alloc] init];
+            NSButtonCell *cell = [[BTCheckboxCell alloc] init];
             [cell setButtonType:NSSwitchButton];
             [cell setAllowsMixedState:YES];
             [cell setTitle:@""];

@@ -508,6 +508,75 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
     [triangle fill];
 }
 
++ (void)drawCheckboxInRect:(NSRect)rect state:(NSInteger)state enabled:(BOOL)enabled {
+    // Square, and no bigger than the room given, so it sits the same in a table
+    // row as it does beside a label.
+    CGFloat side = MIN(NSWidth(rect), NSHeight(rect));
+    if (side > 13.0) side = 13.0;
+    NSRect box = NSMakeRect(NSMinX(rect),
+                            NSMinY(rect) + (NSHeight(rect) - side) / 2.0,
+                            side, side);
+    box = NSInsetRect(NSIntegralRect(box), 0.5, 0.5);
+
+    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:box xRadius:2.0 yRadius:2.0];
+    BOOL filled = (state != NSOffState);
+    CGFloat dim = enabled ? 1.0 : 0.45;
+
+    // Built from the selection colour, not from the accent. The accent is the
+    // logo's own purple and never turns, so a box drawn from it would stay
+    // purple in a blue window.
+    NSColor *tickFill = [BTStyle selection];
+    NSColor *tickTop = BTShiftColor(tickFill, 0.62, 1.18);
+
+    // Clipped to the rounded shape rather than having its corners painted back
+    // out afterwards. Painting them out means knowing what is behind the box,
+    // and on a selected row that is not white.
+    [NSGraphicsContext saveGraphicsState];
+    [path addClip];
+    if (filled) {
+        [BTStyle drawVerticalGradientInRect:box
+                                       from:[tickTop colorWithAlphaComponent:dim]
+                                         to:[tickFill colorWithAlphaComponent:dim]];
+    } else {
+        [BTStyle drawVerticalGradientInRect:box
+                                       from:[NSColor colorWithCalibratedWhite:1.0 alpha:dim]
+                                         to:[NSColor colorWithCalibratedWhite:0.90 alpha:dim]];
+    }
+    [NSGraphicsContext restoreGraphicsState];
+
+    [[NSColor colorWithCalibratedWhite:(filled ? 0.35 : 0.55) alpha:dim] set];
+    [path setLineWidth:1.0];
+    [path stroke];
+
+    if (state == NSOffState) return;
+
+    [[NSColor colorWithCalibratedWhite:1.0 alpha:dim] set];
+    if (state == NSMixedState) {
+        // A bar, for some but not all of what is inside.
+        NSRect bar = NSInsetRect(box, side * 0.24, 0);
+        bar.origin.y = NSMidY(box) - 1.0;
+        bar.size.height = 2.0;
+        NSRectFill(bar);
+        return;
+    }
+
+    // A tick. Table rows draw top down, so the mark is built against whichever
+    // way the context runs; taken one way in both it comes out as a caret.
+    BOOL flipped = [[NSGraphicsContext currentContext] isFlipped];
+    CGFloat (^up)(CGFloat) = ^CGFloat(CGFloat fraction) {
+        return flipped ? NSMaxY(box) - side * fraction : NSMinY(box) + side * fraction;
+    };
+
+    NSBezierPath *tick = [NSBezierPath bezierPath];
+    [tick setLineWidth:1.9];
+    [tick setLineCapStyle:NSRoundLineCapStyle];
+    [tick setLineJoinStyle:NSRoundLineJoinStyle];
+    [tick moveToPoint:NSMakePoint(NSMinX(box) + side * 0.24, up(0.52))];
+    [tick lineToPoint:NSMakePoint(NSMinX(box) + side * 0.44, up(0.30))];
+    [tick lineToPoint:NSMakePoint(NSMinX(box) + side * 0.78, up(0.74))];
+    [tick stroke];
+}
+
 + (void)drawSyncGlyphInRect:(NSRect)rect color:(NSColor *)color {
     // Two arcs on the same circle, half a turn apart, each ending in a head. A
     // full ring with heads stuck on reads as a clock; leaving a gap at each end
