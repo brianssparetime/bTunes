@@ -28,6 +28,24 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 }
 @end
 
+// The list of playlists. Only here to place the disclosure triangle: AppKit sets
+// it low in the row and hard against the first letter of the name.
+@interface BTSyncOutlineView : NSOutlineView
+@end
+
+@implementation BTSyncOutlineView
+
+- (NSRect)frameOfOutlineCellAtRow:(NSInteger)row {
+    NSRect frame = [super frameOfOutlineCellAtRow:row];
+    // Up one, since a table draws top down and the triangle sat below the
+    // middle of its row, and back two, to put air between it and the name.
+    frame.origin.y -= 1.0;
+    frame.origin.x -= 2.0;
+    return frame;
+}
+
+@end
+
 // The bar between the two lists. Wide enough to catch the pointer, with a dot
 // on it so it reads as something to take hold of rather than as a seam.
 @interface BTSyncDivider : NSSplitView
@@ -237,7 +255,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     [scroll setBorderType:NSBezelBorder];
     [scroll setFocusRingType:NSFocusRingTypeNone];
 
-    NSOutlineView *outline = [[NSOutlineView alloc] initWithFrame:NSZeroRect];
+    NSOutlineView *outline = [[BTSyncOutlineView alloc] initWithFrame:NSZeroRect];
     [outline setFocusRingType:NSFocusRingTypeNone];
     [outline setRowHeight:17.0];
     [outline setUsesAlternatingRowBackgroundColors:YES];
