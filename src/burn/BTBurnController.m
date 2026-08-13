@@ -240,10 +240,22 @@ static BTBurnController *sRunning = nil;
 // time, the reason it is refused, and whether the button is alive can never
 // disagree with each other.
 - (void)refresh {
-    NSUInteger songs = [[_plan songs] count];
-    [_summary setStringValue:[NSString stringWithFormat:@"%lu song%@, %@ on the disc.",
-                              (unsigned long)songs, (songs == 1 ? @"" : @"s"),
-                              [BTBurnPlan stringFromSectors:[_plan sectors]]]];
+    // Every song in the playlist, not only the ones that would reach the disc.
+    // Saying "5 songs" beside a reason that names a sixth reads as an offer to
+    // burn the five, which is exactly what is being refused.
+    NSUInteger readable = [[_plan songs] count];
+    NSUInteger missing = [[_plan unreadable] count];
+    NSUInteger songs = readable + missing;
+
+    if (missing > 0) {
+        [_summary setStringValue:[NSString stringWithFormat:
+            @"%lu song%@, %lu of which cannot be read.",
+            (unsigned long)songs, (songs == 1 ? @"" : @"s"), (unsigned long)missing]];
+    } else {
+        [_summary setStringValue:[NSString stringWithFormat:@"%lu song%@, %@ on the disc.",
+                                  (unsigned long)songs, (songs == 1 ? @"" : @"s"),
+                                  [BTBurnPlan stringFromSectors:[_plan sectors]]]];
+    }
 
     NSUInteger trimmed = [[_plan trimmed] count];
     if (trimmed > 0) {
