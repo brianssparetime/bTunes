@@ -5,12 +5,13 @@
 #import "BTControls.h"
 
 #define BT_PREFS_WIDTH  520.0
-#define BT_PREFS_HEIGHT 336.0
+#define BT_PREFS_HEIGHT 416.0
 
 @implementation BTPreferencesController {
     NSTextField *_musicField;
     NSTextField *_databaseField;
     NSTextField *_iTunesField;
+    NSTextField *_detuneField;
     NSButton *_purpleBox;
 }
 
@@ -54,7 +55,13 @@
                             action:@selector(chooseITunesLibrary:)
                             inView:content];
 
-    // Its own row rather than a fourth path to choose: this is a choice about
+    _detuneField = [self addRowAtY:&y
+                             label:@"Detune:"
+                              note:@"The folder of free recordings standing in for locked purchases. Leave it empty until there is one: locked songs then simply stay locked. Choose the folder holding detune-mapping.json."
+                            action:@selector(chooseDetuneFolder:)
+                            inView:content];
+
+    // Its own row rather than a fifth path to choose: this is a choice about
     // how the window looks, not about where something lives. The note sits
     // under it at the same left edge as the words beside the box, the way the
     // notes under the three paths do.
@@ -124,6 +131,10 @@
     [_musicField setStringValue:[prefs musicFolder]];
     [_databaseField setStringValue:[prefs databaseFolder]];
     [_iTunesField setStringValue:[prefs iTunesLibraryPath]];
+    // Said outright rather than left blank, because an empty box beside a name
+    // reads as a setting that failed to load rather than one not yet made.
+    NSString *detune = [prefs detuneFolder];
+    [_detuneField setStringValue:([detune length] > 0 ? detune : @"None chosen")];
     [_purpleBox setState:([prefs purpleMode] ? NSOnState : NSOffState)];
 }
 
@@ -159,6 +170,27 @@
     if ([panel runModal] != NSFileHandlingPanelOKButton) return;
 
     [prefs setITunesLibraryPath:[[[panel URLs] objectAtIndex:0] path]];
+    [self refresh];
+}
+
+// Choosing the folder that holds the map, not the map itself, since the folder
+// is the thing that moves and the audio is found relative to it.
+- (void)chooseDetuneFolder:(id)sender {
+    NSString *chosen = [self chooseFolderStartingAt:[[BTPreferences sharedPreferences] detuneFolder]];
+    if (chosen == nil) return;
+
+    // Said now rather than discovered at the next sync, when the reason nothing
+    // came unlocked would be a great deal harder to work out.
+    NSString *map = [chosen stringByAppendingPathComponent:@"detune-mapping.json"];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:map]) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        [alert setMessageText:@"That folder holds no detune-mapping.json."];
+        [alert setInformativeText:@"Choose the folder the map sits in. Without it nothing can be matched, and locked songs stay locked."];
+        [alert runModal];
+        return;
+    }
+
+    [[BTPreferences sharedPreferences] setDetuneFolder:chosen];
     [self refresh];
 }
 

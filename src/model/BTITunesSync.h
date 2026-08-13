@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import "BTITunesEntry.h"
 
 @class BTLibrary;
 
@@ -11,21 +12,6 @@
 // A song is matched first on its iTunes persistent id and then on its file
 // path, because songs added here by scanning a folder carry no iTunes id and
 // must not be imported a second time.
-
-// Why something cannot be brought across yet. Blocked things are listed and
-// shown, greyed, rather than hidden, so it is clear they exist and are waiting.
-//
-// The reasons are kept apart rather than collapsed into one flag. They all draw
-// the same grey today, decided in a single place, so giving one its own colour
-// later is a change there and nowhere else.
-typedef NS_ENUM(NSInteger, BTITunesBlock) {
-    BTITunesBlockNone = 0,
-    BTITunesBlockProtected,         // a locked purchase nothing here can decode
-    BTITunesBlockNotOnDisk,         // in the cloud, or the file has gone
-    BTITunesBlockHoldsProtected,    // a playlist holding a locked song
-    BTITunesBlockHoldsNotOnDisk,    // a playlist holding one that is not here
-    BTITunesBlockSmart              // rules iTunes does not publish
-};
 
 // A song iTunes has that BTunes does not.
 @interface BTITunesSyncTrack : NSObject
@@ -42,9 +28,13 @@ typedef NS_ENUM(NSInteger, BTITunesBlock) {
 // once does not have to be turned down again. Ticking it imports it.
 @property (nonatomic, assign) BOOL excludedBefore;
 @property (nonatomic, assign) BOOL alreadyHere;      // imported by an earlier sync
-// The entry this came from, kept so an import reads every field rather than
-// only the handful shown in the list.
-@property (nonatomic, strong) NSDictionary *entry;
+// A free recording is standing in for a locked purchase, so this song comes
+// from detune rather than from where iTunes keeps it.
+@property (nonatomic, assign) BOOL fromDetune;
+// The entry as it was read, kept so the import points at the file eligibility
+// was decided about rather than working the question out a second time and
+// possibly differently.
+@property (nonatomic, strong) BTITunesEntry *source;
 // Something this sync could actually bring across.
 @property (nonatomic, readonly) BOOL eligible;
 @end

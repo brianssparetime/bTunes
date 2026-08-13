@@ -1,24 +1,42 @@
 #import <Foundation/Foundation.h>
 
+// Which folder a track's path is measured from. Both are per-machine settings,
+// which is what lets one library be opened on another machine: point the setting
+// at wherever the files are there and every track resolves again.
+typedef NS_ENUM(NSInteger, BTPathRoot) {
+    BTPathRootMusic = 0,    // the music folder, where nearly everything lives
+    BTPathRootDetune        // the free recordings standing in for locked purchases
+};
+
 // One audio file in the library. Values are cached from the file's tags at
 // import time; the file itself is never written to.
 @interface BTTrack : NSObject
 
 @property (nonatomic, copy) NSString *trackID;
 
-// Where the file is, as the library records it: the part below the music root
-// when the file sits under it, and a full path beginning with a slash when it
-// does not. Which of the two it is can be told from the leading slash, so no
-// second field is needed.
+// Where the file is, as the library records it: the part below its root when the
+// file sits under one, and a full path beginning with a slash when it does not.
+// Which of the two it is can be told from the leading slash.
 //
 // Storing it below the root is what lets one library be opened on another
-// machine. The root is a per-machine setting, so a library written where the
-// music is at ~/Music can be read where the same music is mounted at
-// /Volumes/Music, and every track still resolves.
+// machine. A library written where the music is at ~/Music can be read where the
+// same music is mounted at /Volumes/Music, and every track still resolves.
 //
 // Assigning a full path converts it, so nothing has to remember to. Assigning a
-// path that is already relative leaves it alone.
+// path that is already relative leaves it alone. Assignment measures against
+// whichever root is set at the time, so use setPath:root: when the file is not
+// ordinary music and the two cannot get out of step.
 @property (nonatomic, copy) NSString *path;
+
+// Which root the path above is measured from. Music unless the track came from
+// detune, and written to the library only when it did, so a library holding no
+// substituted songs looks exactly as it did before they were possible.
+@property (nonatomic, assign) BTPathRoot pathRoot;
+
+// Sets both at once, in the order that makes them agree. Setting the path alone
+// measures it against whatever root happens to be set, which is right for
+// ordinary music and a trap for anything else.
+- (void)setPath:(NSString *)path root:(BTPathRoot)root;
 // The iTunes persistent id, kept when a track arrives from an iTunes library so
 // a later pass can match it back to its source.
 @property (nonatomic, copy) NSString *persistentID;

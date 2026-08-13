@@ -3,6 +3,7 @@
 #import "BTTrack.h"
 #import "BTPlaylist.h"
 #import "BTITunesImport.h"
+#import "BTDetuneMap.h"
 
 @implementation BTITunesSyncTrack
 // Whether it could come across at all. Being left behind before is deliberately
@@ -45,36 +46,26 @@
 
 #pragma mark - Reading the file
 
-static NSString *BTStringFrom(NSDictionary *d, NSString *key) {
-    id value = [d objectForKey:key];
-    return [value isKindOfClass:[NSString class]] ? value : nil;
-}
-
-static NSString *BTPathFromLocation(NSString *location) {
-    if ([location length] == 0) return nil;
-    NSURL *url = [NSURL URLWithString:location];
-    if (url == nil || ![url isFileURL]) return nil;
-    return [[url path] stringByStandardizingPath];
-}
-
-// A locked purchase. Recognised three ways because iTunes has spelled it
-// differently over the years and one library spans all of them.
-static BOOL BTEntryIsProtected(NSDictionary *entry, NSString *path) {
-    if ([[entry objectForKey:@"Protected"] boolValue]) return YES;
-    if ([[[path pathExtension] lowercaseString] isEqualToString:@"m4p"]) return YES;
-    NSString *kind = BTStringFrom(entry, @"Kind");
-    return kind && [kind rangeOfString:@"Protected"
-                               options:NSCaseInsensitiveSearch].location != NSNotFound;
-}
-
-// A song is blocked if it is locked, or if there is no file here to point at.
-// Not being on disk covers both a cloud copy and a file that has since gone:
-// either way there is nothing to play.
-static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFileManager *files) {
-    if (path == nil) return BTITunesBlockNotOnDisk;
-    if (BTEntryIsProtected(entry, path)) return BTITunesBlockProtected;
-    if (![files fileExistsAtPath:path]) return BTITunesBlockNotOnDisk;
-    return BTITunesBlockNone;
+// Every entry read once, keyed by the iTunes track id playlists refer to.
+//
+// One pass rather than two. The songs and the playlists each used to work out
+// for themselves whether a track could come across, which asked the filesystem
+// about every file twice over, and asking is nearly all the time a sync takes.
+// It also left two answers free to disagree, and one of them decided what could
+// be ticked while the other decided what was actually imported.
+- (NSDictionary *)readEntries:(NSDictionary *)entries detune:(BTDetuneMap *)detune {
+    NSFileManager *files = [NSFileManager defaultManager];
+    NSMutableDictionary *read = [NSMutableDictionary dictionaryWithCapacity:[entries count]];
+    NSArray *keys = [entries allKeys];
+    NSUInteger i;
+    for (i = 0; i < [keys count]; i++) {
+        id key = [keys objectAtIndex:i];
+        BTITunesEntry *one = [BTITunesEntry readEntry:[entries objectForKey:key]
+                                               detune:detune
+                                                files:files];
+        if (one) [read setObject:one forKey:key];
+    }
+    return read;
 }
 
 #pragma mark - Comparing
@@ -93,8 +84,9 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
         return sync;
     }
 
-    [sync compareTracks:entries against:library];
-    [sync comparePlaylists:[root objectForKey:@"Playlists"] entries:entries against:library];
+    NSDictionary *read = [sync readEntries:entries detune:[BTDetuneMap currentMap]];
+    [sync compareTracks:read against:library];
+    [sync comparePlaylists:[root objectForKey:@"Playlists"] read:read against:library];
     return sync;
 }
 
@@ -121,10 +113,12 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
         } else if (![entries isKindOfClass:[NSDictionary class]]) {
             sync.error = @"That file has no Tracks section.";
         } else {
-            report(0.25, @"Looking for the songs on disk");
-            [sync compareTracks:entries against:library];
-            report(0.80, @"Comparing playlists");
-            [sync comparePlaylists:[root objectForKey:@"Playlists"] entries:entries against:library];
+            report(0.20, @"Looking for the songs on disk");
+            NSDictionary *read = [sync readEntries:entries detune:[BTDetuneMap currentMap]];
+            report(0.70, @"Comparing songs");
+            [sync compareTracks:read against:library];
+            report(0.85, @"Comparing playlists");
+            [sync comparePlaylists:[root objectForKey:@"Playlists"] read:read against:library];
         }
 
         report(1.0, @"Finished");
@@ -137,7 +131,7 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
 // What BTunes already holds, keyed both ways. A dictionary rather than a scan:
 // eleven thousand songs against a library of the same size is minutes of work
 // as a nested loop and no time at all as a lookup.
-- (void)compareTracks:(NSDictionary *)entries against:(BTLibrary *)library {
+- (void)compareTracks:(NSDictionary *)read against:(BTLibrary *)library {
     NSMutableDictionary *haveByITunesID = [NSMutableDictionary dictionary];
     NSMutableSet *havePaths = [NSMutableSet set];
 
@@ -152,39 +146,35 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
     }
 
     NSSet *excluded = [library excludedFromImport];
-    NSFileManager *files = [NSFileManager defaultManager];
 
     // Sorted numerically so the listing comes out in the order iTunes numbered
     // them, which is roughly the order they were added.
-    NSArray *keys = [[entries allKeys] sortedArrayUsingComparator:^NSComparisonResult(id a, id b) {
+    NSArray *keys = [[read allKeys] sortedArrayUsingComparator:^NSComparisonResult(id a, id b) {
         return [a compare:b options:NSNumericSearch];
     }];
 
     for (i = 0; i < [keys count]; i++) {
-        NSDictionary *entry = [entries objectForKey:[keys objectAtIndex:i]];
-        if (![entry isKindOfClass:[NSDictionary class]]) continue;
+        BTITunesEntry *source = [read objectForKey:[keys objectAtIndex:i]];
+        NSString *persistentID = source.persistentID;
 
-        NSString *location = BTStringFrom(entry, @"Location");
-        if ([location length] == 0) continue;      // no file and no cloud copy either
-
-        // Nil for a cloud copy, which BTunes has nothing to point at.
-        NSString *path = BTPathFromLocation(location);
-
-        NSString *persistentID = BTStringFrom(entry, @"Persistent ID");
+        // Matched on the file BTunes would actually record, which for a
+        // substituted song is the free recording rather than the locked
+        // original, so a second sync does not offer it all over again.
         BOOL here = ([persistentID length] > 0 && [haveByITunesID objectForKey:persistentID]) ||
-                    (path != nil && [havePaths containsObject:path]);
+                    (source.resolvedPath != nil && [havePaths containsObject:source.resolvedPath]);
 
         BTITunesSyncTrack *incoming = [[BTITunesSyncTrack alloc] init];
         incoming.persistentID = persistentID;
-        incoming.path = path;
-        incoming.title = BTStringFrom(entry, @"Name");
-        incoming.artist = BTStringFrom(entry, @"Artist");
-        incoming.album = BTStringFrom(entry, @"Album");
-        incoming.entry = entry;
+        incoming.path = source.iTunesPath;
+        incoming.title = BTITunesString(source.entry, @"Name");
+        incoming.artist = BTITunesString(source.entry, @"Artist");
+        incoming.album = BTITunesString(source.entry, @"Album");
+        incoming.source = source;
+        incoming.fromDetune = source.fromDetune;
         incoming.alreadyHere = here;
         // A song already here is not asked about again, whatever else is true
         // of it, so the reason it could not come across is not worked out.
-        incoming.blocked = here ? BTITunesBlockNone : BTBlockForEntry(entry, path, files);
+        incoming.blocked = here ? BTITunesBlockNone : source.blocked;
         incoming.excludedBefore = (!here && [persistentID length] > 0 &&
                                    [excluded containsObject:persistentID]);
         [_incomingTracks addObject:incoming];
@@ -194,31 +184,11 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
 // Playlists, in two passes: name the folders first, then place each playlist
 // under the folders it belongs to.
 - (void)comparePlaylists:(NSArray *)playlistEntries
-                 entries:(NSDictionary *)entries
+                    read:(NSDictionary *)read
                  against:(BTLibrary *)library {
     if (![playlistEntries isKindOfClass:[NSArray class]]) return;
 
-    // iTunes track id to its persistent id, and to why it cannot come across.
-    // Every entry with a location is kept, including the ones that are blocked,
-    // because a playlist has to know it holds them.
-    NSMutableDictionary *persistentForTrackID = [NSMutableDictionary dictionary];
-    NSMutableDictionary *blockForTrackID = [NSMutableDictionary dictionary];
-    NSFileManager *files = [NSFileManager defaultManager];
-    NSArray *trackKeys = [entries allKeys];
     NSUInteger i, j;
-    for (i = 0; i < [trackKeys count]; i++) {
-        NSString *key = [trackKeys objectAtIndex:i];
-        NSDictionary *entry = [entries objectForKey:key];
-        if (![entry isKindOfClass:[NSDictionary class]]) continue;
-        NSString *location = BTStringFrom(entry, @"Location");
-        if ([location length] == 0) continue;
-
-        NSString *persistentID = BTStringFrom(entry, @"Persistent ID");
-        if ([persistentID length] == 0) continue;
-        [persistentForTrackID setObject:persistentID forKey:key];
-        [blockForTrackID setObject:@(BTBlockForEntry(entry, BTPathFromLocation(location), files))
-                            forKey:key];
-    }
 
     // Folder names by their own persistent id, so a playlist can name its path.
     NSMutableDictionary *folderNames = [NSMutableDictionary dictionary];
@@ -227,10 +197,10 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
         NSDictionary *entry = [playlistEntries objectAtIndex:i];
         if (![entry isKindOfClass:[NSDictionary class]]) continue;
         if (![[entry objectForKey:@"Folder"] boolValue]) continue;
-        NSString *own = BTStringFrom(entry, @"Playlist Persistent ID");
+        NSString *own = BTITunesString(entry, @"Playlist Persistent ID");
         if ([own length] == 0) continue;
-        [folderNames setObject:(BTStringFrom(entry, @"Name") ?: @"") forKey:own];
-        NSString *parent = BTStringFrom(entry, @"Parent Persistent ID");
+        [folderNames setObject:(BTITunesString(entry, @"Name") ?: @"") forKey:own];
+        NSString *parent = BTITunesString(entry, @"Parent Persistent ID");
         if ([parent length] > 0) [folderParents setObject:parent forKey:own];
     }
 
@@ -246,30 +216,32 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
         if ([entry objectForKey:@"Distinguished Kind"] != nil) continue;
         if ([[entry objectForKey:@"Folder"] boolValue]) continue;
 
-        NSString *name = BTStringFrom(entry, @"Name");
+        NSString *name = BTITunesString(entry, @"Name");
         if ([name length] == 0) continue;
 
-        NSString *persistentID = BTStringFrom(entry, @"Playlist Persistent ID");
+        NSString *persistentID = BTITunesString(entry, @"Playlist Persistent ID");
         BOOL isSmart = ([entry objectForKey:@"Smart Info"] != nil ||
                         [entry objectForKey:@"Smart Criteria"] != nil);
 
-        // Membership in iTunes order, and whether any of it is locked.
+        // Membership in iTunes order, and whether any of it is blocked. Read
+        // from the same entries the songs were judged from, so a playlist is
+        // never grey for holding a song the list above says is fine to bring
+        // across. A locked song with a free recording behind it blocks nothing.
         NSArray *items = [entry objectForKey:@"Playlist Items"];
         NSMutableArray *members = [NSMutableArray array];
         BOOL holdsLocked = NO, holdsMissing = NO;
         for (j = 0; [items isKindOfClass:[NSArray class]] && j < [items count]; j++) {
             id trackID = [[items objectAtIndex:j] objectForKey:@"Track ID"];
             if (trackID == nil) continue;
-            NSString *key = [trackID description];
-            NSString *persistent = [persistentForTrackID objectForKey:key];
-            if ([persistent length] == 0) continue;
+            BTITunesEntry *member = [read objectForKey:[trackID description]];
+            if ([member.persistentID length] == 0) continue;
 
-            switch ((BTITunesBlock)[[blockForTrackID objectForKey:key] integerValue]) {
+            switch (member.blocked) {
                 case BTITunesBlockProtected:  holdsLocked = YES;  break;
                 case BTITunesBlockNotOnDisk:  holdsMissing = YES; break;
                 default: break;
             }
-            [members addObject:persistent];
+            [members addObject:member.persistentID];
         }
         if ([members count] == 0) continue;   // nothing in it worth reporting
 
@@ -290,7 +262,7 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
         BTITunesSyncPlaylist *change = [[BTITunesSyncPlaylist alloc] init];
         change.name = name;
         change.persistentID = persistentID;
-        change.folderNames = [self folderPathFor:BTStringFrom(entry, @"Parent Persistent ID")
+        change.folderNames = [self folderPathFor:BTITunesString(entry, @"Parent Persistent ID")
                                            names:folderNames
                                          parents:folderParents];
         if (existing == nil) {
@@ -383,9 +355,9 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
         if (![incoming eligible]) continue;
         if (![songIDs containsObject:incoming.persistentID]) continue;
 
-        // The same reading of an entry the one-shot import uses, so both ways
-        // of bringing music over agree about what a song's fields are.
-        BTTrack *track = [library trackFromITunesEntry:incoming.entry protected:NULL];
+        // Built from the entry as it was read, so the file imported is the file
+        // eligibility was decided about, substitution and all.
+        BTTrack *track = [library trackFromEntry:incoming.source];
         if (track == nil) continue;
         [library.tracks addObject:track];
         [importedByITunesID setObject:track forKey:incoming.persistentID];

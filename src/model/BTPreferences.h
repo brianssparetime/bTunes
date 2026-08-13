@@ -27,6 +27,16 @@ extern NSString *const BTPreferencesDidChangeNotification;
 // while trying something out.
 @property (nonatomic, copy) NSString *iTunesLibraryPath;
 
+// The folder holding detune-mapping.json and the free recordings it describes,
+// which stand in for the locked purchases iTunes will not let anything decode.
+// Empty until one exists, and empty means the substitution simply does not
+// happen: locked songs stay locked and nothing else changes.
+//
+// A second root, and the reason a track records which root its path belongs to.
+// The folder is self-contained and names no absolute path inside itself, so
+// moving it and repointing this setting carries every substituted song with it.
+@property (nonatomic, copy) NSString *detuneFolder;
+
 // Whether the main window is drawn in purple rather than blue. Off unless asked
 // for, and remembered. The mini player is purple either way, so this does not
 // touch it.

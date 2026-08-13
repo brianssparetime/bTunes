@@ -1,4 +1,5 @@
 #import "BTLibrary.h"
+#import "BTITunesEntry.h"
 
 @class BTTrack;
 
@@ -26,8 +27,10 @@
 // "foldersAdded", "smartAsStatic", and "error".
 - (NSDictionary *)importITunesLibraryAtPath:(NSString *)path trackLimit:(NSInteger)trackLimit;
 
-// One iTunes entry turned into a track. Shared with the sync so that both ways
-// of bringing music over read the same fields the same way.
-- (BTTrack *)trackFromITunesEntry:(NSDictionary *)entry protected:(BOOL *)outProtected;
+// One iTunes entry turned into a track. Takes an entry that has already been
+// read, rather than the raw dictionary, so that the file a track points at is
+// the one eligibility was decided about. Working the path out again here is how
+// a song comes to be judged importable and then imported as its locked original.
+- (BTTrack *)trackFromEntry:(BTITunesEntry *)source;
 
 @end

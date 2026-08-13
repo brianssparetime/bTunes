@@ -1,6 +1,7 @@
 #import "BTITunesImport.h"
 #import "BTTrack.h"
 #import "BTPlaylist.h"
+#import "BTDetuneMap.h"
 
 @implementation BTLibrary (ITunesImport)
 
@@ -10,24 +11,9 @@
              [music stringByAppendingPathComponent:@"iTunes Library.xml"]];
 }
 
-static NSString *BTPathFromLocation(NSString *location) {
-    if ([location length] == 0) return nil;
-    NSURL *url = [NSURL URLWithString:location];
-    if (url == nil) return nil;
-    if (![url isFileURL]) return nil;
-    // Standardized so a path from the XML compares equal to the same file found
-    // by a folder scan.
-    return [[url path] stringByStandardizingPath];
-}
-
 static NSInteger BTIntFor(NSDictionary *d, NSString *key) {
     id v = [d objectForKey:key];
     return [v respondsToSelector:@selector(integerValue)] ? [v integerValue] : 0;
-}
-
-static NSString *BTStringFor(NSDictionary *d, NSString *key) {
-    id v = [d objectForKey:key];
-    return [v isKindOfClass:[NSString class]] ? v : nil;
 }
 
 static NSDate *BTDateFor(NSDictionary *d, NSString *key) {
@@ -35,27 +21,26 @@ static NSDate *BTDateFor(NSDictionary *d, NSString *key) {
     return [v isKindOfClass:[NSDate class]] ? v : nil;
 }
 
-- (BTTrack *)trackFromITunesEntry:(NSDictionary *)entry protected:(BOOL *)outProtected {
-    NSString *path = BTPathFromLocation(BTStringFor(entry, @"Location"));
-    if (path == nil) return nil;
-
-    NSString *kind = BTStringFor(entry, @"Kind");
-    BOOL isProtected = [[entry objectForKey:@"Protected"] boolValue] ||
-                       [[[path pathExtension] lowercaseString] isEqualToString:@"m4p"] ||
-                       ([kind rangeOfString:@"Protected" options:NSCaseInsensitiveSearch].location != NSNotFound);
-    if (outProtected) *outProtected = isProtected;
+- (BTTrack *)trackFromEntry:(BTITunesEntry *)source {
+    NSDictionary *entry = source.entry;
+    if (entry == nil || [source.path length] == 0) return nil;
 
     BTTrack *track = [[BTTrack alloc] init];
     track.trackID = [[NSUUID UUID] UUIDString];
-    track.path = path;
-    track.persistentID = BTStringFor(entry, @"Persistent ID");
-    track.title = BTStringFor(entry, @"Name");
-    track.artist = BTStringFor(entry, @"Artist");
-    track.albumArtist = BTStringFor(entry, @"Album Artist");
-    track.album = BTStringFor(entry, @"Album");
-    track.genre = BTStringFor(entry, @"Genre");
-    track.composer = BTStringFor(entry, @"Composer");
-    track.kind = kind;
+    // Both at once, so a substituted song is measured against the folder it
+    // actually lives in rather than against the music root it does not.
+    [track setPath:source.path root:source.pathRoot];
+    track.persistentID = BTITunesString(entry, @"Persistent ID");
+    track.title = BTITunesString(entry, @"Name");
+    track.artist = BTITunesString(entry, @"Artist");
+    track.albumArtist = BTITunesString(entry, @"Album Artist");
+    track.album = BTITunesString(entry, @"Album");
+    track.genre = BTITunesString(entry, @"Genre");
+    track.composer = BTITunesString(entry, @"Composer");
+    // A substituted song is a plain recording whatever iTunes called the
+    // purchase it replaces, and saying otherwise would put "Protected" beside a
+    // song that plays.
+    track.kind = source.fromDetune ? @"AAC audio file" : BTITunesString(entry, @"Kind");
     track.trackNumber = BTIntFor(entry, @"Track Number");
     track.discNumber = BTIntFor(entry, @"Disc Number");
     track.year = BTIntFor(entry, @"Year");
@@ -64,7 +49,7 @@ static NSDate *BTDateFor(NSDictionary *d, NSString *key) {
     track.fileSize = (long long)BTIntFor(entry, @"Size");
     track.dateAdded = BTDateFor(entry, @"Date Added");
     track.lastPlayed = BTDateFor(entry, @"Play Date UTC");
-    track.isProtected = isProtected;
+    track.isProtected = source.isProtected;
 
     // iTunes stores a rating out of 100; BTunes shows stars.
     NSInteger rating = BTIntFor(entry, @"Rating");
@@ -102,15 +87,20 @@ static NSDate *BTDateFor(NSDictionary *d, NSString *key) {
         return [a compare:b options:NSNumericSearch];
     }];
 
+    // The same reading the sync uses, including the substitution of free
+    // recordings for locked purchases, so both ways of bringing music over point
+    // at the same file for the same song.
+    BTDetuneMap *detune = [BTDetuneMap currentMap];
+    NSFileManager *files = [NSFileManager defaultManager];
+
     for (i = 0; i < [keys count]; i++) {
         NSString *key = [keys objectAtIndex:i];
-        NSDictionary *entry = [entries objectForKey:key];
-        if (![entry isKindOfClass:[NSDictionary class]]) continue;
+        BTITunesEntry *source = [BTITunesEntry readEntry:[entries objectForKey:key]
+                                                  detune:detune
+                                                   files:files];
+        if (source == nil || [source.resolvedPath length] == 0) { skipped++; continue; }
 
-        NSString *filePath = BTPathFromLocation(BTStringFor(entry, @"Location"));
-        if (filePath == nil) { skipped++; continue; }
-
-        BTTrack *existing = [byExistingPath objectForKey:filePath];
+        BTTrack *existing = [byExistingPath objectForKey:source.resolvedPath];
         if (existing) {
             [byITunesID setObject:existing forKey:key];
             skipped++;
@@ -119,15 +109,14 @@ static NSDate *BTDateFor(NSDictionary *d, NSString *key) {
 
         if (trackLimit > 0 && (NSInteger)added >= trackLimit) { skipped++; continue; }
 
-        BOOL isProtected = NO;
-        BTTrack *track = [self trackFromITunesEntry:entry protected:&isProtected];
+        BTTrack *track = [self trackFromEntry:source];
         if (track == nil) { skipped++; continue; }
 
         [self.tracks addObject:track];
         [byExistingPath setObject:track forKey:[track resolvedPath]];
         [byITunesID setObject:track forKey:key];
         added++;
-        if (isProtected) protectedCount++;
+        if (track.isProtected) protectedCount++;
     }
 
     // Playlists, in two passes: build them all, then hang them off their parents.
@@ -143,7 +132,7 @@ static NSDate *BTDateFor(NSDictionary *d, NSString *key) {
         if ([[entry objectForKey:@"Master"] boolValue]) continue;
         if ([entry objectForKey:@"Distinguished Kind"] != nil) continue;
 
-        NSString *name = BTStringFor(entry, @"Name");
+        NSString *name = BTITunesString(entry, @"Name");
         if ([name length] == 0) continue;
 
         BOOL isFolder = [[entry objectForKey:@"Folder"] boolValue];
@@ -171,11 +160,11 @@ static NSDate *BTDateFor(NSDictionary *d, NSString *key) {
             }
         }
 
-        NSString *persistentID = BTStringFor(entry, @"Playlist Persistent ID");
+        NSString *persistentID = BTITunesString(entry, @"Playlist Persistent ID");
         playlist.sourcePersistentID = persistentID;
         if (persistentID) [playlistsByPersistentID setObject:playlist forKey:persistentID];
-        [ordered addObject:@[playlist, (BTStringFor(entry, @"Parent Persistent ID")
-                                        ? BTStringFor(entry, @"Parent Persistent ID") : @"")]];
+        [ordered addObject:@[playlist, (BTITunesString(entry, @"Parent Persistent ID")
+                                        ? BTITunesString(entry, @"Parent Persistent ID") : @"")]];
     }
 
     for (i = 0; i < [ordered count]; i++) {

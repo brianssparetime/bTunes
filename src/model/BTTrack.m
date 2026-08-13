@@ -1,21 +1,22 @@
 #import "BTTrack.h"
 #import "BTPreferences.h"
 
-// The music root, asked of the settings each time rather than held, so pointing
-// the setting somewhere else takes effect without anything having to be told.
-static NSString *BTMusicRoot(void) {
-    NSString *root = [[BTPreferences sharedPreferences] musicFolder];
+// The roots, asked of the settings each time rather than held, so pointing a
+// setting somewhere else takes effect without anything having to be told.
+static NSString *BTRootFor(BTPathRoot which) {
+    BTPreferences *prefs = [BTPreferences sharedPreferences];
+    NSString *root = (which == BTPathRootDetune) ? [prefs detuneFolder] : [prefs musicFolder];
     return [root length] > 0 ? [root stringByStandardizingPath] : nil;
 }
 
-// A full path under the music root becomes the part below it. Anything else is
+// A full path under the given root becomes the part below it. Anything else is
 // returned unchanged, which covers both a path already stored relative and a
 // file that sits outside the root entirely.
-static NSString *BTPathBelowMusicRoot(NSString *path) {
+static NSString *BTPathBelowRoot(NSString *path, BTPathRoot which) {
     if (![path hasPrefix:@"/"]) return path;
 
     NSString *standard = [path stringByStandardizingPath];
-    NSString *root = BTMusicRoot();
+    NSString *root = BTRootFor(which);
     if ([root length] == 0) return standard;
 
     NSString *prefix = [root hasSuffix:@"/"] ? root : [root stringByAppendingString:@"/"];
@@ -55,12 +56,20 @@ static NSDate *BTDate(NSDictionary *d, NSString *key) {
 // stored below the root without having to know that is the rule. A library
 // written before the root existed converts itself the first time it is loaded.
 - (void)setPath:(NSString *)path {
-    _path = [BTPathBelowMusicRoot(path) copy];
+    _path = [BTPathBelowRoot(path, self.pathRoot) copy];
+}
+
+- (void)setPath:(NSString *)path root:(BTPathRoot)root {
+    self.pathRoot = root;
+    self.path = path;
 }
 
 + (instancetype)trackWithDictionary:(NSDictionary *)dict {
     BTTrack *t = [[BTTrack alloc] init];
     t.trackID = BTString(dict, @"id");
+    // The root before the path, because the path is measured against it.
+    t.pathRoot = [BTString(dict, @"pathRoot") isEqualToString:@"detune"]
+        ? BTPathRootDetune : BTPathRootMusic;
     t.path = BTString(dict, @"path");
     t.persistentID = BTString(dict, @"persistentID");
     t.title = BTString(dict, @"title");
@@ -92,6 +101,9 @@ static NSDate *BTDate(NSDictionary *d, NSString *key) {
     NSMutableDictionary *d = [NSMutableDictionary dictionary];
     [d setObject:(self.trackID ? self.trackID : @"") forKey:@"id"];
     [d setObject:(self.path ? self.path : @"") forKey:@"path"];
+    // Written only when it is not the ordinary one, so a library holding no
+    // substituted songs reads exactly as it did before they were possible.
+    if (self.pathRoot == BTPathRootDetune) [d setObject:@"detune" forKey:@"pathRoot"];
     if (self.persistentID) [d setObject:self.persistentID forKey:@"persistentID"];
     if (self.isProtected) [d setObject:@YES forKey:@"protected"];
     if (self.title) [d setObject:self.title forKey:@"title"];
@@ -127,7 +139,7 @@ static NSDate *BTDate(NSDictionary *d, NSString *key) {
     if ([self.path length] == 0) return nil;
     if ([self.path hasPrefix:@"/"]) return self.path;
 
-    NSString *root = BTMusicRoot();
+    NSString *root = BTRootFor(self.pathRoot);
     return root ? [root stringByAppendingPathComponent:self.path] : self.path;
 }
 

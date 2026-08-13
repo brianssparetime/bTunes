@@ -7,6 +7,7 @@ static NSString *const BTMusicFolderKey = @"BTMusicFolder";
 static NSString *const BTDatabaseFolderKey = @"BTDatabaseFolder";
 static NSString *const BTITunesLibraryPathKey = @"BTITunesLibraryPath";
 static NSString *const BTPurpleModeKey = @"BTPurpleMode";
+static NSString *const BTDetuneFolderKey = @"BTDetuneFolder";
 
 @implementation BTPreferences
 
@@ -56,6 +57,19 @@ static NSString *const BTPurpleModeKey = @"BTPurpleMode";
 
 - (void)setITunesLibraryPath:(NSString *)path {
     [[NSUserDefaults standardUserDefaults] setObject:path forKey:BTITunesLibraryPathKey];
+    [[NSNotificationCenter defaultCenter] postNotificationName:BTPreferencesDidChangeNotification
+                                                        object:self];
+}
+
+// No default worth guessing at. A folder that is not there would be indexed on
+// every sync and found empty, and a wrong guess would be worse: songs silently
+// pointed at recordings of something else.
+- (NSString *)detuneFolder {
+    return [[NSUserDefaults standardUserDefaults] stringForKey:BTDetuneFolderKey];
+}
+
+- (void)setDetuneFolder:(NSString *)detuneFolder {
+    [[NSUserDefaults standardUserDefaults] setObject:(detuneFolder ?: @"") forKey:BTDetuneFolderKey];
     [[NSNotificationCenter defaultCenter] postNotificationName:BTPreferencesDidChangeNotification
                                                         object:self];
 }
