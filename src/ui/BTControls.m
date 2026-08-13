@@ -291,11 +291,18 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume) 
     [BTStyle drawMagnifierGlyphInRect:glyph
                                 color:[NSColor colorWithCalibratedWhite:0.35 alpha:1.0]];
 
-    // The interior gets the whole frame. The cell places the text and the clear
-    // button inside it using the rects above, and its hit testing uses those
-    // same rects: hand it a smaller frame and the clear button is drawn
-    // somewhere other than where clicks are looked for.
-    [self drawInteriorWithFrame:frame inView:view];
+    // A band exactly one line tall, centred. The cell lays its line along the
+    // top of the interior it is handed, so a frame the full height of the
+    // capsule leaves the word riding above the middle by the slack between them.
+    //
+    // This is what actually places the word. searchTextRectForBounds: places the
+    // field editor while typing, and changing it moved nothing at all on screen,
+    // which is how three attempts at this missed.
+    NSFont *font = [self font];
+    CGFloat line = ceil([font ascender] - [font descender]);
+    CGFloat slack = (NSHeight(frame) - line) / 2.0;
+    NSRect interior = (slack > 0) ? NSInsetRect(frame, 0.0, slack) : frame;
+    [self drawInteriorWithFrame:interior inView:view];
 }
 
 @end
