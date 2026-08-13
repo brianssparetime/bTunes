@@ -12,7 +12,30 @@
 static NSString *const BTHideIneligibleKey = @"BTSyncHideIneligible";
 static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
-@interface BTITunesSyncView () <NSTableViewDataSource, NSTableViewDelegate>
+// The bar between the two lists. Wide enough to catch the pointer, with a dot
+// on it so it reads as something to take hold of rather than as a seam.
+@interface BTSyncDivider : NSSplitView
+@end
+
+@implementation BTSyncDivider
+
+- (CGFloat)dividerThickness { return 11.0; }
+
+- (void)drawDividerInRect:(NSRect)rect {
+    [[BTStyle windowBackground] set];
+    NSRectFill(rect);
+
+    CGFloat side = 5.0;
+    NSRect dot = NSMakeRect(NSMidX(rect) - side / 2.0, NSMidY(rect) - side / 2.0, side, side);
+    [[NSColor colorWithCalibratedWhite:0.45 alpha:1.0] set];
+    [[NSBezierPath bezierPathWithOvalInRect:dot] fill];
+    [[NSColor colorWithCalibratedWhite:1.0 alpha:0.6] set];
+    [[NSBezierPath bezierPathWithOvalInRect:NSOffsetRect(NSInsetRect(dot, 1.5, 1.5), 0, 1)] fill];
+}
+
+@end
+
+@interface BTITunesSyncView () <NSTableViewDataSource, NSTableViewDelegate, NSSplitViewDelegate>
 @end
 
 @implementation BTITunesSyncView {
@@ -32,6 +55,11 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     NSScrollView *_playlistsScroll;
     NSTableView *_songsTable;
     NSTableView *_playlistsTable;
+    // Each list travels with its own heading, so dragging the bar between them
+    // moves the words along with the rows they describe.
+    NSView *_songsPane;
+    NSView *_playlistsPane;
+    BTSyncDivider *_panes;
 
     NSArray *_songs;          // what the two lists are showing, after hiding
     NSArray *_lists;
@@ -78,18 +106,29 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
     _songsHeading = BTLabelWithText(@"Music", [BTStyle boldFont]);
     _playlistsHeading = BTLabelWithText(@"Playlists", [BTStyle boldFont]);
-    [self addSubview:_songsHeading];
-    [self addSubview:_playlistsHeading];
 
-    _songsTable = [self tableWithColumns:@[@[@"check", @"", @20],
+    _songsScroll = [self listWithColumns:@[@[@"check", @"", @20],
                                            @[@"title", @"Song Name", @180],
                                            @[@"artist", @"Artist", @130],
                                            @[@"album", @"Album", @130]]];
-    _playlistsTable = [self tableWithColumns:@[@[@"check", @"", @20],
+    _playlistsScroll = [self listWithColumns:@[@[@"check", @"", @20],
                                                @[@"name", @"Playlist", @220],
                                                @[@"what", @"", @90]]];
-    _songsScroll = [_songsTable enclosingScrollView];
-    _playlistsScroll = [_playlistsTable enclosingScrollView];
+    _songsTable = (NSTableView *)[_songsScroll documentView];
+    _playlistsTable = (NSTableView *)[_playlistsScroll documentView];
+
+    _playlistsPane = [self paneWithHeading:_playlistsHeading list:_playlistsScroll];
+    _songsPane = [self paneWithHeading:_songsHeading list:_songsScroll];
+
+    // Playlists first: a sync is chosen by playlist, and the songs are what
+    // that choice pulls along.
+    _panes = [[BTSyncDivider alloc] initWithFrame:NSZeroRect];
+    [_panes setVertical:YES];
+    [_panes setDividerStyle:NSSplitViewDividerStyleThin];
+    [_panes setDelegate:self];
+    [_panes addSubview:_playlistsPane];
+    [_panes addSubview:_songsPane];
+    [self addSubview:_panes];
 
     _syncButton = [BTPushButton buttonWithTitle:@"Sync" target:self action:@selector(runSync:)];
     [_syncButton setKeyEquivalent:@"\r"];
@@ -116,7 +155,12 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 }
 
 // identifier, heading, width. The first is always the tick.
-- (NSTableView *)tableWithColumns:(NSArray *)specs {
+//
+// The scroll view is what comes back, not the table. Handing back the table and
+// finding its scroll view again only works while something else is holding the
+// scroll view up; nothing was, so it went as soon as this returned and the list
+// never appeared.
+- (NSScrollView *)listWithColumns:(NSArray *)specs {
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
     [scroll setHasVerticalScroller:YES];
     [scroll setAutohidesScrollers:YES];
@@ -160,8 +204,21 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     }
 
     [scroll setDocumentView:table];
-    [self addSubview:scroll];
-    return table;
+    return scroll;
+}
+
+// A heading with its list under it, kept together so the bar between the two
+// moves both. The masks are what keep them in step while the bar is dragged,
+// which never comes back through the pane's own layout.
+- (NSView *)paneWithHeading:(NSTextField *)heading list:(NSScrollView *)scroll {
+    NSView *pane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 300, 300)];
+    [heading setFrame:NSMakeRect(0, 300 - 16, 300, 16)];
+    [heading setAutoresizingMask:(NSViewWidthSizable | NSViewMinYMargin)];
+    [scroll setFrame:NSMakeRect(0, 0, 300, 300 - 20)];
+    [scroll setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
+    [pane addSubview:heading];
+    [pane addSubview:scroll];
+    return pane;
 }
 
 - (BOOL)isOpaque { return YES; }
@@ -201,23 +258,47 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     [_checkAll setFrame:NSMakeRect(NSMaxX(bounds) - margin - checkWidth,
                                    y + 9 - checkHeight / 2.0, checkWidth, checkHeight)];
 
-    y -= 22;
-    CGFloat halves = (width - 12) / 2.0;
-    [_songsHeading setFrame:NSMakeRect(margin, y, halves, 16)];
-    [_playlistsHeading setFrame:NSMakeRect(margin + halves + 12, y, halves, 16)];
-
     CGFloat footer = 44.0;
     CGFloat listTop = y - 4;
     CGFloat listHeight = listTop - footer;
-    if (listHeight < 40) listHeight = 40;
+    if (listHeight < 60) listHeight = 60;
 
-    [_songsScroll setFrame:NSMakeRect(margin, footer, halves, listHeight)];
-    [_playlistsScroll setFrame:NSMakeRect(margin + halves + 12, footer, halves, listHeight)];
+    NSRect wasSplit = [_panes frame];
+    [_panes setFrame:NSMakeRect(margin, footer, width, listHeight)];
+    // The first time round there is nothing to keep in proportion, so the two
+    // start even.
+    if (NSWidth(wasSplit) < 1.0) {
+        [_panes setPosition:(width - [_panes dividerThickness]) / 2.0 ofDividerAtIndex:0];
+    }
     CGFloat syncWidth = MAX(92.0, NSWidth([_syncButton frame]));
     CGFloat syncHeight = NSHeight([_syncButton frame]);
     [_syncButton setFrame:NSMakeRect(NSMaxX(bounds) - margin - syncWidth,
                                      22.0 - syncHeight / 2.0, syncWidth, syncHeight)];
 
+    [self sizeColumnsOf:_songsTable in:_songsScroll fixedFirst:20.0];
+    [self sizeColumnsOf:_playlistsTable in:_playlistsScroll fixedFirst:20.0];
+}
+
+#pragma mark - The bar between the lists
+
+// Neither list may be squeezed to nothing. Below this a list shows its tick
+// column and little else, which is not a view worth dragging to.
+#define BT_SYNC_SMALLEST_PANE 170.0
+
+- (CGFloat)splitView:(NSSplitView *)splitView
+constrainMinCoordinate:(CGFloat)proposedMin
+         ofSubviewAt:(NSInteger)dividerIndex {
+    return BT_SYNC_SMALLEST_PANE;
+}
+
+- (CGFloat)splitView:(NSSplitView *)splitView
+constrainMaxCoordinate:(CGFloat)proposedMax
+         ofSubviewAt:(NSInteger)dividerIndex {
+    return NSWidth([splitView bounds]) - BT_SYNC_SMALLEST_PANE - [splitView dividerThickness];
+}
+
+// The columns inside each list follow the width the bar was dragged to.
+- (void)splitViewDidResizeSubviews:(NSNotification *)note {
     [self sizeColumnsOf:_songsTable in:_songsScroll fixedFirst:20.0];
     [self sizeColumnsOf:_playlistsTable in:_playlistsScroll fixedFirst:20.0];
 }
