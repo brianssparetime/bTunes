@@ -17,6 +17,52 @@ static NSString *const BTTrackPasteboardType = @"com.btunes.tracks";
 static NSString *const BTPlaylistPasteboardType = @"com.btunes.playlist";
 static NSString *const BTLibrarySource = @"Library";
 
+// Column widths and their arrangement are left to the table, which saves them
+// under this name. Which columns are shown is kept separately, because the #
+// column is decided by the source rather than by preference and must not be
+// restored over that decision.
+static NSString *const BTColumnsAutosaveName = @"BTunesTrackColumns";
+static NSString *const BTHiddenColumnsKey = @"BTHiddenColumns";
+
+static NSString *BTStringOrEmpty(NSString *value) {
+    return value ? value : @"";
+}
+
+static double BTTimeOrZero(NSDate *date) {
+    return date ? [date timeIntervalSince1970] : 0.0;
+}
+
+static NSComparisonResult BTCompareNumbers(double a, double b) {
+    return (a < b) ? NSOrderedAscending : (a > b) ? NSOrderedDescending : NSOrderedSame;
+}
+
+static NSString *BTSizeString(long long bytes) {
+    double megabytes = (double)bytes / (1024.0 * 1024.0);
+    if (megabytes >= 1024.0) return [NSString stringWithFormat:@"%.2f GB", megabytes / 1024.0];
+    return [NSString stringWithFormat:@"%.1f MB", megabytes];
+}
+
+static NSString *BTShortDateString(NSDate *date) {
+    if (date == nil) return @"";
+    static NSDateFormatter *formatter = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        formatter = [[NSDateFormatter alloc] init];
+        [formatter setDateStyle:NSDateFormatterShortStyle];
+        [formatter setTimeStyle:NSDateFormatterNoStyle];
+    });
+    return [formatter stringFromDate:date];
+}
+
+// Filled stars, the way a rating was shown in 2003.
+static NSString *BTStarsString(NSInteger rating) {
+    if (rating <= 0) return @"";
+    NSMutableString *stars = [NSMutableString string];
+    NSInteger i;
+    for (i = 0; i < rating && i < 5; i++) [stars appendString:@"★"];
+    return stars;
+}
+
 // The source list holds three kinds of row: the library, an attached iPod, and
 // playlists. Anything reaching for a playlist's own members has to ask first,
 // because the other two answer none of them and a bare cast crashes on the
@@ -600,6 +646,14 @@ static CGFloat BTTitleBarHeight(void) {
     [_trackTable setDraggingSourceOperationMask:(NSDragOperationCopy | NSDragOperationMove)
                                        forLocal:YES];
     [_trackTable registerForDraggedTypes:@[BTTrackPasteboardType]];
+
+    // Widths and arrangement are the table's own business to remember. Which
+    // columns are shown is kept separately, so restoring it cannot argue with
+    // the # column, whose presence follows the source.
+    [_trackTable setAutosaveName:BTColumnsAutosaveName];
+    [_trackTable setAutosaveTableColumns:YES];
+    [self restoreColumnVisibility];
+    [[_trackTable headerView] setMenu:[self buildColumnMenu]];
     [trackScroll setDocumentView:_trackTable];
     [_innerSplit addSubview:trackScroll];
 
@@ -618,18 +672,30 @@ static CGFloat BTTitleBarHeight(void) {
 // width the columns have been dragged to, which rebuilding them on every change
 // of source would throw away.
 //
-// identifier, heading, width, smallest, largest
+// identifier, heading, width, smallest, largest, shown to begin with
 - (void)addTrackColumns {
-    NSArray *specs = @[@[@"order",     @"#",          @38,  @30,  @54],
-                       @[@"track",     @"Track",      @46,  @38,  @62],
-                       @[@"title",     @"Song Name",  @240, @80,  @900],
-                       @[@"time",      @"Time",       @52,  @44,  @72],
-                       @[@"artist",    @"Artist",     @160, @70,  @600],
-                       @[@"album",     @"Album",      @160, @70,  @600],
-                       @[@"genre",     @"Genre",      @110, @60,  @400],
-                       @[@"playCount", @"Play Count", @80,  @66,  @110]];
+    NSArray *specs = @[@[@"order",       @"#",            @38,  @30,  @54,  @YES],
+                       @[@"title",       @"Song Name",    @240, @80,  @900, @YES],
+                       @[@"time",        @"Time",         @52,  @44,  @72,  @YES],
+                       @[@"artist",      @"Artist",       @160, @70,  @600, @YES],
+                       @[@"albumArtist", @"Album Artist", @160, @70,  @600, @NO],
+                       @[@"album",       @"Album",        @160, @70,  @600, @YES],
+                       @[@"genre",       @"Genre",        @110, @60,  @400, @YES],
+                       @[@"composer",    @"Composer",     @140, @70,  @500, @NO],
+                       @[@"year",        @"Year",         @54,  @46,  @80,  @NO],
+                       @[@"kind",        @"Kind",         @120, @60,  @300, @NO],
+                       @[@"disc",        @"Disc",         @46,  @38,  @70,  @NO],
+                       @[@"rating",      @"My Rating",    @84,  @60,  @120, @NO],
+                       @[@"playCount",   @"Play Count",   @80,  @66,  @110, @YES],
+                       @[@"lastPlayed",  @"Last Played",  @110, @80,  @180, @NO],
+                       @[@"dateAdded",   @"Date Added",   @110, @80,  @180, @NO],
+                       @[@"size",        @"Size",         @70,  @56,  @100, @NO],
+                       // Last on purpose. It can be dragged anywhere and stays
+                       // where it is put; this is only where it starts.
+                       @[@"track",       @"Track",        @46,  @38,  @62,  @YES]];
 
-    NSArray *numeric = @[@"order", @"track", @"time", @"playCount"];
+    NSArray *numeric = @[@"order", @"track", @"time", @"playCount",
+                         @"year", @"disc", @"size"];
     NSUInteger i;
     for (i = 0; i < [specs count]; i++) {
         NSArray *spec = [specs objectAtIndex:i];
@@ -641,6 +707,7 @@ static CGFloat BTTitleBarHeight(void) {
         [column setWidth:[[spec objectAtIndex:2] doubleValue]];
         [column setMinWidth:[[spec objectAtIndex:3] doubleValue]];
         [column setMaxWidth:[[spec objectAtIndex:4] doubleValue]];
+        [column setHidden:![[spec objectAtIndex:5] boolValue]];
         [column setEditable:NO];
 
         // The two numbers carry the speaker for the row that is playing, so
@@ -664,18 +731,74 @@ static CGFloat BTTitleBarHeight(void) {
     }
 }
 
-// The track number sits at the far end everywhere. It is a fact about the song
-// rather than about the list, so it stays out of the way of the reading order.
-// A playlist adds its own numbering at the near end; nothing else has one.
+// The # column belongs to a playlist and nothing else has one, so the source
+// decides whether it is there. Every other column is the reader's business:
+// where it sits, how wide it is, and whether it is shown at all are left alone
+// here, or dragging a column somewhere would only have it snap back.
 - (void)updateColumnLayout {
     NSTableColumn *order = [_trackTable tableColumnWithIdentifier:@"order"];
-    if (order == nil) return;
-
     [order setHidden:!_showsPlaylistOrder];
+}
 
-    NSInteger last = (NSInteger)[[_trackTable tableColumns] count] - 1;
-    NSInteger current = [_trackTable columnWithIdentifier:@"track"];
-    if (current >= 0 && current != last) [_trackTable moveColumn:current toColumn:last];
+#pragma mark - Choosing columns
+
+// Song Name is not offered, since a list of songs with no names is not a view
+// anyone wants. The # column is not offered either, because the source decides
+// it rather than the reader.
+- (BOOL)columnCanBeHidden:(NSTableColumn *)column {
+    NSString *identifier = [column identifier];
+    return !([identifier isEqualToString:@"title"] || [identifier isEqualToString:@"order"]);
+}
+
+- (NSMenu *)buildColumnMenu {
+    NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Columns"];
+    NSArray *columns = [_trackTable tableColumns];
+    NSUInteger i;
+    for (i = 0; i < [columns count]; i++) {
+        NSTableColumn *column = [columns objectAtIndex:i];
+        if (![self columnCanBeHidden:column]) continue;
+
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:[[column headerCell] stringValue]
+                                                      action:@selector(toggleColumn:)
+                                               keyEquivalent:@""];
+        [item setTarget:self];
+        [item setRepresentedObject:column];
+        [menu addItem:item];
+    }
+    return menu;
+}
+
+- (void)toggleColumn:(NSMenuItem *)sender {
+    NSTableColumn *column = [sender representedObject];
+    [column setHidden:![column isHidden]];
+    [self saveColumnVisibility];
+    [_trackTable sizeToFit];
+}
+
+- (void)saveColumnVisibility {
+    NSMutableArray *hidden = [NSMutableArray array];
+    NSArray *columns = [_trackTable tableColumns];
+    NSUInteger i;
+    for (i = 0; i < [columns count]; i++) {
+        NSTableColumn *column = [columns objectAtIndex:i];
+        if ([self columnCanBeHidden:column] && [column isHidden]) {
+            [hidden addObject:[column identifier]];
+        }
+    }
+    [[NSUserDefaults standardUserDefaults] setObject:hidden forKey:BTHiddenColumnsKey];
+}
+
+- (void)restoreColumnVisibility {
+    NSArray *hidden = [[NSUserDefaults standardUserDefaults] arrayForKey:BTHiddenColumnsKey];
+    if (hidden == nil) return;   // never chosen, so the starting set stands
+
+    NSArray *columns = [_trackTable tableColumns];
+    NSUInteger i;
+    for (i = 0; i < [columns count]; i++) {
+        NSTableColumn *column = [columns objectAtIndex:i];
+        if (![self columnCanBeHidden:column]) continue;
+        [column setHidden:[hidden containsObject:[column identifier]]];
+    }
 }
 
 - (void)buildBottomBar {
@@ -944,51 +1067,59 @@ static CGFloat BTTitleBarHeight(void) {
     NSString *key = _sortColumn;
     if (key == nil) return tracks;   // the source's own order
     BOOL ascending = _sortAscending;
+    NSDictionary *order = _sourceOrder;
+
     return [tracks sortedArrayUsingComparator:^NSComparisonResult(id a, id b) {
         BTTrack *left = a, *right = b;
         NSComparisonResult result = NSOrderedSame;
 
         if ([key isEqualToString:@"order"]) {
             // The playlist's own order, which is the order it was built in.
-            NSInteger l = [[self->_sourceOrder objectForKey:left.trackID] integerValue];
-            NSInteger r = [[self->_sourceOrder objectForKey:right.trackID] integerValue];
-            result = (l < r) ? NSOrderedAscending : (l > r) ? NSOrderedDescending : NSOrderedSame;
+            result = BTCompareNumbers([[order objectForKey:left.trackID] doubleValue],
+                                      [[order objectForKey:right.trackID] doubleValue]);
         } else if ([key isEqualToString:@"track"]) {
-            // Sorting by number only makes sense within an album, so keep
-            // albums together and order by disc and track inside them.
+            // A track number only means something within an album, so albums
+            // stay together and disc and track order the songs inside them.
             result = [[left displayAlbum] caseInsensitiveCompare:[right displayAlbum]];
-            if (result == NSOrderedSame) {
-                result = (left.discNumber < right.discNumber) ? NSOrderedAscending
-                       : (left.discNumber > right.discNumber) ? NSOrderedDescending : NSOrderedSame;
-            }
-            if (result == NSOrderedSame) {
-                result = (left.trackNumber < right.trackNumber) ? NSOrderedAscending
-                       : (left.trackNumber > right.trackNumber) ? NSOrderedDescending : NSOrderedSame;
-            }
+            if (result == NSOrderedSame) result = BTCompareNumbers(left.discNumber, right.discNumber);
+            if (result == NSOrderedSame) result = BTCompareNumbers(left.trackNumber, right.trackNumber);
         } else if ([key isEqualToString:@"title"]) {
             result = [[left displayTitle] caseInsensitiveCompare:[right displayTitle]];
         } else if ([key isEqualToString:@"album"]) {
             result = [[left displayAlbum] caseInsensitiveCompare:[right displayAlbum]];
-            if (result == NSOrderedSame) {
-                result = (left.trackNumber < right.trackNumber) ? NSOrderedAscending
-                       : (left.trackNumber > right.trackNumber) ? NSOrderedDescending : NSOrderedSame;
-            }
+            if (result == NSOrderedSame) result = BTCompareNumbers(left.discNumber, right.discNumber);
+            if (result == NSOrderedSame) result = BTCompareNumbers(left.trackNumber, right.trackNumber);
         } else if ([key isEqualToString:@"genre"]) {
             result = [[left displayGenre] caseInsensitiveCompare:[right displayGenre]];
+        } else if ([key isEqualToString:@"albumArtist"]) {
+            result = [BTStringOrEmpty(left.albumArtist) caseInsensitiveCompare:BTStringOrEmpty(right.albumArtist)];
+        } else if ([key isEqualToString:@"composer"]) {
+            result = [BTStringOrEmpty(left.composer) caseInsensitiveCompare:BTStringOrEmpty(right.composer)];
+        } else if ([key isEqualToString:@"kind"]) {
+            result = [BTStringOrEmpty(left.kind) caseInsensitiveCompare:BTStringOrEmpty(right.kind)];
         } else if ([key isEqualToString:@"time"]) {
-            result = (left.duration < right.duration) ? NSOrderedAscending
-                   : (left.duration > right.duration) ? NSOrderedDescending : NSOrderedSame;
+            result = BTCompareNumbers(left.duration, right.duration);
         } else if ([key isEqualToString:@"playCount"]) {
-            result = (left.playCount < right.playCount) ? NSOrderedAscending
-                   : (left.playCount > right.playCount) ? NSOrderedDescending : NSOrderedSame;
+            result = BTCompareNumbers(left.playCount, right.playCount);
+        } else if ([key isEqualToString:@"year"]) {
+            result = BTCompareNumbers(left.year, right.year);
+        } else if ([key isEqualToString:@"disc"]) {
+            result = BTCompareNumbers(left.discNumber, right.discNumber);
+        } else if ([key isEqualToString:@"rating"]) {
+            result = BTCompareNumbers(left.rating, right.rating);
+        } else if ([key isEqualToString:@"size"]) {
+            result = BTCompareNumbers((double)left.fileSize, (double)right.fileSize);
+        } else if ([key isEqualToString:@"dateAdded"]) {
+            // Never played and never added sort together at the bottom rather
+            // than landing in 1970.
+            result = BTCompareNumbers(BTTimeOrZero(left.dateAdded), BTTimeOrZero(right.dateAdded));
+        } else if ([key isEqualToString:@"lastPlayed"]) {
+            result = BTCompareNumbers(BTTimeOrZero(left.lastPlayed), BTTimeOrZero(right.lastPlayed));
         } else {
             // Artist, then album, then track number: the order iTunes falls back to.
             result = [[left displayArtist] caseInsensitiveCompare:[right displayArtist]];
             if (result == NSOrderedSame) result = [[left displayAlbum] caseInsensitiveCompare:[right displayAlbum]];
-            if (result == NSOrderedSame) {
-                result = (left.trackNumber < right.trackNumber) ? NSOrderedAscending
-                       : (left.trackNumber > right.trackNumber) ? NSOrderedDescending : NSOrderedSame;
-            }
+            if (result == NSOrderedSame) result = BTCompareNumbers(left.trackNumber, right.trackNumber);
         }
 
         if (result == NSOrderedSame) result = [[left displayTitle] caseInsensitiveCompare:[right displayTitle]];
@@ -1145,20 +1276,12 @@ static CGFloat BTTitleBarHeight(void) {
         bytes += t.fileSize;
     }
 
-    NSString *sizeText;
-    double megabytes = (double)bytes / (1024.0 * 1024.0);
-    if (megabytes >= 1024.0) {
-        sizeText = [NSString stringWithFormat:@"%.2f GB", megabytes / 1024.0];
-    } else {
-        sizeText = [NSString stringWithFormat:@"%.1f MB", megabytes];
-    }
-
     NSUInteger count = [_visibleTracks count];
     _bottomBar.statusText = [NSString stringWithFormat:@"%lu song%@, %@, %@",
                              (unsigned long)count,
                              (count == 1 ? @"" : @"s"),
                              [BTStyle longTimeStringFromInterval:total],
-                             sizeText];
+                             BTSizeString(bytes)];
     [_bottomBar setNeedsDisplay:YES];
 }
 
@@ -1383,6 +1506,21 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     if ([identifier isEqualToString:@"artist"]) return [track displayArtist];
     if ([identifier isEqualToString:@"album"]) return [track displayAlbum];
     if ([identifier isEqualToString:@"genre"]) return (track.genre ? track.genre : @"");
+    if ([identifier isEqualToString:@"albumArtist"]) return (track.albumArtist ? track.albumArtist : @"");
+    if ([identifier isEqualToString:@"composer"]) return (track.composer ? track.composer : @"");
+    if ([identifier isEqualToString:@"kind"]) return (track.kind ? track.kind : @"");
+    if ([identifier isEqualToString:@"rating"]) return BTStarsString(track.rating);
+    if ([identifier isEqualToString:@"lastPlayed"]) return BTShortDateString(track.lastPlayed);
+    if ([identifier isEqualToString:@"dateAdded"]) return BTShortDateString(track.dateAdded);
+    if ([identifier isEqualToString:@"size"]) {
+        return track.fileSize > 0 ? BTSizeString(track.fileSize) : @"";
+    }
+    if ([identifier isEqualToString:@"year"]) {
+        return track.year > 0 ? [NSString stringWithFormat:@"%ld", (long)track.year] : @"";
+    }
+    if ([identifier isEqualToString:@"disc"]) {
+        return track.discNumber > 0 ? [NSString stringWithFormat:@"%ld", (long)track.discNumber] : @"";
+    }
     if ([identifier isEqualToString:@"playCount"]) {
         return track.playCount > 0 ? [NSString stringWithFormat:@"%ld", (long)track.playCount] : @"";
     }
@@ -1983,6 +2121,13 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     if (action == @selector(redo:)) {
         [item setTitle:[[self undoManager] redoMenuItemTitle]];
         return [[self undoManager] canRedo];
+    }
+    // The tick is set as the menu opens rather than kept in step by hand, so it
+    // cannot drift from the column it describes.
+    if (action == @selector(toggleColumn:)) {
+        NSTableColumn *column = [item representedObject];
+        [item setState:([column isHidden] ? NSOffState : NSOnState)];
+        return YES;
     }
     return YES;
 }
