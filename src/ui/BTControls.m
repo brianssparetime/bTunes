@@ -388,7 +388,58 @@ void BTWatchListFocus(NSView *list) {
                name:NSWindowDidResignKeyNotification object:[list window]];
 }
 
+BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list) {
+    NSString *characters = [event charactersIgnoringModifiers];
+    if ([characters length] == 0) return NO;
+
+    unichar key = [characters characterAtIndex:0];
+    if (key != NSDeleteCharacter && key != NSBackspaceCharacter &&
+        key != NSDeleteFunctionKey) {
+        return NO;
+    }
+
+    id delegate = [list delegate];
+    if (![delegate respondsToSelector:@selector(tableViewDeletePressed:)]) return NO;
+    [delegate performSelector:@selector(tableViewDeletePressed:) withObject:list];
+    return YES;
+}
+
+// A table and an outline view have no common ancestor of ours, so these two are
+// siblings and each hooks up the shared behaviour itself. Every method here is
+// one line calling a function above, which is where the behaviour actually
+// lives; what cannot be shared is the hooking up. The two must stay in step,
+// and they are kept side by side so that is easy to see.
+
 @implementation BTListTableView
+
+- (void)highlightSelectionInClipRect:(NSRect)clipRect {
+    BTDrawListSelection(self, clipRect);
+}
+
+- (BOOL)becomeFirstResponder {
+    BOOL became = [super becomeFirstResponder];
+    if (became) BTNoteListFocusChanged();
+    return became;
+}
+
+- (BOOL)resignFirstResponder {
+    BOOL resigned = [super resignFirstResponder];
+    if (resigned) BTNoteListFocusChanged();
+    return resigned;
+}
+
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    BTWatchListFocus(self);
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+@end
+
+@implementation BTListOutlineView
 
 - (void)highlightSelectionInClipRect:(NSRect)clipRect {
     BTDrawListSelection(self, clipRect);

@@ -88,9 +88,21 @@ void BTNoteListFocusChanged(void);
 - (void)btListFocusChanged:(NSNotification *)note;
 @end
 
+// The delete key, shared the same way and for the same reason as the transport
+// keys. A list that wants it tells its delegate through tableViewDeletePressed:,
+// which is how both lists in the main window ask to have a row removed. Returns
+// YES when the key was claimed.
+BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list);
+
 // A list that draws its own selection, so every pane highlights the same colour
 // instead of the focused one being blue and the rest gray.
 @interface BTListTableView : NSTableView
+@end
+
+// The same, for an outline view, which cannot inherit the table subclass. Every
+// list in the application is one of these two, so a list that is neither draws
+// the system's own blue and is the one pane that does not match.
+@interface BTListOutlineView : NSOutlineView
 @end
 
 // A tick box drawn in the window's own colour. The system draws its checkboxes

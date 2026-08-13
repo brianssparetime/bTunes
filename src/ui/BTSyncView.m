@@ -39,7 +39,7 @@
     [_scroll setBorderType:NSBezelBorder];
     [_scroll setFocusRingType:NSFocusRingTypeNone];
 
-    _outline = [[NSOutlineView alloc] initWithFrame:NSZeroRect];
+    _outline = [[BTListOutlineView alloc] initWithFrame:NSZeroRect];
     [_outline setFocusRingType:NSFocusRingTypeNone];
     [_outline setRowHeight:18.0];
     [_outline setIndentationPerLevel:14.0];
@@ -56,7 +56,9 @@
     [_outline setOutlineTableColumn:nameColumn];
 
     NSTableColumn *checkColumn = [[NSTableColumn alloc] initWithIdentifier:@"check"];
-    NSButtonCell *checkCell = [[NSButtonCell alloc] init];
+    // The window's own tick rather than the system's, which is drawn blue
+    // whatever else has been asked for.
+    NSButtonCell *checkCell = [[BTCheckboxCell alloc] init];
     [checkCell setButtonType:NSSwitchButton];
     [checkCell setAllowsMixedState:YES];
     [checkCell setTitle:@""];

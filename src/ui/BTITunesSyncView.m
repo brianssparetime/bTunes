@@ -30,38 +30,10 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
 // The list of playlists. Only here to place the disclosure triangle: AppKit sets
 // it low in the row and hard against the first letter of the name.
-@interface BTSyncOutlineView : NSOutlineView
+@interface BTSyncOutlineView : BTListOutlineView
 @end
 
 @implementation BTSyncOutlineView
-
-// An outline view cannot inherit the table subclass, so the shared fill has to
-// be called by hand. Without it this list alone draws the system's own blue,
-// which is exactly what purple mode cannot reach.
-- (void)highlightSelectionInClipRect:(NSRect)clipRect {
-    BTDrawListSelection(self, clipRect);
-}
-
-- (BOOL)becomeFirstResponder {
-    BOOL became = [super becomeFirstResponder];
-    if (became) BTNoteListFocusChanged();
-    return became;
-}
-
-- (BOOL)resignFirstResponder {
-    BOOL resigned = [super resignFirstResponder];
-    if (resigned) BTNoteListFocusChanged();
-    return resigned;
-}
-
-- (void)viewDidMoveToWindow {
-    [super viewDidMoveToWindow];
-    BTWatchListFocus(self);
-}
-
-- (void)dealloc {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
 
 - (NSRect)frameOfOutlineCellAtRow:(NSInteger)row {
     NSRect frame = [super frameOfOutlineCellAtRow:row];
@@ -235,21 +207,20 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 // finding its scroll view again only works while something else is holding the
 // scroll view up; nothing was, so it went as soon as this returned and the list
 // never appeared.
-- (NSScrollView *)listWithColumns:(NSArray *)specs {
-    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
-    [scroll setHasVerticalScroller:YES];
-    [scroll setAutohidesScrollers:YES];
-    [scroll setBorderType:NSBezelBorder];
-    [scroll setFocusRingType:NSFocusRingTypeNone];
-
-    NSTableView *table = [[BTListTableView alloc] initWithFrame:NSZeroRect];
-    [table setFocusRingType:NSFocusRingTypeNone];
-    [table setRowHeight:17.0];
-    [table setUsesAlternatingRowBackgroundColors:YES];
-    [table setAllowsMultipleSelection:NO];
-    [table setAllowsColumnSelection:NO];
-    [table setDataSource:self];
-    [table setDelegate:self];
+// A list in a bordered scroll view, with its columns. The two lists differ in
+// almost nothing, so the difference is the argument: the caller makes the list
+// it wants and this does the rest.
+//
+// identifier, heading, width. A column called "check" gets a tick box and can be
+// edited; every other column shows words and cannot.
+- (NSScrollView *)scrollHolding:(NSTableView *)list columns:(NSArray *)specs {
+    [list setFocusRingType:NSFocusRingTypeNone];
+    [list setRowHeight:17.0];
+    [list setUsesAlternatingRowBackgroundColors:YES];
+    [list setAllowsMultipleSelection:NO];
+    [list setAllowsColumnSelection:NO];
+    [list setDataSource:self];
+    [list setDelegate:self];
 
     NSUInteger i;
     for (i = 0; i < [specs count]; i++) {
@@ -275,65 +246,28 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
             [column setDataCell:cell];
             [column setEditable:NO];
         }
-        [table addTableColumn:column];
+        [list addTableColumn:column];
     }
 
-    [scroll setDocumentView:table];
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    [scroll setHasVerticalScroller:YES];
+    [scroll setAutohidesScrollers:YES];
+    [scroll setBorderType:NSBezelBorder];
+    [scroll setFocusRingType:NSFocusRingTypeNone];
+    [scroll setDocumentView:list];
     return scroll;
 }
 
-// The same columns as a plain list, but the name column carries the disclosure
-// triangle and indents, while the tick stays at the near edge whatever depth a
-// playlist sits at. That is how a device sync pane is arranged and it reads the
-// same way here.
+- (NSScrollView *)listWithColumns:(NSArray *)specs {
+    return [self scrollHolding:[[BTListTableView alloc] initWithFrame:NSZeroRect]
+                       columns:specs];
+}
+
 - (NSScrollView *)outlineWithColumns:(NSArray *)specs {
-    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
-    [scroll setHasVerticalScroller:YES];
-    [scroll setAutohidesScrollers:YES];
-    [scroll setBorderType:NSBezelBorder];
-    [scroll setFocusRingType:NSFocusRingTypeNone];
-
-    NSOutlineView *outline = [[BTSyncOutlineView alloc] initWithFrame:NSZeroRect];
-    [outline setFocusRingType:NSFocusRingTypeNone];
-    [outline setRowHeight:17.0];
-    [outline setUsesAlternatingRowBackgroundColors:YES];
-    [outline setAllowsMultipleSelection:NO];
-    [outline setAllowsColumnSelection:NO];
+    BTSyncOutlineView *outline = [[BTSyncOutlineView alloc] initWithFrame:NSZeroRect];
     [outline setIndentationPerLevel:14.0];
-    [outline setDataSource:self];
-    [outline setDelegate:self];
-
-    NSTableColumn *nameColumn = nil;
-    NSUInteger i;
-    for (i = 0; i < [specs count]; i++) {
-        NSArray *spec = [specs objectAtIndex:i];
-        NSString *identifier = [spec objectAtIndex:0];
-        NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:identifier];
-        [[column headerCell] setStringValue:[spec objectAtIndex:1]];
-        [[column headerCell] setFont:[BTStyle uiFont]];
-        [column setWidth:[[spec objectAtIndex:2] doubleValue]];
-
-        if ([identifier isEqualToString:@"check"]) {
-            NSButtonCell *cell = [[BTCheckboxCell alloc] init];
-            [cell setButtonType:NSSwitchButton];
-            [cell setAllowsMixedState:YES];
-            [cell setTitle:@""];
-            [cell setControlSize:NSSmallControlSize];
-            [column setDataCell:cell];
-            [column setEditable:YES];
-        } else {
-            NSTextFieldCell *cell = [[NSTextFieldCell alloc] init];
-            [cell setFont:[BTStyle uiFont]];
-            [cell setLineBreakMode:NSLineBreakByTruncatingTail];
-            [column setDataCell:cell];
-            [column setEditable:NO];
-        }
-        if ([identifier isEqualToString:@"name"]) nameColumn = column;
-        [outline addTableColumn:column];
-    }
-    [outline setOutlineTableColumn:nameColumn];
-
-    [scroll setDocumentView:outline];
+    NSScrollView *scroll = [self scrollHolding:outline columns:specs];
+    [outline setOutlineTableColumn:[outline tableColumnWithIdentifier:@"name"]];
     return scroll;
 }
 

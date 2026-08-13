@@ -252,51 +252,16 @@ static CGFloat BTTitleBarHeight(void) {
 
 @implementation BTKeyTableView
 - (void)keyDown:(NSEvent *)event {
-    unichar key = [[event charactersIgnoringModifiers] length] > 0
-        ? [[event charactersIgnoringModifiers] characterAtIndex:0] : 0;
-    if (key == NSDeleteCharacter || key == NSBackspaceCharacter || key == NSDeleteFunctionKey) {
-        id delegate = [self delegate];
-        if ([delegate respondsToSelector:@selector(tableViewDeletePressed:)]) {
-            [delegate performSelector:@selector(tableViewDeletePressed:) withObject:self];
-            return;
-        }
-    }
+    if (BTHandleDeleteKey(event, self)) return;
     if (BTHandleTransportKey(event, self, NO)) return;
     [super keyDown:event];
 }
 @end
 
-@interface BTKeyOutlineView : NSOutlineView
+@interface BTKeyOutlineView : BTListOutlineView
 @end
 
 @implementation BTKeyOutlineView
-
-// The one list in the window that is not a table, and so the one that was still
-// filling its rows with the system's own blue while everything else had turned.
-- (void)highlightSelectionInClipRect:(NSRect)clipRect {
-    BTDrawListSelection(self, clipRect);
-}
-
-- (BOOL)becomeFirstResponder {
-    BOOL became = [super becomeFirstResponder];
-    if (became) BTNoteListFocusChanged();
-    return became;
-}
-
-- (BOOL)resignFirstResponder {
-    BOOL resigned = [super resignFirstResponder];
-    if (resigned) BTNoteListFocusChanged();
-    return resigned;
-}
-
-- (void)viewDidMoveToWindow {
-    [super viewDidMoveToWindow];
-    BTWatchListFocus(self);
-}
-
-- (void)dealloc {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
 
 // A click on the eject mark ejects rather than selecting the row.
 - (void)mouseDown:(NSEvent *)event {
@@ -316,15 +281,10 @@ static CGFloat BTTitleBarHeight(void) {
 }
 
 - (void)keyDown:(NSEvent *)event {
+    if (BTHandleDeleteKey(event, self)) return;
+
     unichar key = [[event charactersIgnoringModifiers] length] > 0
         ? [[event charactersIgnoringModifiers] characterAtIndex:0] : 0;
-    if (key == NSDeleteCharacter || key == NSBackspaceCharacter || key == NSDeleteFunctionKey) {
-        id delegate = [self delegate];
-        if ([delegate respondsToSelector:@selector(tableViewDeletePressed:)]) {
-            [delegate performSelector:@selector(tableViewDeletePressed:) withObject:self];
-            return;
-        }
-    }
 
     // On a folder, the arrows open and close it. Everywhere else in this list
     // they skip tracks, which is what they do in the rest of the window.
