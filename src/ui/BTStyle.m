@@ -385,6 +385,53 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
     [triangle fill];
 }
 
++ (void)drawSyncGlyphInRect:(NSRect)rect color:(NSColor *)color {
+    // Two arcs on the same circle, half a turn apart, each ending in a head. A
+    // full ring with heads stuck on reads as a clock; leaving a gap at each end
+    // is what makes it read as two arrows going round.
+    CGFloat side = MIN(NSWidth(rect), NSHeight(rect));
+    CGFloat radius = side * 0.30;
+    NSPoint centre = NSMakePoint(NSMidX(rect), NSMidY(rect));
+    if (radius < 2.0) return;
+
+    [color set];
+    CGFloat headLength = radius * 0.85;
+    CGFloat headHalf = radius * 0.46;
+
+    NSInteger half;
+    for (half = 0; half < 2; half++) {
+        CGFloat turn = half * 180.0;
+
+        NSBezierPath *arc = [NSBezierPath bezierPath];
+        [arc setLineWidth:MAX(1.2, side * 0.10)];
+        [arc setLineCapStyle:NSRoundLineCapStyle];
+        [arc appendBezierPathWithArcWithCenter:centre
+                                        radius:radius
+                                    startAngle:(turn + 20.0)
+                                      endAngle:(turn + 150.0)];
+        [arc stroke];
+
+        // The head sits at the leading end of its arc, pointing the way round.
+        CGFloat radians = (turn + 150.0) * M_PI / 180.0;
+        NSPoint tip = NSMakePoint(centre.x + cos(radians) * radius,
+                                  centre.y + sin(radians) * radius);
+        NSPoint along = NSMakePoint(-sin(radians), cos(radians));   // the tangent
+        NSPoint across = NSMakePoint(cos(radians), sin(radians));
+
+        NSPoint point = NSMakePoint(tip.x + along.x * headLength * 0.5,
+                                    tip.y + along.y * headLength * 0.5);
+        NSPoint back = NSMakePoint(tip.x - along.x * headLength * 0.5,
+                                   tip.y - along.y * headLength * 0.5);
+
+        NSBezierPath *head = [NSBezierPath bezierPath];
+        [head moveToPoint:point];
+        [head lineToPoint:NSMakePoint(back.x + across.x * headHalf, back.y + across.y * headHalf)];
+        [head lineToPoint:NSMakePoint(back.x - across.x * headHalf, back.y - across.y * headHalf)];
+        [head closePath];
+        [head fill];
+    }
+}
+
 + (void)drawShrinkGlyphInRect:(NSRect)rect color:(NSColor *)color {
     // Two arrows meeting in the middle, each with a solid head. Four thin
     // barbed arrows read as an X at this size, and the barbs vanish.

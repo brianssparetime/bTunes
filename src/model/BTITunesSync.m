@@ -2,6 +2,7 @@
 #import "BTLibrary.h"
 #import "BTTrack.h"
 #import "BTPlaylist.h"
+#import "BTITunesImport.h"
 
 @implementation BTITunesSyncTrack
 - (BOOL)eligible {
@@ -177,6 +178,7 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
         incoming.title = BTStringFrom(entry, @"Name");
         incoming.artist = BTStringFrom(entry, @"Artist");
         incoming.album = BTStringFrom(entry, @"Album");
+        incoming.entry = entry;
         incoming.alreadyHere = here;
         // A song already here is not asked about again, whatever else is true
         // of it, so the reason it could not come across is not worked out.
@@ -362,6 +364,121 @@ static BTITunesBlock BTBlockForEntry(NSDictionary *entry, NSString *path, NSFile
         if (persistent) [held addObject:persistent];
     }
     return held;
+}
+
+#pragma mark - Bringing it across
+
+- (NSDictionary *)importInto:(BTLibrary *)library
+                 chosenSongs:(NSSet *)songIDs
+             chosenPlaylists:(NSSet *)playlistIDs {
+    NSUInteger i, j, songsAdded = 0, playlistsAdded = 0, playlistsGrown = 0;
+
+    // Every song that is coming, made once and remembered by its iTunes id, so
+    // a song in three chosen playlists is imported once and joins all three.
+    NSMutableDictionary *importedByITunesID = [NSMutableDictionary dictionary];
+    for (i = 0; i < [_incomingTracks count]; i++) {
+        BTITunesSyncTrack *incoming = [_incomingTracks objectAtIndex:i];
+        if (![incoming eligible]) continue;
+        if (![songIDs containsObject:incoming.persistentID]) continue;
+
+        // The same reading of an entry the one-shot import uses, so both ways
+        // of bringing music over agree about what a song's fields are.
+        BTTrack *track = [library trackFromITunesEntry:incoming.entry protected:NULL];
+        if (track == nil) continue;
+        [library.tracks addObject:track];
+        [importedByITunesID setObject:track forKey:incoming.persistentID];
+        songsAdded++;
+    }
+
+    // Songs already here, so a chosen playlist can hold them alongside the new
+    // ones rather than arriving half empty.
+    NSMutableDictionary *heldByITunesID = [NSMutableDictionary dictionary];
+    for (i = 0; i < [library.tracks count]; i++) {
+        BTTrack *track = [library.tracks objectAtIndex:i];
+        if ([track.persistentID length] > 0) {
+            [heldByITunesID setObject:track forKey:track.persistentID];
+        }
+    }
+
+    for (i = 0; i < [_playlists count]; i++) {
+        BTITunesSyncPlaylist *incoming = [_playlists objectAtIndex:i];
+        if (![incoming eligible]) continue;
+        if (![playlistIDs containsObject:incoming.persistentID]) continue;
+
+        // Only the songs that actually came across. One left behind simply is
+        // not in the playlist, and arrives in its place on a later sync.
+        NSMutableArray *joining = [NSMutableArray array];
+        for (j = 0; j < [incoming.incomingTrackIDs count]; j++) {
+            NSString *persistent = [incoming.incomingTrackIDs objectAtIndex:j];
+            BTTrack *track = [heldByITunesID objectForKey:persistent];
+            if (track && ![joining containsObject:track.trackID]) [joining addObject:track.trackID];
+        }
+        if ([joining count] == 0) continue;
+
+        BTPlaylist *existing = [self playlistIn:library
+                                   matchingName:incoming.name
+                                         source:incoming.persistentID];
+        if (existing) {
+            // At the end, so an arrangement made by hand is left alone.
+            for (j = 0; j < [joining count]; j++) {
+                NSString *trackID = [joining objectAtIndex:j];
+                if (![existing.trackIDs containsObject:trackID]) [existing.trackIDs addObject:trackID];
+            }
+            if ([existing.sourcePersistentID length] == 0) {
+                existing.sourcePersistentID = incoming.persistentID;
+            }
+            playlistsGrown++;
+            continue;
+        }
+
+        BTPlaylist *made = [BTPlaylist playlistWithName:incoming.name kind:BTPlaylistKindStatic];
+        made.sourcePersistentID = incoming.persistentID;
+        [made.trackIDs addObjectsFromArray:joining];
+        [library addPlaylist:made toFolder:[self folderIn:library named:incoming.folderNames]];
+        playlistsAdded++;
+    }
+
+    [library noteChanged];
+    return @{@"songsAdded": @(songsAdded),
+             @"playlistsAdded": @(playlistsAdded),
+             @"playlistsGrown": @(playlistsGrown)};
+}
+
+- (BTPlaylist *)playlistIn:(BTLibrary *)library
+              matchingName:(NSString *)name
+                    source:(NSString *)persistentID {
+    NSMutableDictionary *bySource = [NSMutableDictionary dictionary];
+    NSMutableDictionary *byName = [NSMutableDictionary dictionary];
+    [self collectPlaylists:library.playlists intoBySource:bySource byName:byName];
+
+    BTPlaylist *found = [persistentID length] > 0 ? [bySource objectForKey:persistentID] : nil;
+    return found ? found : [byName objectForKey:[name lowercaseString]];
+}
+
+// The folder a playlist belongs in, made if it is not here yet. Folders already
+// present are joined rather than duplicated.
+- (BTPlaylist *)folderIn:(BTLibrary *)library named:(NSArray *)folderNames {
+    BTPlaylist *parent = nil;
+    NSUInteger i, j;
+    for (i = 0; i < [folderNames count]; i++) {
+        NSString *name = [folderNames objectAtIndex:i];
+        NSArray *siblings = parent ? parent.children : library.playlists;
+
+        BTPlaylist *found = nil;
+        for (j = 0; j < [siblings count] && found == nil; j++) {
+            BTPlaylist *candidate = [siblings objectAtIndex:j];
+            if (candidate.kind == BTPlaylistKindFolder &&
+                [candidate.name caseInsensitiveCompare:name] == NSOrderedSame) {
+                found = candidate;
+            }
+        }
+        if (found == nil) {
+            found = [BTPlaylist playlistWithName:name kind:BTPlaylistKindFolder];
+            [library addPlaylist:found toFolder:parent];
+        }
+        parent = found;
+    }
+    return parent;
 }
 
 #pragma mark - Summary

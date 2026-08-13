@@ -39,6 +39,9 @@ typedef NS_ENUM(NSInteger, BTITunesBlock) {
 @property (nonatomic, assign) BTITunesBlock blocked;
 @property (nonatomic, assign) BOOL excludedBefore;   // left behind in an earlier sync
 @property (nonatomic, assign) BOOL alreadyHere;      // imported by an earlier sync
+// The entry this came from, kept so an import reads every field rather than
+// only the handful shown in the list.
+@property (nonatomic, strong) NSDictionary *entry;
 // Something this sync could actually bring across.
 @property (nonatomic, readonly) BOOL eligible;
 @end
@@ -88,5 +91,15 @@ typedef NS_ENUM(NSInteger, BTITunesPlaylistChange) {
 // "15 new songs to import, 1 new playlist, 2 playlist modifications", counting
 // only what could actually come across.
 - (NSString *)summary;
+
+// Brings the chosen songs and playlists into the library. Both sets hold iTunes
+// persistent ids. Songs are referenced where they already sit; nothing is moved
+// or copied, and nothing is written back to iTunes.
+//
+// A playlist already here grows rather than being replaced, and its new songs
+// join at the end so an arrangement made by hand is never disturbed.
+- (NSDictionary *)importInto:(BTLibrary *)library
+                 chosenSongs:(NSSet *)songIDs
+             chosenPlaylists:(NSSet *)playlistIDs;
 
 @end

@@ -14,6 +14,7 @@ void BTDrawGlyph(BTGlyph glyph, NSRect rect, NSColor *color) {
         case BTGlyphRepeatOne:   [BTStyle drawRepeatGlyphInRect:rect one:YES color:color]; break;
         case BTGlyphShrink:      [BTStyle drawShrinkGlyphInRect:rect color:color]; break;
         case BTGlyphEject:       [BTStyle drawEjectGlyphInRect:rect color:color]; break;
+        case BTGlyphSync:        [BTStyle drawSyncGlyphInRect:rect color:color]; break;
         case BTGlyphStop: {
             // Matched to the play triangle beside it, not to the button.
             CGFloat side = NSHeight(rect) * 0.46;

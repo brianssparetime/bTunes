@@ -59,6 +59,8 @@
 + (void)drawMagnifierGlyphInRect:(NSRect)rect color:(NSColor *)color;
 + (void)drawShrinkGlyphInRect:(NSRect)rect color:(NSColor *)color;
 + (void)drawEjectGlyphInRect:(NSRect)rect color:(NSColor *)color;
+// Two arrows chasing each other round a circle, for bringing music over.
++ (void)drawSyncGlyphInRect:(NSRect)rect color:(NSColor *)color;
 + (void)drawShuffleGlyphInRect:(NSRect)rect color:(NSColor *)color;
 + (void)drawRepeatGlyphInRect:(NSRect)rect one:(BOOL)one color:(NSColor *)color;
 

@@ -1,5 +1,7 @@
 #import "BTLibrary.h"
 
+@class BTTrack;
+
 // Reads an iTunes library XML file and reproduces its tracks, playlists, and
 // folder structure inside BTunes.
 //
@@ -23,5 +25,9 @@
 // "tracksAdded", "tracksSkipped", "protectedTracks", "playlistsAdded",
 // "foldersAdded", "smartAsStatic", and "error".
 - (NSDictionary *)importITunesLibraryAtPath:(NSString *)path trackLimit:(NSInteger)trackLimit;
+
+// One iTunes entry turned into a track. Shared with the sync so that both ways
+// of bringing music over read the same fields the same way.
+- (BTTrack *)trackFromITunesEntry:(NSDictionary *)entry protected:(BOOL *)outProtected;
 
 @end

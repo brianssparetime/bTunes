@@ -14,6 +14,7 @@ typedef NS_ENUM(NSInteger, BTGlyph) {
     BTGlyphStop,
     BTGlyphShrink,
     BTGlyphEject,
+    BTGlyphSync,
     BTGlyphPlus
 };
 
