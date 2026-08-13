@@ -665,12 +665,20 @@ static CGFloat BTTitleBarHeight(void) {
     [_sourceList setDoubleAction:@selector(renameSelectedPlaylist:)];
     [_sourceList registerForDraggedTypes:@[BTTrackPasteboardType, BTPlaylistPasteboardType]];
 
+    // Making a playlist is the thing this pane is for, so it is offered where
+    // the pane is, empty space included, rather than only from the File menu.
     NSMenu *sourceMenu = [[NSMenu alloc] initWithTitle:@"Source"];
-    NSMenuItem *editRules = [[NSMenuItem alloc] initWithTitle:@"Edit Smart Playlist..."
-                                                        action:@selector(editSmartPlaylist:)
-                                                 keyEquivalent:@""];
-    [editRules setTarget:self];
-    [sourceMenu addItem:editRules];
+    [sourceMenu addItem:[self sourceItemTitled:@"New Playlist" action:@selector(newPlaylist:)]];
+    [sourceMenu addItem:[self sourceItemTitled:@"New Smart Playlist..."
+                                        action:@selector(newSmartPlaylist:)]];
+    [sourceMenu addItem:[self sourceItemTitled:@"New Playlist Folder"
+                                        action:@selector(newPlaylistFolder:)]];
+    [sourceMenu addItem:[NSMenuItem separatorItem]];
+    // Only alive on a playlist built from rules, which validateMenuItem: decides
+    // from the row actually clicked rather than the row that happens to be
+    // selected.
+    [sourceMenu addItem:[self sourceItemTitled:@"Edit Smart Playlist..."
+                                        action:@selector(editSmartPlaylist:)]];
     [_sourceList setMenu:sourceMenu];
     [sourceScroll setDocumentView:_sourceList];
     [_outerSplit addSubview:sourceScroll];
@@ -829,6 +837,12 @@ static CGFloat BTTitleBarHeight(void) {
     return !([identifier isEqualToString:@"title"] ||
              [identifier isEqualToString:@"order"] ||
              [identifier isEqualToString:@"playing"]);
+}
+
+- (NSMenuItem *)sourceItemTitled:(NSString *)title action:(SEL)action {
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:action keyEquivalent:@""];
+    [item setTarget:self];
+    return item;
 }
 
 - (NSMenu *)buildColumnMenu {
