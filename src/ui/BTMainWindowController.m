@@ -1366,6 +1366,11 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
 - (void)restoreSessionState {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 
+    // Read before anything else, because picking the source below clears the
+    // song selection and writes that back out. The song being restored would
+    // otherwise be forgotten a moment before it was looked up.
+    NSString *rememberedTrack = [defaults stringForKey:BTSelectedTrackKey];
+
     NSArray *closed = [defaults arrayForKey:BTClosedFoldersKey];
     if (closed) [_closedFolders addObjectsFromArray:closed];
 
@@ -1402,11 +1407,10 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
                  byExtendingSelection:NO];
     }
 
-    NSString *trackID = [defaults stringForKey:BTSelectedTrackKey];
-    if ([trackID length] > 0) {
+    if ([rememberedTrack length] > 0) {
         NSUInteger i;
         for (i = 0; i < [_visibleTracks count]; i++) {
-            if ([[[_visibleTracks objectAtIndex:i] trackID] isEqualToString:trackID]) {
+            if ([[[_visibleTracks objectAtIndex:i] trackID] isEqualToString:rememberedTrack]) {
                 [_trackTable selectRowIndexes:[NSIndexSet indexSetWithIndex:i]
                          byExtendingSelection:NO];
                 [_trackTable scrollRowToVisible:(NSInteger)i];
@@ -1644,6 +1648,12 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     _selectedSource = item;
     _showingITunesSync = NO;
     _syncButton.on = NO;
+
+    // Nothing is chosen in a list nobody has looked at yet. Left alone, the
+    // selection stays on whatever row number it was and lands on an unrelated
+    // song in the new source, which reads as a choice somebody made.
+    [_trackTable deselectAll:nil];
+
     [self adoptSortForSelectedSource];
     [self saveSessionState];
 
