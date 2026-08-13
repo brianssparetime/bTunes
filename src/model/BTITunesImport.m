@@ -59,6 +59,49 @@ static NSDate *BTDateFor(NSDictionary *d, NSString *key) {
     return track;
 }
 
+- (NSDictionary *)placesForMissingFiles:(NSArray *)missing
+                fromITunesLibraryAtPath:(NSString *)xmlPath {
+    NSMutableDictionary *wanted = [NSMutableDictionary dictionary];
+    NSUInteger i;
+    for (i = 0; i < [missing count]; i++) {
+        BTTrack *track = [missing objectAtIndex:i];
+        // No persistent id, no way to ask after it. A song added by scanning a
+        // folder was never an iTunes entry and cannot be looked up here.
+        if ([track.persistentID length] > 0) [wanted setObject:track forKey:track.persistentID];
+    }
+    if ([wanted count] == 0 || [xmlPath length] == 0) return @{};
+
+    NSDictionary *root = [NSDictionary dictionaryWithContentsOfFile:xmlPath];
+    NSDictionary *entries = [root objectForKey:@"Tracks"];
+    if (![entries isKindOfClass:[NSDictionary class]]) return @{};
+
+    BTDetuneMap *detune = [BTDetuneMap currentMap];
+    NSFileManager *files = [NSFileManager defaultManager];
+    NSMutableDictionary *places = [NSMutableDictionary dictionary];
+
+    NSArray *keys = [entries allKeys];
+    for (i = 0; i < [keys count]; i++) {
+        NSDictionary *entry = [entries objectForKey:[keys objectAtIndex:i]];
+        if (![entry isKindOfClass:[NSDictionary class]]) continue;
+
+        NSString *persistentID = BTITunesString(entry, @"Persistent ID");
+        BTTrack *track = ([persistentID length] > 0) ? [wanted objectForKey:persistentID] : nil;
+        if (track == nil) continue;
+
+        BTITunesEntry *read = [BTITunesEntry readEntry:entry detune:detune files:files];
+        if (read == nil || [read.resolvedPath length] == 0) continue;
+
+        // Somewhere the file actually is, and somewhere new. Repointing one dead
+        // path at another dead path is not a repair, and repointing a path at
+        // itself says the file is simply gone.
+        if (![files fileExistsAtPath:read.resolvedPath]) continue;
+        if ([read.resolvedPath isEqualToString:[track resolvedPath]]) continue;
+
+        [places setObject:read forKey:track.trackID];
+    }
+    return places;
+}
+
 - (NSDictionary *)importITunesLibraryAtPath:(NSString *)path trackLimit:(NSInteger)trackLimit {
     NSDictionary *root = [NSDictionary dictionaryWithContentsOfFile:path];
     if (root == nil) {

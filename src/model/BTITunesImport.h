@@ -33,4 +33,19 @@
 // a song comes to be judged importable and then imported as its locked original.
 - (BTTrack *)trackFromEntry:(BTITunesEntry *)source;
 
+// Where iTunes now says each of these songs lives, for the ones it still knows
+// about and whose file is actually there. Keyed by BTunes track id, so the
+// answer can be worked out away from the main thread and applied on it.
+//
+// A song does not go missing only by being deleted. Consolidating the media
+// folder moves it, and editing a tag with "Keep Media folder organized" on
+// renames it and its folders; in both cases the audio is untouched and only the
+// path BTunes wrote down has gone stale. The persistent id survives all of that,
+// which is what makes the repair possible at all.
+//
+// Reads the file and nothing else. Nothing is written here, to iTunes or to the
+// library.
+- (NSDictionary *)placesForMissingFiles:(NSArray *)missing
+                fromITunesLibraryAtPath:(NSString *)xmlPath;
+
 @end

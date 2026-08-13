@@ -5,6 +5,9 @@
 #import "BTPreferencesController.h"
 #import "BTLibrary.h"
 #import "BTTrack.h"
+#import "BTPreferences.h"
+#import "BTITunesImport.h"
+#import "BTITunesEntry.h"
 #import "BTPlayer.h"
 #import "BTIPod.h"
 
@@ -69,15 +72,56 @@
     BTLibrary *library = [BTLibrary sharedLibrary];
     if ([library.tracks count] == 0) return;
 
+    NSString *xml = [[BTPreferences sharedPreferences] iTunesLibraryPath];
+
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
         NSArray *gone = [library tracksWithMissingFiles];
         if ([gone count] == 0) return;
 
-        NSString *log = [library writeMissingFilesLog:gone];
+        // Asked after before being given up on. A song is missing as often
+        // because iTunes moved it as because anything was lost, and the
+        // persistent id survives a move. Reading the library file is the slow
+        // part, so it happens here and only when something is actually missing.
+        NSDictionary *places = [library placesForMissingFiles:gone fromITunesLibraryAtPath:xml];
+
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self reportMissingFiles:gone log:log];
+            [self repair:gone to:places];
         });
     });
+}
+
+// On the main thread, because this is where the library is changed and where
+// everything else reads it.
+- (void)repair:(NSArray *)gone to:(NSDictionary *)places {
+    BTLibrary *library = [BTLibrary sharedLibrary];
+    NSMutableArray *stillGone = [NSMutableArray array];
+    NSUInteger repaired = 0, i;
+
+    for (i = 0; i < [gone count]; i++) {
+        BTTrack *track = [gone objectAtIndex:i];
+        BTITunesEntry *place = [places objectForKey:track.trackID];
+        if (place == nil) {
+            [stillGone addObject:track];
+            continue;
+        }
+        [track setPath:place.path root:place.pathRoot];
+        repaired++;
+    }
+
+    if (repaired > 0) {
+        [library noteChanged];
+        NSLog(@"BTunes: %lu song%@ had moved and %@ found again",
+              (unsigned long)repaired, (repaired == 1 ? @"" : @"s"),
+              (repaired == 1 ? @"was" : @"were"));
+    }
+
+    // Only what is genuinely lost is worth a dialog. A song that moved and was
+    // found again is not news, and a dialog on every launch after a tag edit
+    // teaches the reader to dismiss the one that matters.
+    if ([stillGone count] == 0) return;
+
+    NSString *log = [library writeMissingFilesLog:stillGone];
+    [self reportMissingFiles:stillGone repaired:repaired log:log];
 }
 
 // A handful are named outright, since that is usually enough to recognise what
@@ -85,7 +129,7 @@
 // the log is the better place to read them.
 #define BT_MISSING_NAMED 10
 
-- (void)reportMissingFiles:(NSArray *)gone log:(NSString *)log {
+- (void)reportMissingFiles:(NSArray *)gone repaired:(NSUInteger)repaired log:(NSString *)log {
     NSUInteger count = [gone count];
 
     NSMutableString *detail = [NSMutableString string];
@@ -100,6 +144,10 @@
 
     [detail appendString:@"Nothing has been removed. The ratings, play counts and playlist "
                          @"membership are all still here, waiting for the files to come back."];
+    if (repaired > 0) {
+        [detail appendFormat:@"\n\nAnother %lu had only moved, and %@ been pointed at the new place.",
+                             (unsigned long)repaired, (repaired == 1 ? @"has" : @"have")];
+    }
     if ([log length] > 0) {
         [detail appendFormat:@"\n\nThe full list is in:\n%@", log];
     }
