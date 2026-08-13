@@ -54,18 +54,24 @@
                             action:@selector(chooseITunesLibrary:)
                             inView:content];
 
-    // Its own row rather than a third path to choose: this one is a choice
-    // about how the window looks, not about where something lives.
-    _purpleBox = [[NSButton alloc] initWithFrame:NSMakeRect(20, y + 6, 300, 18)];
+    // Its own row rather than a fourth path to choose: this is a choice about
+    // how the window looks, not about where something lives. The note sits
+    // under it at the same left edge as the words beside the box, the way the
+    // notes under the three paths do.
+    _purpleBox = [[NSButton alloc] initWithFrame:NSMakeRect(20, y, 300, 18)];
     [_purpleBox setButtonType:NSSwitchButton];
-    [_purpleBox setTitle:@"Purple mode"];
     [_purpleBox setFont:[BTStyle uiFont]];
+    // Named in the colour it turns things, which says more than the words do.
+    [_purpleBox setAttributedTitle:
+        [[NSAttributedString alloc] initWithString:@"Purple mode"
+                                       attributes:@{NSFontAttributeName: [BTStyle uiFont],
+                                                    NSForegroundColorAttributeName: [BTStyle accent]}]];
     [_purpleBox setTarget:self];
     [_purpleBox setAction:@selector(purpleModeChanged:)];
     [content addSubview:_purpleBox];
 
     [content addSubview:[self labelWithText:@"Draws the main window in purple instead of blue. The mini player is purple either way."
-                                      frame:NSMakeRect(38, y - 14, BT_PREFS_WIDTH - 58, 28)
+                                      frame:NSMakeRect(38, y - 26, BT_PREFS_WIDTH - 58, 28)
                                       small:YES]];
 
     [self refresh];

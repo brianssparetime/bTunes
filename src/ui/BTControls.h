@@ -61,7 +61,19 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume);
 @interface BTSearchFieldCell : NSSearchFieldCell
 @end
 
-// A list that draws its own selection, so every pane highlights the same blue
+// How every list in the window fills a selected row. Shared as a function
+// because the source list is an outline view and cannot inherit it, and a list
+// drawing the system's own blue is exactly what purple mode cannot reach.
+void BTDrawListSelection(NSTableView *list, NSRect clipRect);
+// Redraws the list when its window gains or loses focus, since the selection is
+// a different colour either side of that.
+void BTWatchWindowFocus(NSView *list);
+
+@interface NSView (BTListFocus)
+- (void)btWindowFocusChanged:(NSNotification *)note;
+@end
+
+// A list that draws its own selection, so every pane highlights the same colour
 // instead of the focused one being blue and the rest gray.
 @interface BTListTableView : NSTableView
 @end

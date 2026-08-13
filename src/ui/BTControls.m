@@ -309,39 +309,53 @@ BOOL BTHandleTransportKey(NSEvent *event, id sender, BOOL plainArrowsAreVolume) 
 
 #pragma mark - List
 
-@implementation BTListTableView
-
-- (void)highlightSelectionInClipRect:(NSRect)clipRect {
-    NSIndexSet *selected = [self selectedRowIndexes];
+void BTDrawListSelection(NSTableView *list, NSRect clipRect) {
+    NSIndexSet *selected = [list selectedRowIndexes];
     if ([selected count] == 0) return;
 
-    // The whole window agrees on one selection color: blue while the window is
-    // active, gray when it is not. Which pane holds focus does not change it.
-    NSColor *color = [[self window] isKeyWindow] ? [BTStyle selection] : [BTStyle inactiveSelection];
+    // The whole window agrees on one selection colour, and on gray when the
+    // window is not the one being used. Which pane holds focus does not change
+    // it, and neither does whether the list is a table or an outline.
+    NSColor *color = [[list window] isKeyWindow] ? [BTStyle selection]
+                                                 : [BTStyle inactiveSelection];
     [color set];
 
-    NSRange rows = [self rowsInRect:clipRect];
+    NSRange rows = [list rowsInRect:clipRect];
     NSUInteger row;
     for (row = rows.location; row < NSMaxRange(rows); row++) {
         if ([selected containsIndex:row]) {
-            NSRectFill([self rectOfRow:(NSInteger)row]);
+            NSRectFill([list rectOfRow:(NSInteger)row]);
         }
     }
 }
 
-// Redraw when the window activates so the selection color follows it.
-- (void)viewDidMoveToWindow {
-    [super viewDidMoveToWindow];
-    if ([self window] == nil) return;
+// A notification handler of its own rather than setNeedsDisplay: directly. That
+// takes a BOOL, and handing it a notification passes a pointer where a single
+// byte is read, which is a coin toss rather than a redraw.
+@implementation NSView (BTListFocus)
+- (void)btWindowFocusChanged:(NSNotification *)note {
+    [self setNeedsDisplay:YES];
+}
+@end
+
+void BTWatchWindowFocus(NSView *list) {
+    if ([list window] == nil) return;
     NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
-    [nc addObserver:self selector:@selector(windowChangedKey:)
-               name:NSWindowDidBecomeKeyNotification object:[self window]];
-    [nc addObserver:self selector:@selector(windowChangedKey:)
-               name:NSWindowDidResignKeyNotification object:[self window]];
+    [nc addObserver:list selector:@selector(btWindowFocusChanged:)
+               name:NSWindowDidBecomeKeyNotification object:[list window]];
+    [nc addObserver:list selector:@selector(btWindowFocusChanged:)
+               name:NSWindowDidResignKeyNotification object:[list window]];
 }
 
-- (void)windowChangedKey:(NSNotification *)note {
-    [self setNeedsDisplay:YES];
+@implementation BTListTableView
+
+- (void)highlightSelectionInClipRect:(NSRect)clipRect {
+    BTDrawListSelection(self, clipRect);
+}
+
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    BTWatchWindowFocus(self);
 }
 
 - (void)dealloc {

@@ -264,6 +264,21 @@ static CGFloat BTTitleBarHeight(void) {
 
 @implementation BTKeyOutlineView
 
+// The one list in the window that is not a table, and so the one that was still
+// filling its rows with the system's own blue while everything else had turned.
+- (void)highlightSelectionInClipRect:(NSRect)clipRect {
+    BTDrawListSelection(self, clipRect);
+}
+
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    BTWatchWindowFocus(self);
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
 // A click on the eject mark ejects rather than selecting the row.
 - (void)mouseDown:(NSEvent *)event {
     NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
