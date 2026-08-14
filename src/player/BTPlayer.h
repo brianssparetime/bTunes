@@ -81,7 +81,10 @@ NSInteger BTWalkForPlayable(NSInteger count, NSInteger from, NSInteger step,
 // How far the knob runs, and how far past the file's own level it reaches.
 + (float)volumeRangeInDecibels;
 + (float)volumeCeiling;
-@property (nonatomic, readonly) BOOL muted;
+// Silence, or the last level that could be heard. There is no muted flag: a
+// flag beside the volume is a second answer to a question the volume already
+// answers, and the two came apart the moment either was written down without
+// the other. Silence is a volume of nothing.
 - (void)toggleMute;
 @property (nonatomic, readonly) NSTimeInterval currentTime;
 @property (nonatomic, readonly) NSTimeInterval duration;

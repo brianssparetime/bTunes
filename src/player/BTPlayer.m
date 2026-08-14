@@ -33,8 +33,9 @@ NSString *const BTPlayerCouldNotPlayNotification = @"BTPlayerCouldNotPlay";
 @property (nonatomic, assign) NSInteger orderPosition;
 @property (nonatomic, strong) NSTimer *tick;
 @property (nonatomic, assign) float smoothedAverage;
-@property (nonatomic, assign) BOOL muted;
-@property (nonatomic, assign) float volumeBeforeMute;
+// The last level that could be heard, which is what mute gives back. Never
+// nought, so there is always something to give.
+@property (nonatomic, assign) float audibleVolume;
 // Whether this pass through the song has already been counted. Armed as a song
 // starts, so winding back over the mark and forward again counts once, and a
 // song on repeat counts each whole pass.
@@ -64,6 +65,9 @@ NSString *const BTPlayerCouldNotPlayNotification = @"BTPlayerCouldNotPlay";
 // a third of the way up would otherwise mean almost silence.
 static NSString *const BTVolumeKnobKey = @"BTVolumeKnob";
 static NSString *const BTVolumeGainKey = @"BTVolume";
+// What mute gives back, kept apart from the knob so that a quit while silent
+// still knows what the silence replaced.
+static NSString *const BTAudibleVolumeKey = @"BTAudibleVolume";
 static NSString *const BTShuffleKey = @"BTShuffle";
 static NSString *const BTRepeatKey = @"BTRepeatMode";
 
@@ -80,6 +84,14 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
         } else {
             _volume = 0.75f;
         }
+
+        // Never nought, so mute always has something to give back. A library
+        // left silent comes back silent, which is where it was left, and one
+        // press of M returns the level it had before.
+        NSNumber *audible = [defaults objectForKey:BTAudibleVolumeKey];
+        _audibleVolume = audible ? [audible floatValue] : _volume;
+        if (_audibleVolume <= 0.0f) _audibleVolume = 0.75f;
+
         _shuffle = [defaults boolForKey:BTShuffleKey];
         // Read through the enum rather than trusting the number on disk: a
         // value from some later version would otherwise leave the transport in
@@ -606,25 +618,36 @@ NSInteger BTWalkForPlayable(NSInteger count, NSInteger from, NSInteger step,
 }
 
 - (void)setVolume:(float)volume {
+    if (volume < 0.0f) volume = 0.0f;
+    if (volume > 1.0f) volume = 1.0f;
+
     _volume = volume;
     [self.node setVolume:[BTPlayer gainForVolume:volume]];
-    [[NSUserDefaults standardUserDefaults] setFloat:volume forKey:BTVolumeKnobKey];
-    // Moving the volume off zero by any route ends the mute.
-    if (volume > 0.0f) _muted = NO;
+
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setFloat:volume forKey:BTVolumeKnobKey];
+
+    // Any level that can be heard is the one mute gives back, however it was
+    // arrived at: the knob, the keys, or unmuting itself. Written down as it
+    // happens, so it is still there after a quit.
+    if (volume > 0.0f) {
+        _audibleVolume = volume;
+        [defaults setFloat:volume forKey:BTAudibleVolumeKey];
+    }
     [self postChange];
 }
 
+// Silence, or the level before the silence.
+//
+// Mute used to be a flag of its own, kept beside the level to go back to, and
+// neither was written down. Quitting while muted therefore came back at a
+// volume of nothing with no memory of what it had been, so the first press of M
+// muted the silence and the second gave back an invented half. There is no flag
+// now: silence is a volume of nothing, and what mute gives back is the last
+// level that could be heard. Dragging the knob to nothing and pressing M gives
+// that same level back, which is what somebody pressing it wants either way.
 - (void)toggleMute {
-    if (self.muted) {
-        self.muted = NO;
-        float restored = self.volumeBeforeMute > 0.0f ? self.volumeBeforeMute : 0.5f;
-        [self setVolume:restored];
-        return;
-    }
-    self.volumeBeforeMute = self.volume;
-    [self setVolume:0.0f];
-    self.muted = YES;
-    [self postChange];
+    [self setVolume:((self.volume > 0.0f) ? 0.0f : _audibleVolume)];
 }
 
 // Nothing sounding reads as silence, so a paused song does not leave the last
