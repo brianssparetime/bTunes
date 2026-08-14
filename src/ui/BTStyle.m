@@ -528,19 +528,113 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
 
 + (void)drawEjectGlyphInRect:(NSRect)rect color:(NSColor *)color {
     // The old eject mark: a triangle standing on a bar.
+    //
+    // Which way is up has to be asked. A cell and a button both draw in a
+    // flipped context, so taken one way in both this comes out as a bar with a
+    // triangle hanging under it, which is what it had been doing beside the iPod
+    // in the left bar and on the button at the bottom right.
     NSRect r = NSInsetRect(rect, NSWidth(rect) * 0.26, NSHeight(rect) * 0.26);
+    BOOL flipped = [[NSGraphicsContext currentContext] isFlipped];
+    CGFloat (^up)(CGFloat) = ^CGFloat(CGFloat fraction) {
+        return flipped ? NSMaxY(r) - NSHeight(r) * fraction : NSMinY(r) + NSHeight(r) * fraction;
+    };
+
     CGFloat barHeight = MAX(1.5, NSHeight(r) * 0.20);
     CGFloat gap = MAX(1.0, NSHeight(r) * 0.14);
 
     [color set];
-    NSRectFill(NSMakeRect(NSMinX(r), NSMinY(r), NSWidth(r), barHeight));
+    CGFloat barTop = up(0.0) + (flipped ? -barHeight : barHeight);
+    NSRectFill(NSMakeRect(NSMinX(r), MIN(up(0.0), barTop), NSWidth(r), barHeight));
 
+    CGFloat base = up(0.0) + (flipped ? -(barHeight + gap) : (barHeight + gap));
     NSBezierPath *triangle = [NSBezierPath bezierPath];
-    [triangle moveToPoint:NSMakePoint(NSMinX(r), NSMinY(r) + barHeight + gap)];
-    [triangle lineToPoint:NSMakePoint(NSMaxX(r), NSMinY(r) + barHeight + gap)];
-    [triangle lineToPoint:NSMakePoint(NSMidX(r), NSMaxY(r))];
+    [triangle moveToPoint:NSMakePoint(NSMinX(r), base)];
+    [triangle lineToPoint:NSMakePoint(NSMaxX(r), base)];
+    [triangle lineToPoint:NSMakePoint(NSMidX(r), up(1.0))];
     [triangle closePath];
     [triangle fill];
+}
+
+// Two marks that have to read at fifteen points, which is the whole of the
+// difficulty. Two filled shapes of the same colour that touch fuse into one
+// lumpy shape at this size, so neither of these is a disc with something drawn
+// on top of it. Each is one solid shape against one thin one, which the eye
+// separates even where they meet.
+
++ (void)drawBurnGlyphInRect:(NSRect)rect color:(NSColor *)color {
+    NSRect r = NSInsetRect(rect, NSWidth(rect) * 0.10, NSHeight(rect) * 0.10);
+    // Buttons draw in a flipped context and images do not, so every height here
+    // is a fraction of the box measured from whichever edge is the top.
+    BOOL flipped = [[NSGraphicsContext currentContext] isFlipped];
+    CGFloat (^up)(CGFloat) = ^CGFloat(CGFloat fraction) {
+        return flipped ? NSMaxY(r) - NSHeight(r) * fraction : NSMinY(r) + NSHeight(r) * fraction;
+    };
+
+    // The disc seen almost edge on, drawn as a line rather than filled. Wide and
+    // flat against a tall narrow flame, so the two cannot be mistaken for each
+    // other however close they sit.
+    CGFloat discTop = up(0.26), discBottom = up(0.0);
+    NSRect disc = NSMakeRect(NSMinX(r), MIN(discTop, discBottom),
+                             NSWidth(r), fabs(discTop - discBottom));
+    NSBezierPath *ring = [NSBezierPath bezierPathWithOvalInRect:NSInsetRect(disc, 0.5, 0.5)];
+    [ring setLineWidth:MAX(1.0, NSWidth(rect) * 0.075)];
+    [color set];
+    [ring stroke];
+
+    // What tells a flame from a drop of water is the taper: a drop swells from a
+    // point and is convex all the way down, a flame curls and is hollow below
+    // its tip. Three tries at the curve did not fix it and the colour did, so
+    // the flame is the one mark in the window not drawn in the ink it is handed.
+    CGFloat fw = NSWidth(r) * 0.46;
+    CGFloat fx = NSMidX(r) - fw / 2.0;
+    CGFloat tipX = fx + fw * 0.58;
+
+    NSBezierPath *flame = [NSBezierPath bezierPath];
+    [flame moveToPoint:NSMakePoint(tipX, up(1.00))];
+    [flame curveToPoint:NSMakePoint(fx + fw, up(0.52))
+          controlPoint1:NSMakePoint(fx + fw * 0.66, up(0.88))
+          controlPoint2:NSMakePoint(fx + fw * 1.02, up(0.78))];
+    [flame curveToPoint:NSMakePoint(fx, up(0.52))
+          controlPoint1:NSMakePoint(fx + fw * 0.98, up(0.26))
+          controlPoint2:NSMakePoint(fx + fw * 0.02, up(0.26))];
+    [flame curveToPoint:NSMakePoint(fx + fw * 0.14, up(0.82))
+          controlPoint1:NSMakePoint(fx - fw * 0.08, up(0.66))
+          controlPoint2:NSMakePoint(fx - fw * 0.04, up(0.76))];
+    [flame curveToPoint:NSMakePoint(tipX, up(1.00))
+          controlPoint1:NSMakePoint(fx + fw * 0.34, up(0.88))
+          controlPoint2:NSMakePoint(fx + fw * 0.40, up(0.92))];
+    [flame closePath];
+    [[NSColor colorWithCalibratedRed:0.93 green:0.42 blue:0.09 alpha:1.0] set];
+    [flame fill];
+}
+
++ (void)drawImportGlyphInRect:(NSRect)rect color:(NSColor *)color {
+    NSRect r = NSInsetRect(rect, NSWidth(rect) * 0.14, NSHeight(rect) * 0.14);
+    BOOL flipped = [[NSGraphicsContext currentContext] isFlipped];
+    CGFloat (^up)(CGFloat) = ^CGFloat(CGFloat fraction) {
+        return flipped ? NSMaxY(r) - NSHeight(r) * fraction : NSMinY(r) + NSHeight(r) * fraction;
+    };
+    [color set];
+
+    // An arrow coming down onto a line. No disc: what is being taken in is
+    // whatever the window is showing, and at this size a disc drawn behind an
+    // arrow only muddies the arrow.
+    CGFloat barTop = up(0.13), barBottom = up(0.0);
+    NSRectFill(NSMakeRect(NSMinX(r), MIN(barTop, barBottom),
+                          NSWidth(r), fabs(barTop - barBottom)));
+
+    CGFloat headWidth = NSWidth(r) * 0.62;
+    NSBezierPath *head = [NSBezierPath bezierPath];
+    [head moveToPoint:NSMakePoint(NSMidX(r) - headWidth / 2.0, up(0.59))];
+    [head lineToPoint:NSMakePoint(NSMidX(r) + headWidth / 2.0, up(0.59))];
+    [head lineToPoint:NSMakePoint(NSMidX(r), up(0.23))];
+    [head closePath];
+    [head fill];
+
+    CGFloat stem = MAX(1.5, NSWidth(r) * 0.20);
+    CGFloat stemTop = up(1.0), stemBottom = up(0.59);
+    NSRectFill(NSMakeRect(NSMidX(r) - stem / 2.0, MIN(stemTop, stemBottom),
+                          stem, fabs(stemTop - stemBottom)));
 }
 
 + (void)drawCheckboxInRect:(NSRect)rect state:(NSInteger)state enabled:(BOOL)enabled {

@@ -8,6 +8,7 @@
 #import "BTSmartPlaylistController.h"
 #import "BTBurnPlan.h"
 #import "BTBurnController.h"
+#import "BTBlankDisc.h"
 #import "BTTrackInfoController.h"
 #import "BTLibrary.h"
 #import "BTITunesImport.h"
@@ -103,6 +104,8 @@ static CGFloat BTTitleBarHeight(void) {
     BTDisplayView *_display;
     NSSearchField *_searchField;
     BTRoundButton *_miniButton;
+    BTRoundButton *_actionButton;
+    BOOL _actionIsImport;
 
     NSSplitView *_outerSplit;
     NSSplitView *_innerSplit;
@@ -200,11 +203,13 @@ static CGFloat BTTitleBarHeight(void) {
     [nc addObserver:self selector:@selector(playerChanged:) name:BTPlayerDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(iPodChanged:) name:BTIPodDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(discChanged:) name:BTAudioDiscDidChangeNotification object:nil];
+    [nc addObserver:self selector:@selector(blankDiscChanged:) name:BTBlankDiscDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(settingsChanged:) name:BTPreferencesDidChangeNotification object:nil];
 
     [self iPodChanged:nil];
     [self discChanged:nil];
     [self reloadEverything];
+    [self updateActionButton];
     return self;
 }
 
@@ -388,6 +393,15 @@ static CGFloat BTTitleBarHeight(void) {
                                           action:@selector(toggleMiniMode:)];
     [_miniButton setToolTip:@"Mini player"];
     [_chrome addSubview:_miniButton];
+
+    // Hidden until there is something for it to do. What it does depends on
+    // what is selected and what is in the drive, and updateActionButton decides.
+    _actionButton = [BTRoundButton buttonWithFrame:NSMakeRect(NSWidth(bounds) - 76, 14, 27, 27)
+                                             glyph:BTGlyphBurn
+                                            target:self
+                                            action:@selector(chromeAction:)];
+    [_actionButton setHidden:YES];
+    [_chrome addSubview:_actionButton];
 
     __weak BTMainWindowController *weakSelf = self;
     _chrome.layoutHandler = ^{ [weakSelf layoutChrome]; };
@@ -651,12 +665,13 @@ static CGFloat BTTitleBarHeight(void) {
 //
 // Kept as arithmetic on numbers rather than on views, so it can be checked
 // without a window.
-void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
-                    CGFloat *outMiniLeft,
+void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
+                    CGFloat *outMiniLeft, CGFloat *outActionLeft,
                     CGFloat *outDisplayLeft, CGFloat *outDisplayWidth,
                     CGFloat *outSearchLeft, CGFloat *outSearchWidth) {
     const CGFloat rightMargin = 15.0;
     const CGFloat miniWidth = 27.0;
+    const CGFloat actionWidth = 27.0;
     const CGFloat displayLeft = 230.0;
     const CGFloat preferredSearch = 180.0;
     const CGFloat minimumSearch = 88.0;
@@ -668,7 +683,13 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     if (gap < 8.0) gap = 8.0;
 
     CGFloat miniLeft = chromeWidth - rightMargin - miniWidth;
-    CGFloat searchRight = miniLeft - gap;
+
+    // The one thing that comes and goes up here: burning a playlist when a blank
+    // disc is in, importing a disc when one is being looked at, and nothing the
+    // rest of the time. The search field gives up the room for it, since the
+    // readout is already the first to be squeezed and would be squeezed twice.
+    CGFloat actionLeft = miniLeft - gap - actionWidth;
+    CGFloat searchRight = actionShown ? (actionLeft - gap * 0.6) : (miniLeft - gap);
 
     CGFloat searchWidth = preferredSearch;
     CGFloat displayWidth = searchRight - searchWidth - gap - displayLeft;
@@ -682,6 +703,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     if (displayWidth < 60.0) displayWidth = 60.0;
 
     if (outMiniLeft) *outMiniLeft = miniLeft;
+    if (outActionLeft) *outActionLeft = actionLeft;
     if (outDisplayLeft) *outDisplayLeft = displayLeft;
     if (outDisplayWidth) *outDisplayWidth = displayWidth;
     if (outSearchLeft) *outSearchLeft = searchRight - searchWidth;
@@ -689,11 +711,15 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
 }
 
 - (void)layoutChrome {
-    CGFloat miniLeft = 0, displayLeft = 0, displayWidth = 0, searchLeft = 0, searchWidth = 0;
+    CGFloat miniLeft = 0, actionLeft = 0, displayLeft = 0, displayWidth = 0;
+    CGFloat searchLeft = 0, searchWidth = 0;
     BTChromeLayout(NSWidth([_chrome bounds]), NSMaxX([_volumeView frame]),
-                   &miniLeft, &displayLeft, &displayWidth, &searchLeft, &searchWidth);
+                   ![_actionButton isHidden],
+                   &miniLeft, &actionLeft, &displayLeft, &displayWidth,
+                   &searchLeft, &searchWidth);
 
     [_miniButton setFrame:NSMakeRect(miniLeft, 14, 27.0, 27.0)];
+    [_actionButton setFrame:NSMakeRect(actionLeft, 14, 27.0, 27.0)];
     [_display setFrame:NSMakeRect(displayLeft, 6, displayWidth, [BTDisplayView naturalHeight])];
     [_searchField setFrame:NSMakeRect(searchLeft, 17, searchWidth, 21)];
 }
@@ -889,6 +915,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     if (had != (found != nil) || [_selectedSource isKindOfClass:[BTAudioDisc class]]) {
         [self reloadEverything];
     }
+    [self updateActionButton];
 }
 
 // The mark on a row ejects that row's device, whichever kind it is. The button
@@ -926,6 +953,50 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
         return;
     }
     [self iPodChanged:nil];
+}
+
+// What the one button up in the chrome is for at this moment, or nothing.
+//
+// Two offers, and they can never both apply: a blank disc is not an audio CD,
+// and a playlist is not the disc. So it is one button that changes its mark
+// rather than two that would have to know about each other.
+- (void)updateActionButton {
+    BOOL wasShown = ![_actionButton isHidden];
+    BOOL show = NO;
+
+    if ([_selectedSource isKindOfClass:[BTAudioDisc class]]) {
+        // A disc is being looked at, so it can be taken in.
+        show = YES;
+        _actionIsImport = YES;
+        _actionButton.glyph = BTGlyphImport;
+        [_actionButton setToolTip:@"Import this CD"];
+    } else if ([BTBlankDisc present] && !_showingITunesSync) {
+        // A blank disc is in, so a playlist that would actually fit can go on it.
+        BTPlaylist *playlist = [self selectedPlaylist];
+        if ([BTBurnPlan canBurnPlaylist:playlist] && ![BTBurnController isBusy]) {
+            BTBurnPlan *plan = [BTBurnPlan planForPlaylist:playlist
+                                                    tracks:[BTLibrary sharedLibrary].tracks];
+            if ([plan refusal] == BTBurnRefusalNone) {
+                show = YES;
+                _actionIsImport = NO;
+                _actionButton.glyph = BTGlyphBurn;
+                [_actionButton setToolTip:@"Burn this playlist to the disc"];
+            }
+        }
+    }
+
+    [_actionButton setHidden:!show];
+    // The search field's width follows whether this is there, so the chrome is
+    // laid out again rather than only redrawn.
+    if (show != wasShown) [self layoutChrome];
+}
+
+- (void)chromeAction:(id)sender {
+    if (_actionIsImport) {
+        [self importDisc:sender];
+    } else {
+        [self burnPlaylist:sender];
+    }
 }
 
 - (void)updateBottomBar {
@@ -1240,6 +1311,12 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
 
 - (void)libraryChanged:(NSNotification *)note {
     [self reloadEverything];
+    // A playlist that grew past what a disc holds stops being offered.
+    [self updateActionButton];
+}
+
+- (void)blankDiscChanged:(NSNotification *)note {
+    [self updateActionButton];
 }
 
 // Purple mode reaches colours that are drawn rather than stored, so every view
@@ -1436,6 +1513,7 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
 
     [self adoptSortForSelectedSource];
     [self saveSessionState];
+    [self updateActionButton];
 
     [self showSortIndicator];
 
@@ -2142,6 +2220,21 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     BTPlaylist *playlist = [self selectedPlaylist];
     if (![BTBurnPlan canBurnPlaylist:playlist]) return;
     [BTBurnController burnPlaylist:playlist modalForWindow:[self window]];
+}
+
+// Taking a disc into the library. Not built yet: the button that leads here is,
+// and saying so plainly beats a button that does nothing and explains nothing.
+- (void)importDisc:(id)sender {
+    if (![_selectedSource isKindOfClass:[BTAudioDisc class]]) return;
+    BTAudioDisc *disc = (BTAudioDisc *)_selectedSource;
+
+    NSAlert *alert = [[NSAlert alloc] init];
+    [alert setMessageText:@"Importing a CD is not finished yet."];
+    [alert setInformativeText:[NSString stringWithFormat:
+        @"\"%@\" would come across as %lu songs.\n\nThe songs can be played from the "
+        @"disc in the meantime.",
+        [disc name], (unsigned long)[[disc tracks] count]]];
+    [alert runModal];
 }
 
 - (void)deleteSelection:(id)sender {

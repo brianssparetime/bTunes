@@ -11,6 +11,7 @@
 #import "BTPlayer.h"
 #import "BTIPod.h"
 #import "BTAudioDisc.h"
+#import "BTBlankDisc.h"
 
 @implementation BTAppDelegate {
     BTMainWindowController *_main;
@@ -30,6 +31,7 @@
 
     [BTIPod startWatching];
     [BTAudioDisc startWatching];
+    [BTBlankDisc startWatching];
 
     BTLibrary *library = [BTLibrary sharedLibrary];
     [library loadFromDisk];

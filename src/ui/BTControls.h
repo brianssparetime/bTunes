@@ -15,7 +15,9 @@ typedef NS_ENUM(NSInteger, BTGlyph) {
     BTGlyphShrink,
     BTGlyphEject,
     BTGlyphSync,
-    BTGlyphPlus
+    BTGlyphPlus,
+    BTGlyphBurn,
+    BTGlyphImport
 };
 
 // Draws a mark inside a rect. Both the round buttons up top and the blocky ones

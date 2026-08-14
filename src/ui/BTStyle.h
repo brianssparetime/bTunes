@@ -126,6 +126,11 @@
 + (void)drawMagnifierGlyphInRect:(NSRect)rect color:(NSColor *)color;
 + (void)drawShrinkGlyphInRect:(NSRect)rect color:(NSColor *)color;
 + (void)drawEjectGlyphInRect:(NSRect)rect color:(NSColor *)color;
+// A disc with a flame over it, for burning one, and an arrow coming down into a
+// disc, for taking one in. Both have to read at fifteen points, so the disc is a
+// ring and a hole and nothing else.
++ (void)drawBurnGlyphInRect:(NSRect)rect color:(NSColor *)color;
++ (void)drawImportGlyphInRect:(NSRect)rect color:(NSColor *)color;
 // Two arrows chasing each other round a circle, for bringing music over.
 // A tick box, drawn rather than left to the system, which paints its own blue
 // and pays no attention to which colour the window has been asked to use.
