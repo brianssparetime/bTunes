@@ -1144,6 +1144,24 @@ static void BTRedrawEverything(NSView *view) {
 //
 // Within a kind nothing is rearranged. Whatever arrangement is there is somebody
 // having put it there, and grouping is no reason to lose it.
+// By name, the way a list of names is looked through: you know what the playlist
+// is called, so the question is always where that name falls.
+//
+// Compared the way the Finder compares, so "Disc 2" comes before "Disc 10"
+// rather than after it, and so an accent or a capital does not send a name
+// somewhere nobody would look for it.
+static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
+    NSString *left = a.name ? a.name : @"";
+    NSString *right = b.name ? b.name : @"";
+    NSComparisonResult result = [left localizedStandardCompare:right];
+    // Two playlists of the same name still have to fall in a settled order, or
+    // they would swap places every time the list was rebuilt.
+    if (result == NSOrderedSame) {
+        result = [(a.playlistID ? a.playlistID : @"") compare:(b.playlistID ? b.playlistID : @"")];
+    }
+    return result;
+}
+
 - (NSArray *)sourcesArranged:(NSArray *)playlists {
     NSMutableArray *smart = [NSMutableArray array];
     NSMutableArray *folders = [NSMutableArray array];
@@ -1160,6 +1178,13 @@ static void BTRedrawEverything(NSView *view) {
             [byHand addObject:playlist];
         }
     }
+
+    NSComparator byName = ^NSComparisonResult(id a, id b) {
+        return BTCompareSourceNames(a, b);
+    };
+    [smart sortUsingComparator:byName];
+    [folders sortUsingComparator:byName];
+    [byHand sortUsingComparator:byName];
 
     [smart addObjectsFromArray:folders];
     [smart addObjectsFromArray:byHand];
@@ -1321,6 +1346,13 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
         if (item != nil && (target == nil || target.kind != BTPlaylistKindFolder)) {
             return NSDragOperationNone;
         }
+        // Which folder, not which position. Names decide the order now, so a
+        // line drawn between two playlists would promise a place the list would
+        // not keep. Dropping between them is taken as dropping into whatever
+        // holds them, and the folder lights up to say so.
+        if (index != NSOutlineViewDropOnItemIndex) {
+            [outlineView setDropItem:item dropChildIndex:NSOutlineViewDropOnItemIndex];
+        }
         return NSDragOperationMove;
     }
     return NSDragOperationNone;
@@ -1350,7 +1382,9 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
         NSString *playlistID = [pasteboard stringForType:BTPlaylistPasteboardType];
         BTPlaylist *moving = [library playlistWithID:playlistID];
         if (moving == nil) return NO;
-        [library movePlaylist:moving toFolder:target atIndex:index];
+        // The end of wherever it lands. Where it sits in the list is decided by
+        // its name, so the place in the array is only where it is kept.
+        [library movePlaylist:moving toFolder:target atIndex:-1];
         return YES;
     }
     return NO;

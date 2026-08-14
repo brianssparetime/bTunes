@@ -9,7 +9,8 @@ Sources sit on the left: the whole library, Recently Added, playlists, and
 folders of playlists. Recently Added holds the same songs in the order iTunes
 recorded them being added, newest first, and does not sort. Playlists are grouped
 by kind, the smart ones first, then folders, then the ones built by hand, and the
-same grouping applies inside a folder.
+same grouping applies inside a folder. Within a kind they are in name order, so
+dragging one chooses which folder it belongs to rather than where it sits.
 Three browser columns across the top narrow by genre, then artist, then album,
 and appear for the library only. The track list sorts by any column. Search is
 in the upper right, transport and volume in the upper left, and the readout
