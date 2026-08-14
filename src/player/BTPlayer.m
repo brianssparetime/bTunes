@@ -50,7 +50,11 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
 // and did not expect to have to choose again.
 //
 // Which song was playing and how far into it deliberately do not carry over.
-static NSString *const BTVolumeKey = @"BTVolume";
+// The knob, which is what is written now. The older key held the multiplier
+// itself and is read once to carry a setting across, since a number that meant
+// a third of the way up would otherwise mean almost silence.
+static NSString *const BTVolumeKnobKey = @"BTVolumeKnob";
+static NSString *const BTVolumeGainKey = @"BTVolume";
 static NSString *const BTShuffleKey = @"BTShuffle";
 static NSString *const BTRepeatKey = @"BTRepeatMode";
 
@@ -58,8 +62,15 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
     self = [super init];
     if (self) {
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-        NSNumber *saved = [defaults objectForKey:BTVolumeKey];
-        _volume = saved ? [saved floatValue] : 0.75f;
+        NSNumber *knob = [defaults objectForKey:BTVolumeKnobKey];
+        NSNumber *oldGain = [defaults objectForKey:BTVolumeGainKey];
+        if (knob) {
+            _volume = [knob floatValue];
+        } else if (oldGain) {
+            _volume = [BTPlayer volumeForGain:[oldGain floatValue]];
+        } else {
+            _volume = 0.75f;
+        }
         _shuffle = [defaults boolForKey:BTShuffleKey];
         // Read through the enum rather than trusting the number on disk: a
         // value from some later version would otherwise leave the transport in
@@ -150,7 +161,9 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
         [self.spectrum reset];
     }
 
-    [self.node setVolume:self.volume];
+    // Set again here because rewiring the node loses it, and it is the gain that
+    // goes in rather than the knob.
+    [self.node setVolume:[BTPlayer gainForVolume:self.volume]];
 
     if (![self.engine isRunning] && ![self.engine startAndReturnError:error]) return NO;
     return YES;
@@ -439,10 +452,33 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
     return self.currentTrack ? self.currentTrack.duration : 0;
 }
 
++ (float)volumeRangeInDecibels { return 60.0f; }
+
+// Twice the level of the file, which is six decibels above it. BriansFlix stops
+// at one and a half for the same reason; a little more here because the quietest
+// thing in this library is a good deal quieter than the loudest.
++ (float)volumeCeiling { return 2.0f; }
+
++ (float)gainForVolume:(float)volume {
+    if (volume <= 0.0f) return 0.0f;
+    if (volume > 1.0f) volume = 1.0f;
+    return (float)([self volumeCeiling] *
+                   pow(10.0, (volume - 1.0f) * [self volumeRangeInDecibels] / 20.0));
+}
+
++ (float)volumeForGain:(float)gain {
+    if (gain <= 0.0f) return 0.0f;
+    float knob = (float)(1.0 + 20.0 * log10(gain / [self volumeCeiling]) /
+                               [self volumeRangeInDecibels]);
+    if (knob < 0.0f) knob = 0.0f;
+    if (knob > 1.0f) knob = 1.0f;
+    return knob;
+}
+
 - (void)setVolume:(float)volume {
     _volume = volume;
-    [self.node setVolume:volume];
-    [[NSUserDefaults standardUserDefaults] setFloat:volume forKey:BTVolumeKey];
+    [self.node setVolume:[BTPlayer gainForVolume:volume]];
+    [[NSUserDefaults standardUserDefaults] setFloat:volume forKey:BTVolumeKnobKey];
     // Moving the volume off zero by any route ends the mute.
     if (volume > 0.0f) _muted = NO;
     [self postChange];
