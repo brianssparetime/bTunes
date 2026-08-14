@@ -48,6 +48,12 @@ extern NSString *const BTAudioDiscDidChangeNotification;
 // exercised without one in the drive.
 + (BTAudioDisc *)discAtMountPath:(NSString *)path;
 
+// Names found somewhere else, put on the songs. In disc order, and only when
+// there are exactly as many as there are tracks: a disc and an answer that
+// disagree about how many songs there are would otherwise rename the wrong ones,
+// which is worse than leaving them numbered. Returns whether they were taken.
+- (BOOL)applyTitles:(NSArray *)titles album:(NSString *)album artist:(NSString *)artist;
+
 + (void)startWatching;
 
 - (BOOL)eject;

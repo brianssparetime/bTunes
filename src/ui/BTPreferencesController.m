@@ -41,6 +41,7 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
     NSTextField *_detuneField;
     NSTextField *_btunesField;
     NSButton *_losslessBox;
+    NSButton *_lookupBox;
     NSButton *_purpleBox;
 }
 
@@ -69,6 +70,12 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
            @"and a tenth as AAC. Lossless is exact; AAC is what iTunes used and what fits.";
 }
 
++ (NSString *)lookupNote {
+    return @"Most CDs do not say what their songs are called. This asks MusicBrainz, "
+           @"which is the only thing BTunes sends anywhere: the disc's table of contents "
+           @"boiled down to a number, and nothing about your library.";
+}
+
 + (NSString *)purpleNote {
     return @"Draws the main window in purple instead of blue. The mini player is purple either way.";
 }
@@ -89,6 +96,8 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
     for (i = 0; i < [rows count]; i++) {
         total += [self stepForNote:[[rows objectAtIndex:i] objectAtIndex:1]];
     }
+    total += BT_BOX_TO_NOTE + BTNoteHeight([self lookupNote], BT_PREFS_WIDTH - 58.0)
+           + BT_AFTER_NOTE + BT_BOX;
     total += BT_BOX_TO_NOTE + BTNoteHeight([self losslessNote], BT_PREFS_WIDTH - 58.0)
            + BT_AFTER_NOTE + BT_BOX;
     return total + BT_BOX_TO_NOTE + BTNoteHeight([self purpleNote], BT_PREFS_WIDTH - 58.0) + 38.0;
@@ -123,6 +132,22 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
                                 action:actions[row]
                                 inView:content];
     }
+
+    _lookupBox = [[NSButton alloc] initWithFrame:NSMakeRect(20, y, 400, BT_BOX)];
+    [_lookupBox setButtonType:NSSwitchButton];
+    [_lookupBox setFont:[BTStyle uiFont]];
+    [_lookupBox setTitle:@"Look up CDs that do not name themselves"];
+    [_lookupBox setTarget:self];
+    [_lookupBox setAction:@selector(lookupChanged:)];
+    [content addSubview:_lookupBox];
+
+    NSString *lookupNote = [BTPreferencesController lookupNote];
+    CGFloat lookupHeight = BTNoteHeight(lookupNote, BT_PREFS_WIDTH - 58.0);
+    [content addSubview:[self labelWithText:lookupNote
+                                      frame:NSMakeRect(38, y - BT_BOX_TO_NOTE - lookupHeight,
+                                                       BT_PREFS_WIDTH - 58, lookupHeight)
+                                      small:YES]];
+    y -= BT_BOX_TO_NOTE + lookupHeight + BT_AFTER_NOTE + BT_BOX;
 
     _losslessBox = [[NSButton alloc] initWithFrame:NSMakeRect(20, y, 400, BT_BOX)];
     [_losslessBox setButtonType:NSSwitchButton];
@@ -167,6 +192,10 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
 
     [self refresh];
     return self;
+}
+
+- (void)lookupChanged:(id)sender {
+    [[BTPreferences sharedPreferences] setLooksUpDiscs:([_lookupBox state] == NSOnState)];
 }
 
 - (void)losslessChanged:(id)sender {
@@ -226,6 +255,7 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
     [_detuneField setStringValue:([detune length] > 0 ? detune : @"None chosen")];
     [_btunesField setStringValue:[prefs btunesFolder]];
     [_losslessBox setState:([prefs importsLossless] ? NSOnState : NSOffState)];
+    [_lookupBox setState:([prefs looksUpDiscs] ? NSOnState : NSOffState)];
     [_purpleBox setState:([prefs purpleMode] ? NSOnState : NSOffState)];
 }
 

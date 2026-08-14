@@ -51,6 +51,15 @@ extern NSString *const BTPreferencesDidChangeNotification;
 // a tenth as AAC. Lossless is there for anyone who would rather spend the disk.
 @property (nonatomic, assign) BOOL importsLossless;
 
+// Whether a disc that does not name itself is looked up on MusicBrainz. On
+// unless turned off, because most commercial CDs carry no CD-Text and a disc
+// full of "Track 1" is close to useless in a library this size.
+//
+// The only thing in BTunes that reaches outside the machine. What goes out is
+// the disc's table of contents, boiled down to a number; nothing about the
+// library goes with it.
+@property (nonatomic, assign) BOOL looksUpDiscs;
+
 // Whether the main window is drawn in purple rather than blue. Off unless asked
 // for, and remembered. The mini player is purple either way, so this does not
 // touch it.

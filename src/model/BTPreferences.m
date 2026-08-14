@@ -10,12 +10,13 @@ static NSString *const BTPurpleModeKey = @"BTPurpleMode";
 static NSString *const BTDetuneFolderKey = @"BTDetuneFolder";
 static NSString *const BTBTunesFolderKey = @"BTBTunesFolder";
 static NSString *const BTImportsLosslessKey = @"BTImportsLossless";
+static NSString *const BTLooksUpDiscsKey = @"BTLooksUpDiscs";
 
 @implementation BTPreferences
 
 // Every setting here is read from and written to the defaults, so none of them
 // has anything to keep in an ivar.
-@dynamic btunesFolder, importsLossless;
+@dynamic btunesFolder, importsLossless, looksUpDiscs;
 
 + (instancetype)sharedPreferences {
     static BTPreferences *shared = nil;
@@ -47,6 +48,18 @@ static NSString *const BTImportsLosslessKey = @"BTImportsLossless";
 
 - (void)setImportsLossless:(BOOL)lossless {
     [[NSUserDefaults standardUserDefaults] setBool:lossless forKey:BTImportsLosslessKey];
+    [[NSNotificationCenter defaultCenter] postNotificationName:BTPreferencesDidChangeNotification object:nil];
+}
+
+// On unless it has been turned off, which is why the stored value is read the
+// way round it is: absent means yes.
+- (BOOL)looksUpDiscs {
+    NSNumber *set = [[NSUserDefaults standardUserDefaults] objectForKey:BTLooksUpDiscsKey];
+    return set ? [set boolValue] : YES;
+}
+
+- (void)setLooksUpDiscs:(BOOL)looks {
+    [[NSUserDefaults standardUserDefaults] setBool:looks forKey:BTLooksUpDiscsKey];
     [[NSNotificationCenter defaultCenter] postNotificationName:BTPreferencesDidChangeNotification object:nil];
 }
 

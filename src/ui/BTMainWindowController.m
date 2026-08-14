@@ -17,6 +17,7 @@
 #import "BTIPod.h"
 #import "BTAudioDisc.h"
 #import "BTDiscImport.h"
+#import "BTDiscLookup.h"
 #import "BTSyncView.h"
 #import "BTITunesSyncView.h"
 #import "BTPreferences.h"
@@ -135,6 +136,9 @@ static CGFloat BTTitleBarHeight(void) {
     BOOL _renameRequested;
     BTIPod *_iPod;
     BTAudioDisc *_disc;
+    // The disc already asked about, so it is asked about once and not on every
+    // volume that comes and goes afterwards.
+    __weak BTAudioDisc *_lookedUp;
     BTSyncView *_syncView;
     NSMutableSet *_closedFolders;
     // Whether the bars have been put where they were left. Until they have, a
@@ -917,6 +921,35 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
         [self reloadEverything];
     }
     [self updateActionButton];
+
+    // A disc that did not name itself gets looked up, once, as it arrives. It is
+    // shown numbered in the meantime rather than held back: the songs play
+    // either way and the names arrive when they arrive.
+    if (found && ![found named] && found != _lookedUp &&
+        [[BTPreferences sharedPreferences] looksUpDiscs]) {
+        _lookedUp = found;
+        [self lookUpDisc:found];
+    }
+}
+
+- (void)lookUpDisc:(BTAudioDisc *)disc {
+    [BTDiscLookup lookUpDisc:disc completion:^(NSString *album, NSString *artist,
+                                               NSArray *titles, NSString *error) {
+        // The disc may have been taken out while the asking was going on, and
+        // the answer is then about something that is no longer there.
+        if (self->_disc != disc) return;
+        if (error != nil || [titles count] == 0) {
+            NSLog(@"BTunes: the disc could not be named (%@)", error ? error : @"nothing came back");
+            return;
+        }
+        if (![disc applyTitles:titles album:album artist:artist]) {
+            NSLog(@"BTunes: the disc found holds %lu songs and this one holds %lu, so it was left alone",
+                  (unsigned long)[titles count], (unsigned long)[[disc tracks] count]);
+            return;
+        }
+        [self->_sourceList reloadData];
+        if ([self->_selectedSource isKindOfClass:[BTAudioDisc class]]) [self reloadEverything];
+    }];
 }
 
 // The mark on a row ejects that row's device, whichever kind it is. The button

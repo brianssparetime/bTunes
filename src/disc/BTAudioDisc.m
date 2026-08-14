@@ -164,6 +164,25 @@ static void BTReadTrackName(NSString *filename, NSInteger *outNumber,
     return nil;
 }
 
+- (BOOL)applyTitles:(NSArray *)titles album:(NSString *)album artist:(NSString *)artist {
+    if ([titles count] != [self.tracks count]) return NO;
+
+    NSUInteger i;
+    for (i = 0; i < [self.tracks count]; i++) {
+        BTTrack *track = [self.tracks objectAtIndex:i];
+        NSString *title = [titles objectAtIndex:i];
+        if ([title isKindOfClass:[NSString class]] && [title length] > 0) track.title = title;
+        if ([album length] > 0) track.album = album;
+        // Only where the disc did not already say. CD-Text came off the disc
+        // itself and is the better answer where there is one.
+        if ([artist length] > 0 && [track.artist length] == 0) track.artist = artist;
+    }
+    if ([album length] > 0) { self.album = album; self.name = album; }
+    if ([artist length] > 0 && [self.artist length] == 0) self.artist = artist;
+    self.named = YES;
+    return YES;
+}
+
 + (void)startWatching {
     NSNotificationCenter *nc = [[NSWorkspace sharedWorkspace] notificationCenter];
     void (^changed)(NSNotification *) = ^(NSNotification *note) {
