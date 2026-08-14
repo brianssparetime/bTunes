@@ -34,7 +34,15 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
 @property (nonatomic, assign) float smoothedAverage;
 @property (nonatomic, assign) BOOL muted;
 @property (nonatomic, assign) float volumeBeforeMute;
+// Whether this pass through the song has already been counted. Armed as a song
+// starts, so winding back over the mark and forward again counts once, and a
+// song on repeat counts each whole pass.
+@property (nonatomic, assign) BOOL countedThisPlay;
 @end
+
+// A song long enough that half of it is a wait rather than a listen. A
+// seventy-minute live set should not need thirty-five minutes to count.
+#define BT_COUNTS_AFTER_AT_MOST 240.0
 
 @implementation BTPlayer
 
@@ -279,12 +287,9 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
 
     self.currentTrack = track;
     self.orderPosition = position;
-
-    track.playCount += 1;
-    track.lastPlayed = [NSDate date];
-    // The song recorded something about itself. Nothing joined or left a list,
-    // so the window redraws the count where it stands rather than rebuilding.
-    [[BTLibrary sharedLibrary] noteTrackChanged];
+    // Nothing has been listened to yet. The count goes up once this pass
+    // reaches the mark, which the tick watches for.
+    self.countedThisPlay = NO;
 
     [self startTick];
     [self postChange];
@@ -550,7 +555,48 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
     return total > 0 && now >= total - 0.02;
 }
 
++ (NSTimeInterval)countingMarkBetween:(NSTimeInterval)start and:(NSTimeInterval)end {
+    NSTimeInterval span = end - start;
+    if (span <= 0 || isnan(span)) return -1.0;
+
+    NSTimeInterval half = span / 2.0;
+    return start + (half < BT_COUNTS_AFTER_AT_MOST ? half : BT_COUNTS_AFTER_AT_MOST);
+}
+
+// Where the mark falls for the song playing now. What plays is the song's own
+// range when it has one, and the whole file otherwise; the file is asked rather
+// than the tag, since the tag is what iTunes believed and the file is what there
+// is.
+- (NSTimeInterval)countingMark {
+    BTTrack *track = self.currentTrack;
+    if (track == nil) return -1.0;
+
+    NSTimeInterval end = track.usesEndTime ? [track playbackEnd] : [self duration];
+    return [BTPlayer countingMarkBetween:[track playbackStart] and:end];
+}
+
+// A play, once this pass has reached the mark. The date moves with it, so "last
+// played" means the last time the song was heard rather than the last time it
+// was passed over.
+- (void)countThePlayIfItIsEarned {
+    if (self.countedThisPlay || self.currentTrack == nil) return;
+
+    NSTimeInterval mark = [self countingMark];
+    if (mark < 0 || [self currentTime] < mark) return;
+
+    self.countedThisPlay = YES;
+    self.currentTrack.playCount += 1;
+    self.currentTrack.lastPlayed = [NSDate date];
+    // The song recorded something about itself. Nothing joined or left a list,
+    // so the window redraws the count where it stands rather than rebuilding.
+    [[BTLibrary sharedLibrary] noteTrackChanged];
+}
+
 - (void)tickFired:(NSTimer *)timer {
+    // Asked before the end is noticed, or a song shorter than one turn of the
+    // timer would reach its end and be counted by neither.
+    [self countThePlayIfItIsEarned];
+
     if ([self passedItsEnd]) {
         [self reachedTheEnd];
         return;

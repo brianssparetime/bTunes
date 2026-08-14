@@ -18,6 +18,22 @@ extern NSString *const BTPlayerTimeDidChangeNotification;
 
 + (instancetype)sharedPlayer;
 
+// How far into a song counts as having listened to it: half of whatever
+// actually plays, or four minutes, whichever comes first. Past that mark the
+// play count goes up once, and not before.
+//
+// Counted at a mark rather than at the start because the play counts here are
+// twenty-five years old and cannot be rebuilt from the audio. Raising one the
+// moment a file opened meant skimming a playlist for something added a play to
+// everything passed over, and left "last played" recording when a song was
+// skipped rather than when it was heard.
+//
+// The span is what plays, not what the file holds, so a song trimmed to its
+// last thirty seconds counts fifteen seconds in. Answered as a class method
+// over two times so the rule can be checked without a sound card. A negative
+// answer means the length is not known and nothing should be counted.
++ (NSTimeInterval)countingMarkBetween:(NSTimeInterval)start and:(NSTimeInterval)end;
+
 @property (nonatomic, readonly) BTTrack *currentTrack;
 @property (nonatomic, readonly) BOOL isPlaying;
 @property (nonatomic, assign) BOOL shuffle;
