@@ -117,6 +117,11 @@ static CGFloat BTTitleBarHeight(void) {
 
     id _selectedSource;              // BTLibrarySource or a BTPlaylist
     NSArray *_visibleTracks;
+    // How many the chosen source holds before the search field and the browser
+    // columns narrow it. The difference is what the count along the bottom
+    // reports, since a list narrowed to nothing otherwise looks like a source
+    // that is simply empty.
+    NSUInteger _sourceSongCount;
     // Track id to the song's place in the selected playlist, counted from one.
     // Held rather than derived from the row, so the number stays with the song
     // when the list is sorted by something else.
@@ -1096,13 +1101,18 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     NSArray *base = [self baseTracks];
     [self updateColumnLayout];
 
-    NSString *search = [_searchField stringValue];
-    if ([search length] > 0) {
+    // How many the chosen source holds before anything narrows it, so the count
+    // along the bottom can say what is being left out.
+    _sourceSongCount = [base count];
+
+    // The words are separated once here rather than once for every song.
+    NSArray *words = [BTTrack searchWordsFromString:[_searchField stringValue]];
+    if ([words count] > 0) {
         NSMutableArray *filtered = [NSMutableArray array];
         NSUInteger i;
         for (i = 0; i < [base count]; i++) {
             BTTrack *t = [base objectAtIndex:i];
-            if ([t matchesSearchString:search]) [filtered addObject:t];
+            if ([t matchesSearchWords:words]) [filtered addObject:t];
         }
         base = filtered;
     }
@@ -1133,10 +1143,18 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
         bytes += t.fileSize;
     }
 
+    // "12 of 3410 songs" whenever something is narrowing the list, so a source
+    // that looks empty says why rather than leaving the reader to notice the
+    // search field or a browser column they set a while ago.
     NSUInteger count = [_visibleTracks count];
-    _bottomBar.statusText = [NSString stringWithFormat:@"%lu song%@, %@, %@",
-                             (unsigned long)count,
-                             (count == 1 ? @"" : @"s"),
+    NSString *songs = (_sourceSongCount > count)
+        ? [NSString stringWithFormat:@"%lu of %lu songs",
+           (unsigned long)count, (unsigned long)_sourceSongCount]
+        : [NSString stringWithFormat:@"%lu song%@",
+           (unsigned long)count, (count == 1 ? @"" : @"s")];
+
+    _bottomBar.statusText = [NSString stringWithFormat:@"%@, %@, %@",
+                             songs,
                              [BTTrack runningTimeStringFromInterval:total],
                              BTSizeString(bytes)];
     [_bottomBar setNeedsDisplay:YES];

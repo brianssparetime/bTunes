@@ -292,17 +292,42 @@ static NSString *BTMinuteCount(double minutes) {
     return [BTTrack clockStringFromSeconds:(NSInteger)(self.duration + 0.5)];
 }
 
-- (BOOL)matchesSearchString:(NSString *)needle {
-    if ([needle length] == 0) return YES;
++ (NSArray *)searchWordsFromString:(NSString *)text {
+    if ([text length] == 0) return @[];
+
+    NSArray *pieces = [text componentsSeparatedByCharactersInSet:
+                       [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSMutableArray *words = [NSMutableArray array];
+    NSUInteger i;
+    for (i = 0; i < [pieces count]; i++) {
+        NSString *word = [pieces objectAtIndex:i];
+        if ([word length] > 0) [words addObject:word];
+    }
+    return words;
+}
+
+- (BOOL)matchesSearchWords:(NSArray *)words {
+    if ([words count] == 0) return YES;
+
     NSArray *fields = @[[self displayTitle], [self displayArtist], [self displayAlbum],
                         (self.genre ? self.genre : @""), (self.composer ? self.composer : @"")];
-    NSUInteger i;
-    for (i = 0; i < [fields count]; i++) {
-        NSString *field = [fields objectAtIndex:i];
-        NSRange r = [field rangeOfString:needle options:NSCaseInsensitiveSearch];
-        if (r.location != NSNotFound) return YES;
+    NSUInteger w, i;
+    for (w = 0; w < [words count]; w++) {
+        NSString *word = [words objectAtIndex:w];
+        BOOL found = NO;
+        for (i = 0; i < [fields count] && !found; i++) {
+            found = [[fields objectAtIndex:i] rangeOfString:word
+                                                    options:NSCaseInsensitiveSearch].location != NSNotFound;
+        }
+        // Every word has to land somewhere. One that lands nowhere is the
+        // reader saying they want less than this song.
+        if (!found) return NO;
     }
-    return NO;
+    return YES;
+}
+
+- (BOOL)matchesSearchString:(NSString *)needle {
+    return [self matchesSearchWords:[BTTrack searchWordsFromString:needle]];
 }
 
 @end

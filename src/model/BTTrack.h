@@ -115,7 +115,20 @@ typedef NS_ENUM(NSInteger, BTPathRoot) {
 - (NSString *)displayGenre;
 - (NSString *)durationString;    // m:ss
 
-// Text used by the search field: title, artist, album, genre, composer.
+// What the search field looks through: title, artist, album, genre, composer.
+//
+// Every word has to be found, and each may be found in a different one of them,
+// so "beatles help" reaches Help! by the Beatles. Taken as one run of
+// characters it reached nothing at all, since no single field holds both words
+// and nobody types an artist and a title in the order the tags happen to be in.
+//
+// The words are separated once for the whole search rather than once for every
+// song, which on a library this size is twelve thousand times less work per
+// keystroke.
++ (NSArray *)searchWordsFromString:(NSString *)text;
+- (BOOL)matchesSearchWords:(NSArray *)words;
+
+// The same, for one-off asking. Separates the words itself.
 - (BOOL)matchesSearchString:(NSString *)needle;
 
 // Reads 90, 1:30, 1m30s, and 1:02:30 as times. Returns a negative number when
