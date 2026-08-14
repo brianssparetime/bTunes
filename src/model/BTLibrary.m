@@ -268,6 +268,20 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
     if ([resolved length] > 0) [self.knownPaths addObject:resolved];
 }
 
+- (BTTrack *)trackWithFileAtPath:(NSString *)path {
+    if ([path length] == 0) return nil;
+    // Only worth walking the library when the set says the file is in it, which
+    // it usually is not.
+    if (![self.knownPaths containsObject:path]) return nil;
+
+    NSUInteger i;
+    for (i = 0; i < [self.tracks count]; i++) {
+        BTTrack *track = [self.tracks objectAtIndex:i];
+        if ([[track resolvedPath] isEqualToString:path]) return track;
+    }
+    return nil;
+}
+
 - (void)removeTracks:(NSArray *)tracks {
     NSMutableArray *goneIDs = [NSMutableArray arrayWithCapacity:[tracks count]];
     NSUInteger i;

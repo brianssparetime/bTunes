@@ -425,6 +425,18 @@ static NSString *BTWriteTrimmedCopy(BTTrack *song, NSString *directory,
     return block;
 }
 
+- (BOOL)namesReachTheDisc {
+    // Nothing to write is not a failure to write it.
+    if ([_songs count] == 0) return YES;
+    return [self cdText] != nil;
+}
+
++ (BOOL)deviceWritesNames:(DRDevice *)device {
+    if (device == nil) return NO;
+    NSDictionary *writes = [[device info] objectForKey:DRDeviceWriteCapabilitiesKey];
+    return [[writes objectForKey:DRDeviceCanWriteCDTextKey] boolValue];
+}
+
 #pragma mark - The drive and the disc in it
 
 + (NSArray *)writableDevices {

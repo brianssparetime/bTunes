@@ -28,6 +28,10 @@
 // Where a song off this disc would be written, below the BTunes music folder.
 // Exposed because the import has to say where it is putting things before it
 // starts, and because it is the part worth checking without a disc.
+// How many of this disc's songs the library already holds, counted by the file
+// each would be written to. Nought unless the disc has been taken in before.
++ (NSUInteger)songsOfDisc:(BTAudioDisc *)disc alreadyIn:(BTLibrary *)library;
+
 + (NSString *)relativePathForTitle:(NSString *)title
                             artist:(NSString *)artist
                              album:(NSString *)album

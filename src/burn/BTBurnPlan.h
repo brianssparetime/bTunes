@@ -78,6 +78,20 @@ typedef NS_ENUM(NSInteger, BTBurnRefusal) {
 // players that show them. Nil when there is nothing worth writing.
 - (DRCDTextBlock *)cdText;
 
+// Whether the song names will actually reach the disc.
+//
+// CD-Text is a small fixed block, and a long playlist of long names overruns
+// it. The framework would write it truncated, so the whole block is dropped
+// rather than written half right — but dropping it silently gives a disc that
+// plays and names nothing, with no clue why. The dialog asks this so it can say
+// so before anything is written.
+- (BOOL)namesReachTheDisc;
+
+// Whether a drive can write names at all. Some cannot, which produces the same
+// blank disc for a different reason, and the dialog says which. Asked here so
+// the burn and the dialog cannot disagree about it.
++ (BOOL)deviceWritesNames:(DRDevice *)device;
+
 // Drives that can write a CD-R, in the order the system lists them.
 + (NSArray *)writableDevices;
 

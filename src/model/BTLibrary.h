@@ -52,6 +52,12 @@ extern NSString *const BTLibraryTrackDidChangeNotification;
 // by however many songs took the shortcut.
 - (void)addTrack:(BTTrack *)track;
 
+// The song already recorded against a file, or nil. What anything writing a
+// file into the library asks before adding a second entry pointing at it:
+// taking a CD in twice replaced the audio and then held the same file twice
+// over, once under each import.
+- (BTTrack *)trackWithFileAtPath:(NSString *)path;
+
 // Recursively imports every supported audio file under the given paths. Files
 // already in the library are skipped. The completion block runs on the main
 // thread with the number of tracks added.

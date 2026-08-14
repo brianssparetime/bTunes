@@ -2072,6 +2072,15 @@ constrainMaxCoordinate:(CGFloat)proposedMax
         [detail appendString:@"This disc does not say what its songs are called, so they "
                              @"would come across as \"Track 1\" and so on.\n\n"];
     }
+    // Taking the same disc in twice writes the same files again. The library
+    // keeps one song for each of them rather than a second copy, which is worth
+    // saying before the time is spent rather than after.
+    NSUInteger already = [BTDiscImport songsOfDisc:disc alreadyIn:[BTLibrary sharedLibrary]];
+    if (already > 0) {
+        [detail appendFormat:@"%lu of them %@ already in the library and will be encoded and "
+                             @"written again in place, rather than added a second time.\n\n",
+                             (unsigned long)already, (already == 1 ? @"is" : @"are")];
+    }
     [detail appendFormat:@"They will be encoded as %@ and put in:\n%@\n\nThe disc is only read.",
                          form, [prefs btunesFolder]];
     [alert setInformativeText:detail];

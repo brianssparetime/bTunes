@@ -244,7 +244,15 @@
                     modifiers:(NSUInteger)modifiers
                        target:(id)target {
     NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:action keyEquivalent:key];
-    if (modifiers != 0) [item setKeyEquivalentModifierMask:modifiers];
+    // Always set, even to nothing at all.
+    //
+    // A menu item's modifier mask is Command until it is told otherwise, so
+    // leaving it alone quietly turned every asked-for "no modifiers" into a
+    // Command shortcut. Mute became the ⌘M that the comment beside it says to
+    // avoid, and Play or Pause became ⌘Space, which the system takes for
+    // Spotlight and the application therefore never sees. Both were meant to be
+    // the bare key the windows already answer.
+    [item setKeyEquivalentModifierMask:modifiers];
     if (target) [item setTarget:target];
     return item;
 }
@@ -265,8 +273,8 @@
                                modifiers:NSCommandKeyMask
                                   target:self]];
     [appMenu addItem:[NSMenuItem separatorItem]];
-    [appMenu addItem:[self itemWithTitle:@"Hide BTunes" action:@selector(hide:) key:@"h" modifiers:0 target:NSApp]];
-    [appMenu addItem:[self itemWithTitle:@"Quit BTunes" action:@selector(terminate:) key:@"q" modifiers:0 target:NSApp]];
+    [appMenu addItem:[self itemWithTitle:@"Hide BTunes" action:@selector(hide:) key:@"h" modifiers:NSCommandKeyMask target:NSApp]];
+    [appMenu addItem:[self itemWithTitle:@"Quit BTunes" action:@selector(terminate:) key:@"q" modifiers:NSCommandKeyMask target:NSApp]];
     [appItem setSubmenu:appMenu];
     [mainMenu addItem:appItem];
 

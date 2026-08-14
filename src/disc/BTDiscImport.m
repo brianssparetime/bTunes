@@ -165,6 +165,27 @@ static BOOL BTEncodeTrack(NSString *source, NSString *destination, BOOL lossless
 
 #pragma mark - The disc
 
+// How many of this disc's songs the library already holds, counted by the file
+// each would be written to. What the dialog says before starting, so taking a
+// disc in a second time is a choice rather than a surprise.
++ (NSUInteger)songsOfDisc:(BTAudioDisc *)disc alreadyIn:(BTLibrary *)library {
+    BOOL lossless = [[BTPreferences sharedPreferences] importsLossless];
+    NSString *root = [[BTPreferences sharedPreferences] btunesFolder];
+    NSArray *tracks = [disc tracks];
+
+    NSUInteger held = 0, i;
+    for (i = 0; i < [tracks count]; i++) {
+        BTTrack *source = [tracks objectAtIndex:i];
+        NSString *relative = [self relativePathForTitle:source.title
+                                                 artist:source.artist
+                                                  album:source.album
+                                                 number:source.trackNumber
+                                               lossless:lossless];
+        if ([library trackWithFileAtPath:[root stringByAppendingPathComponent:relative]]) held++;
+    }
+    return held;
+}
+
 + (void)importDisc:(BTAudioDisc *)disc
               into:(BTLibrary *)library
           progress:(void (^)(double, NSString *))progress
@@ -225,7 +246,23 @@ static BOOL BTEncodeTrack(NSString *source, NSString *destination, BOOL lossless
         dispatch_async(dispatch_get_main_queue(), ^{
             NSUInteger j;
             for (j = 0; j < [made count]; j++) {
-                [library addTrack:[made objectAtIndex:j]];
+                BTTrack *fresh = [made objectAtIndex:j];
+                // A disc taken in twice writes the same files again, and the
+                // library must not then hold each of them twice. The song
+                // already recorded against the file takes the new reading of
+                // it: the file on disk is the one just written.
+                BTTrack *already = [library trackWithFileAtPath:[fresh resolvedPath]];
+                if (already) {
+                    already.title = fresh.title;
+                    already.artist = fresh.artist;
+                    already.album = fresh.album;
+                    already.trackNumber = fresh.trackNumber;
+                    already.duration = fresh.duration;
+                    already.kind = fresh.kind;
+                    already.fileSize = fresh.fileSize;
+                    continue;
+                }
+                [library addTrack:fresh];
             }
             if ([made count] > 0) [library noteChanged];
             if (completion) completion([made count], failure);

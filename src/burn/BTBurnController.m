@@ -278,17 +278,33 @@ static BTBurnController *sRunning = nil;
                                   [BTBurnPlan stringFromSectors:[_plan sectors]]]];
     }
 
+    // Everything the reader should know before pressing Burn but which is not a
+    // reason to refuse. Said together, since a playlist can want more than one
+    // of them said.
+    NSMutableArray *notes = [NSMutableArray array];
+
     NSUInteger trimmed = [[_plan trimmed] count];
     if (trimmed > 0) {
-        [_note setStringValue:[NSString stringWithFormat:
+        [notes addObject:[NSString stringWithFormat:
             @"%lu song%@ here %@ a start or end time. The disc gets the part that plays, "
             @"so %@ converted first and Burn takes a moment to begin.",
             (unsigned long)trimmed, (trimmed == 1 ? @"" : @"s"),
             (trimmed == 1 ? @"has" : @"have"),
             (trimmed == 1 ? @"it is" : @"they are")]];
-    } else {
-        [_note setStringValue:@""];
     }
+
+    // A disc that plays and names nothing, said before it is written rather
+    // than discovered afterwards. Two different reasons, and the reader can do
+    // something about one of them.
+    if (![_plan namesReachTheDisc]) {
+        [notes addObject:@"The songs will have no names on the disc: there are more of them, "
+                         @"or longer ones, than CD-Text can hold. Fewer songs would fit."];
+    } else if ([[_plan songs] count] > 0 && ![BTBurnPlan deviceWritesNames:[self selectedDevice]]) {
+        [notes addObject:@"This drive cannot write song names, so the disc will play but "
+                         @"name nothing."];
+    }
+
+    [_note setStringValue:[notes componentsJoinedByString:@" "]];
 
     if (_preparing) {
         [self layoutWindow];
@@ -464,8 +480,7 @@ static BTBurnController *sRunning = nil;
     // Names on the disc need the whole session written in one pass, and only
     // some drives do it. Asked rather than assumed, and asked without insisting,
     // so a drive that cannot manage it still burns the music.
-    NSDictionary *writes = [[device info] objectForKey:DRDeviceWriteCapabilitiesKey];
-    if ([[writes objectForKey:DRDeviceCanWriteCDTextKey] boolValue]) {
+    if ([BTBurnPlan deviceWritesNames:device]) {
         DRCDTextBlock *text = [_plan cdText];
         if (text != nil) {
             [properties setObject:DRBurnStrategyCDSAO forKey:DRBurnStrategyKey];
