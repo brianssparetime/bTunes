@@ -458,6 +458,7 @@ static CGFloat BTTitleBarHeight(void) {
     [_trackTable setDataSource:self];
     [_trackTable setDelegate:self];
     [_trackTable setTarget:self];
+    [_trackTable setAction:@selector(trackClicked:)];
     [_trackTable setDoubleAction:@selector(playSelectedTrack:)];
     // Slack is spread across the columns rather than dumped on the last one.
     // The last one is the track number in a playlist, and widening a column of
@@ -1478,6 +1479,13 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
         BOOL playing = (track == [[BTPlayer sharedPlayer] currentTrack]);
         BOOL isTheMark = [[tableColumn identifier] isEqualToString:@"playing"];
         [(BTTrackNumberCell *)cell setIndicator:((playing && isTheMark) ? _speakerImage : nil)];
+
+        // Under the pointer, that same spot offers to start the row. Not on the
+        // row already playing, which has the speaker there and nothing to
+        // offer, and not on a song that cannot play at all.
+        BOOL offering = (isTheMark && !playing && !track.isProtected &&
+                         row == [_trackTable hoveredRow]);
+        [(BTTrackNumberCell *)cell setShowsPlay:offering];
     }
     // The same gray the sync pane draws a locked purchase in, asked for by the
     // same name. Written out here, giving one of them its own colour later
@@ -1694,6 +1702,24 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
         if (changed) [[BTLibrary sharedLibrary] noteChanged];
         self->_infoController = nil;
     }];
+}
+
+// The whole cell, not the mark inside it. The mark says what the cell does; the
+// cell is the target, because an eighteen point column holding a nine point
+// triangle is not something to ask anybody to hit.
+- (void)trackClicked:(id)sender {
+    NSInteger column = [_trackTable clickedColumn];
+    if (column < 0) return;
+    NSString *identifier = [[[_trackTable tableColumns] objectAtIndex:(NSUInteger)column] identifier];
+    if (![identifier isEqualToString:@"playing"]) return;
+
+    NSInteger row = [_trackTable clickedRow];
+    if (row < 0 || row >= (NSInteger)[_visibleTracks count]) return;
+    BTTrack *track = [_visibleTracks objectAtIndex:(NSUInteger)row];
+    if (track.isProtected) return;
+    if (track == [[BTPlayer sharedPlayer] currentTrack]) return;
+
+    [[BTPlayer sharedPlayer] playTrack:track inList:_visibleTracks];
 }
 
 - (void)playSelectedTrack:(id)sender {

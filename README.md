@@ -173,3 +173,6 @@ the music stays where it is and BTunes owns only the database.
   them.
 - Delete removes songs from a playlist, or from the library when the library is
   selected.
+- Point at a row in the song list and a play mark appears at its near end, where
+  the speaker sits for whatever is playing. Clicking anywhere in that narrow
+  column starts the song.

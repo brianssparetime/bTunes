@@ -84,6 +84,16 @@
 @implementation BTTrackNumberCell
 
 - (void)drawInteriorWithFrame:(NSRect)frame inView:(NSView *)view {
+    // The play mark is drawn rather than kept as an image, since it is wanted at
+    // whatever colour the row's words are and an image would be one fixed one.
+    if (self.showsPlay) {
+        CGFloat side = floor(MIN(NSWidth(frame), NSHeight(frame)) - 4.0);
+        if (side < 6.0) side = 6.0;
+        NSRect box = NSMakeRect(NSMidX(frame) - side / 2.0,
+                                NSMidY(frame) - side / 2.0, side, side);
+        [BTStyle drawPlayGlyphInRect:box color:[NSColor colorWithCalibratedWhite:0.30 alpha:1.0]];
+        return;
+    }
     if (self.indicator == nil) {
         [super drawInteriorWithFrame:frame inView:view];
         return;
@@ -113,7 +123,91 @@
 }
 @end
 
-@implementation BTKeyTableView
+@implementation BTKeyTableView {
+    NSTrackingArea *_hoverArea;
+    NSInteger _hoveredRow;
+}
+
+- (instancetype)initWithFrame:(NSRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) _hoveredRow = -1;
+    return self;
+}
+
+- (NSInteger)hoveredRow { return _hoveredRow; }
+
+// Followed rather than asked for, because the mark has to appear as the pointer
+// arrives and go as it leaves, and nothing else in the window is watching.
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (_hoverArea) [self removeTrackingArea:_hoverArea];
+    _hoverArea = [[NSTrackingArea alloc]
+        initWithRect:NSZeroRect
+             options:(NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved |
+                      NSTrackingActiveInKeyWindow | NSTrackingInVisibleRect)
+               owner:self
+            userInfo:nil];
+    [self addTrackingArea:_hoverArea];
+}
+
+- (void)setHoveredRow:(NSInteger)row {
+    if (row == _hoveredRow) return;
+    NSInteger was = _hoveredRow;
+    _hoveredRow = row;
+    // Only the two rows that changed, so moving down a list of five thousand
+    // songs does not redraw the list five thousand times.
+    if (was >= 0 && was < [self numberOfRows]) [self setNeedsDisplayInRect:[self rectOfRow:was]];
+    if (row >= 0 && row < [self numberOfRows]) [self setNeedsDisplayInRect:[self rectOfRow:row]];
+}
+
+- (void)mouseMoved:(NSEvent *)event {
+    NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+    [self setHoveredRow:[self rowAtPoint:point]];
+    [super mouseMoved:event];
+}
+
+- (void)mouseEntered:(NSEvent *)event {
+    NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+    [self setHoveredRow:[self rowAtPoint:point]];
+}
+
+- (void)mouseExited:(NSEvent *)event {
+    [self setHoveredRow:-1];
+}
+
+// A list that scrolls under a still pointer is showing a different row there,
+// and no mouse moved to say so. Without this the mark stays on the row it was
+// on, which is now somewhere else entirely.
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    NSClipView *clip = [[self enclosingScrollView] contentView];
+    if (clip == nil) return;
+    [clip setPostsBoundsChangedNotifications:YES];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                            selector:@selector(listScrolled:)
+                                                name:NSViewBoundsDidChangeNotification
+                                              object:clip];
+}
+
+- (void)listScrolled:(NSNotification *)note {
+    [self followPointer];
+}
+
+- (void)viewDidEndLiveResize {
+    [super viewDidEndLiveResize];
+    [self followPointer];
+}
+
+// Where the pointer is now, asked of the window rather than waited for. Outside
+// the list, or over a window that is not the one being used, nothing is offered.
+- (void)followPointer {
+    NSWindow *window = [self window];
+    if (window == nil || ![window isKeyWindow]) { [self setHoveredRow:-1]; return; }
+    NSPoint point = [self convertPoint:[window mouseLocationOutsideOfEventStream] fromView:nil];
+    if (!NSPointInRect(point, [self visibleRect])) { [self setHoveredRow:-1]; return; }
+    [self setHoveredRow:[self rowAtPoint:point]];
+}
+
 - (void)keyDown:(NSEvent *)event {
     if (BTHandleDeleteKey(event, self)) return;
     if (BTHandleTransportKey(event, self, NO)) return;

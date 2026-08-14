@@ -34,6 +34,10 @@
 // the one playing, so the indicator needs no column of its own.
 @interface BTTrackNumberCell : NSTextFieldCell
 @property (nonatomic, strong) NSImage *indicator;
+// A play mark in place of the number, while the pointer is over the row. The
+// same spot the speaker will occupy a moment later, so starting a song and
+// seeing that it started happen in one place.
+@property (nonatomic, assign) BOOL showsPlay;
 @end
 
 // What a list tells its delegate when the delete key is pressed in it.
@@ -48,6 +52,9 @@
 // The two lists. Both answer the delete key; the outline view also opens and
 // closes a folder with the arrows, and ejects when the eject mark is clicked.
 @interface BTKeyTableView : BTListTableView
+// The row the pointer is over, or -1 when it is over none of them. The table
+// knows where the pointer is; what to draw there is the window's business.
+@property (nonatomic, readonly) NSInteger hoveredRow;
 @end
 
 @interface BTKeyOutlineView : BTListOutlineView
