@@ -5,7 +5,8 @@
 // at wherever the files are there and every track resolves again.
 typedef NS_ENUM(NSInteger, BTPathRoot) {
     BTPathRootMusic = 0,    // the music folder, where nearly everything lives
-    BTPathRootDetune        // the free recordings standing in for locked purchases
+    BTPathRootDetune,       // the free recordings standing in for locked purchases
+    BTPathRootBTunes        // music BTunes made itself, off a CD
 };
 
 // One audio file in the library. Values are cached from the file's tags at

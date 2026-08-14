@@ -6,7 +6,9 @@
 // setting somewhere else takes effect without anything having to be told.
 static NSString *BTRootFor(BTPathRoot which) {
     BTPreferences *prefs = [BTPreferences sharedPreferences];
-    NSString *root = (which == BTPathRootDetune) ? [prefs detuneFolder] : [prefs musicFolder];
+    NSString *root = [prefs musicFolder];
+    if (which == BTPathRootDetune) root = [prefs detuneFolder];
+    else if (which == BTPathRootBTunes) root = [prefs btunesFolder];
     return [root length] > 0 ? [root stringByStandardizingPath] : nil;
 }
 
@@ -106,8 +108,10 @@ static NSString *BTMinuteCount(double minutes) {
     BTTrack *t = [[BTTrack alloc] init];
     t.trackID = BTSavedString(dict, @"id");
     // The root before the path, because the path is measured against it.
-    t.pathRoot = [BTSavedString(dict, @"pathRoot") isEqualToString:@"detune"]
-        ? BTPathRootDetune : BTPathRootMusic;
+    NSString *root = BTSavedString(dict, @"pathRoot");
+    if ([root isEqualToString:@"detune"]) t.pathRoot = BTPathRootDetune;
+    else if ([root isEqualToString:@"btunes"]) t.pathRoot = BTPathRootBTunes;
+    else t.pathRoot = BTPathRootMusic;
     t.path = BTSavedString(dict, @"path");
     t.persistentID = BTSavedString(dict, @"persistentID");
     t.title = BTSavedString(dict, @"title");
@@ -142,6 +146,7 @@ static NSString *BTMinuteCount(double minutes) {
     // Written only when it is not the ordinary one, so a library holding no
     // substituted songs reads exactly as it did before they were possible.
     if (self.pathRoot == BTPathRootDetune) [d setObject:@"detune" forKey:@"pathRoot"];
+    else if (self.pathRoot == BTPathRootBTunes) [d setObject:@"btunes" forKey:@"pathRoot"];
     if (self.persistentID) [d setObject:self.persistentID forKey:@"persistentID"];
     if (self.isProtected) [d setObject:@YES forKey:@"protected"];
     if (self.title) [d setObject:self.title forKey:@"title"];

@@ -39,6 +39,8 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
     NSTextField *_databaseField;
     NSTextField *_iTunesField;
     NSTextField *_detuneField;
+    NSTextField *_btunesField;
+    NSButton *_losslessBox;
     NSButton *_purpleBox;
 }
 
@@ -58,7 +60,13 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
         @[@"Library:", @"Where BTunes keeps its own database: ratings, play counts, and playlists. Songs are not moved."],
         @[@"iTunes:", @"The iTunes library file a sync reads. It is only ever read, never written. Point it at a copy while trying something out."],
         @[@"Detune:", @"The folder of free recordings standing in for locked purchases. Leave it empty until there is one: locked songs then simply stay locked. Choose the folder holding detune-mapping.json."],
+        @[@"BTunes:", @"Where BTunes puts music it makes itself, which today means songs taken off a CD. Laid out the way iTunes lays one out, artist then album, and kept apart from the iTunes folder because that folder belongs to iTunes."],
     ];
+}
+
++ (NSString *)losslessNote {
+    return @"A CD is about six hundred megabytes as it stands, half that as Apple Lossless, "
+           @"and a tenth as AAC. Lossless is exact; AAC is what iTunes used and what fits.";
 }
 
 + (NSString *)purpleNote {
@@ -81,6 +89,8 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
     for (i = 0; i < [rows count]; i++) {
         total += [self stepForNote:[[rows objectAtIndex:i] objectAtIndex:1]];
     }
+    total += BT_BOX_TO_NOTE + BTNoteHeight([self losslessNote], BT_PREFS_WIDTH - 58.0)
+           + BT_AFTER_NOTE + BT_BOX;
     return total + BT_BOX_TO_NOTE + BTNoteHeight([self purpleNote], BT_PREFS_WIDTH - 58.0) + 38.0;
 }
 
@@ -101,8 +111,10 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
 
     NSArray *rows = [BTPreferencesController settingRows];
     SEL actions[] = { @selector(chooseMusicFolder:), @selector(chooseDatabaseFolder:),
-                      @selector(chooseITunesLibrary:), @selector(chooseDetuneFolder:) };
-    NSTextField *__strong *fields[] = { &_musicField, &_databaseField, &_iTunesField, &_detuneField };
+                      @selector(chooseITunesLibrary:), @selector(chooseDetuneFolder:),
+                      @selector(chooseBTunesFolder:) };
+    NSTextField *__strong *fields[] = { &_musicField, &_databaseField, &_iTunesField,
+                                        &_detuneField, &_btunesField };
     NSUInteger row;
     for (row = 0; row < [rows count]; row++) {
         *fields[row] = [self addRowAtY:&y
@@ -112,7 +124,25 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
                                 inView:content];
     }
 
-    // Its own row rather than a fifth path to choose: this is a choice about
+    _losslessBox = [[NSButton alloc] initWithFrame:NSMakeRect(20, y, 400, BT_BOX)];
+    [_losslessBox setButtonType:NSSwitchButton];
+    [_losslessBox setFont:[BTStyle uiFont]];
+    [_losslessBox setTitle:@"Take CDs in as Apple Lossless"];
+    [_losslessBox setTarget:self];
+    [_losslessBox setAction:@selector(losslessChanged:)];
+    [content addSubview:_losslessBox];
+
+    NSString *losslessNote = [BTPreferencesController losslessNote];
+    CGFloat losslessHeight = BTNoteHeight(losslessNote, BT_PREFS_WIDTH - 58.0);
+    [content addSubview:[self labelWithText:losslessNote
+                                      frame:NSMakeRect(38, y - BT_BOX_TO_NOTE - losslessHeight,
+                                                       BT_PREFS_WIDTH - 58, losslessHeight)
+                                      small:YES]];
+    // The box below sits at its origin and extends upward, so its own height
+    // comes off too. Without it the note above runs straight into it.
+    y -= BT_BOX_TO_NOTE + losslessHeight + BT_AFTER_NOTE + BT_BOX;
+
+    // Its own row rather than a sixth path to choose: this is a choice about
     // how the window looks, not about where something lives. The note sits
     // under it at the same left edge as the words beside the box, the way the
     // notes under the three paths do.
@@ -137,6 +167,10 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
 
     [self refresh];
     return self;
+}
+
+- (void)losslessChanged:(id)sender {
+    [[BTPreferences sharedPreferences] setImportsLossless:([_losslessBox state] == NSOnState)];
 }
 
 - (void)purpleModeChanged:(id)sender {
@@ -190,6 +224,8 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
     // reads as a setting that failed to load rather than one not yet made.
     NSString *detune = [prefs detuneFolder];
     [_detuneField setStringValue:([detune length] > 0 ? detune : @"None chosen")];
+    [_btunesField setStringValue:[prefs btunesFolder]];
+    [_losslessBox setState:([prefs importsLossless] ? NSOnState : NSOffState)];
     [_purpleBox setState:([prefs purpleMode] ? NSOnState : NSOffState)];
 }
 
@@ -230,6 +266,15 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
 
 // Choosing the folder that holds the map, not the map itself, since the folder
 // is the thing that moves and the audio is found relative to it.
+// Made if it is not there yet, since this is a folder BTunes owns rather than
+// one it is being pointed at.
+- (void)chooseBTunesFolder:(id)sender {
+    NSString *chosen = [self chooseFolderStartingAt:[[BTPreferences sharedPreferences] btunesFolder]];
+    if (chosen == nil) return;
+    [[BTPreferences sharedPreferences] setBtunesFolder:chosen];
+    [self refresh];
+}
+
 - (void)chooseDetuneFolder:(id)sender {
     NSString *chosen = [self chooseFolderStartingAt:[[BTPreferences sharedPreferences] detuneFolder]];
     if (chosen == nil) return;

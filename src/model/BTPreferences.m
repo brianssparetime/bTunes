@@ -8,14 +8,46 @@ static NSString *const BTDatabaseFolderKey = @"BTDatabaseFolder";
 static NSString *const BTITunesLibraryPathKey = @"BTITunesLibraryPath";
 static NSString *const BTPurpleModeKey = @"BTPurpleMode";
 static NSString *const BTDetuneFolderKey = @"BTDetuneFolder";
+static NSString *const BTBTunesFolderKey = @"BTBTunesFolder";
+static NSString *const BTImportsLosslessKey = @"BTImportsLossless";
 
 @implementation BTPreferences
+
+// Every setting here is read from and written to the defaults, so none of them
+// has anything to keep in an ivar.
+@dynamic btunesFolder, importsLossless;
 
 + (instancetype)sharedPreferences {
     static BTPreferences *shared = nil;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ shared = [[BTPreferences alloc] init]; });
     return shared;
+}
+
+- (NSString *)defaultBTunesFolder {
+    NSArray *music = NSSearchPathForDirectoriesInDomains(NSMusicDirectory, NSUserDomainMask, YES);
+    NSString *home = ([music count] > 0) ? [music objectAtIndex:0]
+                                         : [NSHomeDirectory() stringByAppendingPathComponent:@"Music"];
+    return [home stringByAppendingPathComponent:@"BTunes"];
+}
+
+- (NSString *)btunesFolder {
+    NSString *saved = [[NSUserDefaults standardUserDefaults] stringForKey:BTBTunesFolderKey];
+    return [saved length] > 0 ? saved : [self defaultBTunesFolder];
+}
+
+- (void)setBtunesFolder:(NSString *)folder {
+    [[NSUserDefaults standardUserDefaults] setObject:(folder ?: @"") forKey:BTBTunesFolderKey];
+    [[NSNotificationCenter defaultCenter] postNotificationName:BTPreferencesDidChangeNotification object:nil];
+}
+
+- (BOOL)importsLossless {
+    return [[NSUserDefaults standardUserDefaults] boolForKey:BTImportsLosslessKey];
+}
+
+- (void)setImportsLossless:(BOOL)lossless {
+    [[NSUserDefaults standardUserDefaults] setBool:lossless forKey:BTImportsLosslessKey];
+    [[NSNotificationCenter defaultCenter] postNotificationName:BTPreferencesDidChangeNotification object:nil];
 }
 
 - (NSString *)defaultMusicFolder {

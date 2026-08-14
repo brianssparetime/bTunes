@@ -28,6 +28,11 @@ order it was built, because that order was chosen.
 Mini mode is a compact dark panel with an analyzer, floating above other windows
 and over full screen spaces. Clicking its logo returns to the full window.
 
+An audio CD in the drive appears under the library, and its songs play from the
+disc. The button between the search field and the mini player takes it in,
+encoding as AAC, or as Apple Lossless if preferred, into a BTunes folder in
+~/Music laid out the way iTunes lays one out.
+
 A playlist can be burned to an audio CD, playable in anything that plays CDs.
 The drive, the gap between songs, and whether to verify the disc are all chosen
 in one dialog before anything is written, and a playlist that cannot be burned

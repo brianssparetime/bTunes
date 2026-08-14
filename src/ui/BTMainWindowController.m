@@ -16,6 +16,7 @@
 #import "BTPlaylist.h"
 #import "BTIPod.h"
 #import "BTAudioDisc.h"
+#import "BTDiscImport.h"
 #import "BTSyncView.h"
 #import "BTITunesSyncView.h"
 #import "BTPreferences.h"
@@ -2222,19 +2223,68 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     [BTBurnController burnPlaylist:playlist modalForWindow:[self window]];
 }
 
-// Taking a disc into the library. Not built yet: the button that leads here is,
-// and saying so plainly beats a button that does nothing and explains nothing.
+// Taking a disc into the library.
+//
+// What it will be called is said before it starts, because that is the part
+// worth changing your mind about. A disc that carried CD-Text arrives with its
+// songs named; one that did not arrives as "Track 1" and the rest, and a dozen
+// of those going into twelve thousand songs is worth being warned of rather than
+// discovering afterwards.
 - (void)importDisc:(id)sender {
     if (![_selectedSource isKindOfClass:[BTAudioDisc class]]) return;
     BTAudioDisc *disc = (BTAudioDisc *)_selectedSource;
+    NSUInteger count = [[disc tracks] count];
+    if (count == 0) return;
+
+    BTPreferences *prefs = [BTPreferences sharedPreferences];
+    NSString *form = [prefs importsLossless] ? @"Apple Lossless" : @"AAC";
 
     NSAlert *alert = [[NSAlert alloc] init];
-    [alert setMessageText:@"Importing a CD is not finished yet."];
-    [alert setInformativeText:[NSString stringWithFormat:
-        @"\"%@\" would come across as %lu songs.\n\nThe songs can be played from the "
-        @"disc in the meantime.",
-        [disc name], (unsigned long)[[disc tracks] count]]];
-    [alert runModal];
+    [alert setMessageText:[NSString stringWithFormat:@"Import %lu song%@ from \"%@\"?",
+                           (unsigned long)count, (count == 1 ? @"" : @"s"), [disc name]]];
+
+    NSMutableString *detail = [NSMutableString string];
+    if (![disc named]) {
+        [detail appendString:@"This disc does not say what its songs are called, so they "
+                             @"would come across as \"Track 1\" and so on.\n\n"];
+    }
+    [detail appendFormat:@"They will be encoded as %@ and put in:\n%@\n\nThe disc is only read.",
+                         form, [prefs btunesFolder]];
+    [alert setInformativeText:detail];
+    [alert addButtonWithTitle:@"Import"];
+    [alert addButtonWithTitle:@"Cancel"];
+    if ([alert runModal] != NSAlertFirstButtonReturn) return;
+
+    [_actionButton setEnabled:NO];
+    [BTDiscImport importDisc:disc
+                        into:[BTLibrary sharedLibrary]
+                    progress:^(double fraction, NSString *what) {
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName:BTDisplayProgressNotification
+                          object:nil
+                        userInfo:@{@"title": @"Importing CD",
+                                   @"message": (what ? what : @""),
+                                   @"fraction": @(fraction)}];
+    } completion:^(NSUInteger added, NSString *error) {
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName:BTDisplayProgressDidEndNotification object:nil];
+        [self->_actionButton setEnabled:YES];
+        [self reloadEverything];
+
+        NSAlert *done = [[NSAlert alloc] init];
+        if (error) {
+            [done setMessageText:@"The import stopped."];
+            [done setInformativeText:[NSString stringWithFormat:
+                @"%@\n\n%lu song%@ came across before it did, and %@ been kept.",
+                error, (unsigned long)added, (added == 1 ? @"" : @"s"),
+                (added == 1 ? @"has" : @"have")]];
+        } else {
+            [done setMessageText:[NSString stringWithFormat:@"%lu song%@ came across.",
+                                  (unsigned long)added, (added == 1 ? @"" : @"s")]];
+            [done setInformativeText:@"Nothing was written to the disc, and it can be ejected."];
+        }
+        [done runModal];
+    }];
 }
 
 - (void)deleteSelection:(id)sender {

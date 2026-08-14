@@ -37,6 +37,20 @@ extern NSString *const BTPreferencesDidChangeNotification;
 // moving it and repointing this setting carries every substituted song with it.
 @property (nonatomic, copy) NSString *detuneFolder;
 
+// Where BTunes puts music it made itself, which today means songs taken off a
+// CD. A third root, kept apart from the iTunes music folder because that folder
+// belongs to iTunes and nothing here writes to it.
+//
+// Laid out the way iTunes lays one out, artist then album then the songs, so it
+// reads the same as the folder beside it and could be pointed at by anything
+// else that expects that shape.
+@property (nonatomic, copy) NSString *btunesFolder;
+
+// What a song taken off a CD is encoded as. AAC unless asked otherwise: a disc
+// is about six hundred megabytes as it stands, half that as Apple Lossless, and
+// a tenth as AAC. Lossless is there for anyone who would rather spend the disk.
+@property (nonatomic, assign) BOOL importsLossless;
+
 // Whether the main window is drawn in purple rather than blue. Off unless asked
 // for, and remembered. The mini player is purple either way, so this does not
 // touch it.
@@ -44,6 +58,7 @@ extern NSString *const BTPreferencesDidChangeNotification;
 
 // What the setting falls back to when it has never been chosen.
 - (NSString *)defaultMusicFolder;
+- (NSString *)defaultBTunesFolder;
 - (NSString *)defaultDatabaseFolder;
 - (NSString *)defaultITunesLibraryPath;
 
