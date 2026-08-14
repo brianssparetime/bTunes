@@ -14,6 +14,7 @@
 #import "BTITunesEntry.h"
 #import "BTPlaylist.h"
 #import "BTIPod.h"
+#import "BTAudioDisc.h"
 #import "BTSyncView.h"
 #import "BTITunesSyncView.h"
 #import "BTPreferences.h"
@@ -129,6 +130,7 @@ static CGFloat BTTitleBarHeight(void) {
     BOOL _browserHidden;
     BOOL _renameRequested;
     BTIPod *_iPod;
+    BTAudioDisc *_disc;
     BTSyncView *_syncView;
     NSMutableSet *_closedFolders;
     // Whether the bars have been put where they were left. Until they have, a
@@ -197,9 +199,11 @@ static CGFloat BTTitleBarHeight(void) {
     [nc addObserver:self selector:@selector(libraryChanged:) name:BTLibraryDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(playerChanged:) name:BTPlayerDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(iPodChanged:) name:BTIPodDidChangeNotification object:nil];
+    [nc addObserver:self selector:@selector(discChanged:) name:BTAudioDiscDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(settingsChanged:) name:BTPreferencesDidChangeNotification object:nil];
 
     [self iPodChanged:nil];
+    [self discChanged:nil];
     [self reloadEverything];
     return self;
 }
@@ -237,6 +241,31 @@ static CGFloat BTTitleBarHeight(void) {
         [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5, 2, 4, 4)] fill];
         [[NSColor colorWithCalibratedRed:0.62 green:0.76 blue:0.93 alpha:1.0] set];
         NSRectFill(NSMakeRect(5, 7.5, 4, 4));
+        [image unlockFocus];
+        return image;
+    }
+    if ([item isKindOfClass:[BTAudioDisc class]]) {
+        // A disc seen face on: the silver ring, the clear centre, and the hole.
+        NSBezierPath *edge = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 13, 13)];
+        [[NSColor colorWithCalibratedWhite:0.86 alpha:1.0] set];
+        [edge fill];
+        [[NSColor colorWithCalibratedWhite:0.45 alpha:1.0] set];
+        [edge stroke];
+
+        // A sheen across it, which is what says silver rather than white.
+        [[NSColor colorWithCalibratedWhite:1.0 alpha:0.9] set];
+        NSBezierPath *sheen = [NSBezierPath bezierPath];
+        [sheen moveToPoint:NSMakePoint(3.0, 11.6)];
+        [sheen lineToPoint:NSMakePoint(6.4, 12.9)];
+        [sheen lineToPoint:NSMakePoint(10.4, 6.0)];
+        [sheen lineToPoint:NSMakePoint(8.0, 4.4)];
+        [sheen closePath];
+        [sheen fill];
+
+        [blue set];
+        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5.0, 5.0, 4, 4)] fill];
+        [[NSColor whiteColor] set];
+        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(6.2, 6.2, 1.6, 1.6)] fill];
         [image unlockFocus];
         return image;
     }
@@ -844,6 +873,48 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     if (had != (found != nil)) [self reloadEverything];
 }
 
+// A disc arriving or leaving. What was selected falls back to the library when
+// the disc it was showing has gone, the way the iPod already does.
+- (void)discChanged:(NSNotification *)note {
+    BTAudioDisc *found = [BTAudioDisc insertedDisc];
+    BOOL had = (_disc != nil);
+    _disc = found;
+
+    if (_disc == nil && [_selectedSource isKindOfClass:[BTAudioDisc class]]) {
+        _selectedSource = BTLibrarySource;
+        [self updateRightPane];
+        [self updateBrowserVisibility];
+    }
+    [_sourceList reloadData];
+    if (had != (found != nil) || [_selectedSource isKindOfClass:[BTAudioDisc class]]) {
+        [self reloadEverything];
+    }
+}
+
+// The mark on a row ejects that row's device, whichever kind it is. The button
+// at the bottom right is the iPod's alone and goes through ejectIPod: below.
+- (void)ejectSource:(id)sender {
+    NSInteger row = [_sourceList clickedRow];
+    id item = (row >= 0) ? [_sourceList itemAtRow:row] : nil;
+
+    if ([item isKindOfClass:[BTAudioDisc class]]) {
+        if (![(BTAudioDisc *)item eject]) {
+            [self sayEjectFailed:@"The disc would not eject."];
+            return;
+        }
+        [self discChanged:nil];
+        return;
+    }
+    [self ejectIPod:sender];
+}
+
+- (void)sayEjectFailed:(NSString *)what {
+    NSAlert *alert = [[NSAlert alloc] init];
+    [alert setMessageText:what];
+    [alert setInformativeText:@"Something is still using it. Try again in a moment."];
+    [alert runModal];
+}
+
 - (void)ejectIPod:(id)sender {
     if (_iPod == nil) return;
 
@@ -895,6 +966,11 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     if (playlist == nil) {
         _sourceOrder = nil;
         _showsPlaylistOrder = NO;
+        // A disc plays its own songs, which are files on the mounted volume and
+        // are in nobody's library.
+        if ([_selectedSource isKindOfClass:[BTAudioDisc class]]) {
+            return [(BTAudioDisc *)_selectedSource tracks];
+        }
         BOOL wholeLibrary = (_selectedSource == BTLibrarySource ||
                              _selectedSource == BTRecentlyAddedSource ||
                              _selectedSource == nil);
@@ -1245,9 +1321,13 @@ static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
 
 - (NSArray *)childrenOfSourceItem:(id)item {
     if (item == nil) {
-        NSMutableArray *roots = [NSMutableArray arrayWithObjects:BTLibrarySource,
-                                 BTRecentlyAddedSource, nil];
-        // The iPod sits under the two library views, above the playlists.
+        // A disc sits directly under the library, because it is another place
+        // songs come from. Recently Added is a second view of the library rather
+        // than a source of its own, so it follows.
+        NSMutableArray *roots = [NSMutableArray arrayWithObject:BTLibrarySource];
+        if (_disc) [roots addObject:_disc];
+        [roots addObject:BTRecentlyAddedSource];
+        // The iPod sits under the library views, above the playlists.
         if (_iPod) [roots addObject:_iPod];
         [roots addObjectsFromArray:[self sourcesArranged:[BTLibrary sharedLibrary].playlists]];
         return roots;
@@ -1275,6 +1355,7 @@ static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
     if (item == BTLibrarySource) return @"Library";
     if (item == BTRecentlyAddedSource) return @"Recently Added";
     if ([item isKindOfClass:[BTIPod class]]) return [(BTIPod *)item name];
+    if ([item isKindOfClass:[BTAudioDisc class]]) return [(BTAudioDisc *)item name];
     return [(BTPlaylist *)item name];
 }
 
@@ -1297,7 +1378,8 @@ static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
     if ([cell isKindOfClass:[BTSourceCell class]]) {
         BTSourceCell *sourceCell = cell;
         sourceCell.icon = [self iconForSource:item];
-        sourceCell.showsEject = [item isKindOfClass:[BTIPod class]];
+        sourceCell.showsEject = ([item isKindOfClass:[BTIPod class]] ||
+                                 [item isKindOfClass:[BTAudioDisc class]]);
 
         BOOL selected = ([outlineView selectedRow] == [outlineView rowForItem:item]);
         [sourceCell setHighlighted:NO];

@@ -226,7 +226,7 @@
         if ([cell isKindOfClass:[BTSourceCell class]] && [(BTSourceCell *)cell showsEject]) {
             NSRect frame = [self frameOfCellAtColumn:0 row:row];
             if (NSPointInRect(point, [BTSourceCell ejectRectInFrame:frame])) {
-                [NSApp sendAction:@selector(ejectIPod:) to:nil from:self];
+                [NSApp sendAction:@selector(ejectSource:) to:nil from:self];
                 return;
             }
         }

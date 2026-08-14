@@ -10,6 +10,7 @@
 #import "BTITunesEntry.h"
 #import "BTPlayer.h"
 #import "BTIPod.h"
+#import "BTAudioDisc.h"
 
 @implementation BTAppDelegate {
     BTMainWindowController *_main;
@@ -28,6 +29,7 @@
     [_splash showSplash];
 
     [BTIPod startWatching];
+    [BTAudioDisc startWatching];
 
     BTLibrary *library = [BTLibrary sharedLibrary];
     [library loadFromDisk];
