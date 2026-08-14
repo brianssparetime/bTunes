@@ -23,6 +23,18 @@
 // a song comes to be judged importable and then imported as its locked original.
 - (BTTrack *)trackFromEntry:(BTITunesEntry *)source;
 
+// What iTunes knows about a song already in the library, put onto it.
+//
+// For a song that got here by scanning a folder: the file is right and the
+// listening history is missing, because a scan reads tags and tags carry none
+// of it. The track takes the iTunes id so it is recognised by id from now on.
+//
+// Nothing already recorded is thrown away. The play counts are added, since
+// both are real listening; the earlier date added wins, since that is when the
+// song was first had; the later date played wins for the same reason. Returns
+// whether anything was taken.
+- (BOOL)fillInTrack:(BTTrack *)track fromEntry:(BTITunesEntry *)source;
+
 // Where iTunes now says each of these songs lives, for the ones it still knows
 // about and whose file is actually there. Keyed by BTunes track id, so the
 // answer can be worked out away from the main thread and applied on it.

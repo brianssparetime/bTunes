@@ -6,8 +6,13 @@
 #import "BTDetuneMap.h"
 
 @implementation BTITunesSyncTrack
-// Whether it could come across at all. Being left behind before is deliberately
-// not part of this: that sets which way the box starts, and a box can be ticked.
+- (BOOL)fillsInDetails { return [self.fillsInTrackID length] > 0; }
+
+// Whether this sync could do anything for the song at all: bring it across, or
+// fill in what iTunes knows about one already here under no name.
+//
+// Being left behind before is deliberately not part of this: that sets which way
+// the box starts, and a box can be ticked.
 - (BOOL)eligible {
     return self.blocked == BTITunesBlockNone && !self.alreadyHere;
 }
@@ -133,7 +138,10 @@
 // as a nested loop and no time at all as a lookup.
 - (void)compareTracks:(NSDictionary *)read against:(BTLibrary *)library {
     NSMutableDictionary *haveByITunesID = [NSMutableDictionary dictionary];
-    NSMutableSet *havePaths = [NSMutableSet set];
+    // Kept as the track rather than as a set of paths, because matching a file
+    // is only half the question: what matters next is whether the track sitting
+    // there carries an iTunes identity or arrived by a folder scan with none.
+    NSMutableDictionary *haveByPath = [NSMutableDictionary dictionary];
 
     NSUInteger i;
     for (i = 0; i < [library.tracks count]; i++) {
@@ -142,7 +150,9 @@
             [haveByITunesID setObject:track forKey:track.persistentID];
         }
         NSString *resolved = [track resolvedPath];
-        if ([resolved length] > 0) [havePaths addObject:resolved];
+        if ([resolved length] > 0 && [haveByPath objectForKey:resolved] == nil) {
+            [haveByPath setObject:track forKey:resolved];
+        }
     }
 
     NSSet *excluded = [library excludedFromImport];
@@ -160,10 +170,24 @@
         // Matched on the file BTunes would actually record, which for a
         // substituted song is the free recording rather than the locked
         // original, so a second sync does not offer it all over again.
-        BOOL here = ([persistentID length] > 0 && [haveByITunesID objectForKey:persistentID]) ||
-                    (source.resolvedPath != nil && [havePaths containsObject:source.resolvedPath]);
+        BTTrack *sameID = ([persistentID length] > 0)
+            ? [haveByITunesID objectForKey:persistentID] : nil;
+        BTTrack *sameFile = (source.resolvedPath != nil)
+            ? [haveByPath objectForKey:source.resolvedPath] : nil;
+        BOOL here = (sameID != nil || sameFile != nil);
+
+        // The file is here and the song is not: a folder scan put it in the
+        // library, so it carries no iTunes id and none of what iTunes knows
+        // about it. Left as "already here" that would never change, because
+        // every later sync would find the same file and stop at the same place.
+        NSString *fillsIn = nil;
+        if (sameID == nil && sameFile != nil && [persistentID length] > 0 &&
+            [sameFile.persistentID length] == 0 && source.blocked == BTITunesBlockNone) {
+            fillsIn = sameFile.trackID;
+        }
 
         BTITunesSyncTrack *incoming = [[BTITunesSyncTrack alloc] init];
+        incoming.fillsInTrackID = fillsIn;
         incoming.persistentID = persistentID;
         incoming.path = source.iTunesPath;
         incoming.title = BTITunesString(source.entry, @"Name");
@@ -171,11 +195,13 @@
         incoming.album = BTITunesString(source.entry, @"Album");
         incoming.source = source;
         incoming.fromDetune = source.fromDetune;
-        incoming.alreadyHere = here;
+        // One whose details can still be filled in is not finished with, so it
+        // is not "already here" however much of it is.
+        incoming.alreadyHere = (here && fillsIn == nil);
         // A song already here is not asked about again, whatever else is true
         // of it, so the reason it could not come across is not worked out.
         incoming.blocked = here ? BTITunesBlockNone : source.blocked;
-        incoming.excludedBefore = (!here && [persistentID length] > 0 &&
+        incoming.excludedBefore = (!incoming.alreadyHere && [persistentID length] > 0 &&
                                    [excluded containsObject:persistentID]);
         [_incomingTracks addObject:incoming];
     }
@@ -204,10 +230,8 @@
         if ([parent length] > 0) [folderParents setObject:parent forKey:own];
     }
 
-    // What BTunes already holds, by source id and by name.
-    NSMutableDictionary *haveByPersistent = [NSMutableDictionary dictionary];
-    NSMutableDictionary *haveByName = [NSMutableDictionary dictionary];
-    [self collectPlaylists:library.playlists intoBySource:haveByPersistent byName:haveByName];
+    // What BTunes already holds, by the iTunes playlist it came from.
+    NSDictionary *haveByPersistent = [self playlistsBySourceIn:library];
 
     for (i = 0; i < [playlistEntries count]; i++) {
         NSDictionary *entry = [playlistEntries objectAtIndex:i];
@@ -245,9 +269,11 @@
         }
         if ([members count] == 0) continue;   // nothing in it worth reporting
 
-        BTPlaylist *existing = nil;
-        if ([persistentID length] > 0) existing = [haveByPersistent objectForKey:persistentID];
-        if (existing == nil) existing = [haveByName objectForKey:[name lowercaseString]];
+        // By id and by nothing else. Matching on name as well meant a playlist
+        // made here by hand was quietly grown by an iTunes one that shared its
+        // name, adding songs nobody chose to put in it.
+        BTPlaylist *existing = ([persistentID length] > 0)
+            ? [haveByPersistent objectForKey:persistentID] : nil;
 
         // Only what this playlist would add. A song already in it is not a
         // change, and neither is one already imported and placed here by hand.
@@ -306,17 +332,14 @@
     return path;
 }
 
-- (void)collectPlaylists:(NSArray *)playlists
-            intoBySource:(NSMutableDictionary *)bySource
-                  byName:(NSMutableDictionary *)byName {
-    [BTPlaylist enumerate:playlists usingBlock:^(BTPlaylist *playlist, BOOL *stop) {
+- (NSDictionary *)playlistsBySourceIn:(BTLibrary *)library {
+    NSMutableDictionary *bySource = [NSMutableDictionary dictionary];
+    [BTPlaylist enumerate:library.playlists usingBlock:^(BTPlaylist *playlist, BOOL *stop) {
         if ([playlist.sourcePersistentID length] > 0) {
             [bySource setObject:playlist forKey:playlist.sourcePersistentID];
         }
-        if ([playlist.name length] > 0) {
-            [byName setObject:playlist forKey:[playlist.name lowercaseString]];
-        }
     }];
+    return bySource;
 }
 
 // The iTunes ids of what a BTunes playlist already holds, so a song placed here
@@ -344,22 +367,36 @@
 - (NSDictionary *)importInto:(BTLibrary *)library
                  chosenSongs:(NSSet *)songIDs
              chosenPlaylists:(NSSet *)playlistIDs {
-    NSUInteger i, j, songsAdded = 0, playlistsAdded = 0, playlistsGrown = 0;
+    NSUInteger i, j, songsAdded = 0, songsFilledIn = 0;
+    NSUInteger playlistsAdded = 0, playlistsGrown = 0;
 
-    // Every song that is coming, made once and remembered by its iTunes id, so
-    // a song in three chosen playlists is imported once and joins all three.
-    NSMutableDictionary *importedByITunesID = [NSMutableDictionary dictionary];
+    // The songs already here, by their own id, so one being filled in can be
+    // found without walking the library for each.
+    NSMutableDictionary *heldByTrackID = [NSMutableDictionary dictionary];
+    for (i = 0; i < [library.tracks count]; i++) {
+        BTTrack *track = [library.tracks objectAtIndex:i];
+        if (track.trackID) [heldByTrackID setObject:track forKey:track.trackID];
+    }
+
     for (i = 0; i < [_incomingTracks count]; i++) {
         BTITunesSyncTrack *incoming = [_incomingTracks objectAtIndex:i];
         if (![incoming eligible]) continue;
         if (![songIDs containsObject:incoming.persistentID]) continue;
+
+        // Already in the library under no iTunes name: it gets the name and
+        // everything hanging off it, and no second copy of the song.
+        if ([incoming fillsInDetails]) {
+            BTTrack *held = [heldByTrackID objectForKey:incoming.fillsInTrackID];
+            if (held == nil) continue;
+            if ([library fillInTrack:held fromEntry:incoming.source]) songsFilledIn++;
+            continue;
+        }
 
         // Built from the entry as it was read, so the file imported is the file
         // eligibility was decided about, substitution and all.
         BTTrack *track = [library trackFromEntry:incoming.source];
         if (track == nil) continue;
         [library addTrack:track];
-        [importedByITunesID setObject:track forKey:incoming.persistentID];
         songsAdded++;
     }
 
@@ -388,17 +425,16 @@
         }
         if ([joining count] == 0) continue;
 
-        BTPlaylist *existing = [self playlistIn:library
-                                   matchingName:incoming.name
-                                         source:incoming.persistentID];
+        // The one this playlist came from before, if it has been here before.
+        // Nothing is matched by name: a playlist made here by hand that happens
+        // to share a name is somebody else's playlist.
+        BTPlaylist *existing = ([incoming.persistentID length] > 0)
+            ? [[self playlistsBySourceIn:library] objectForKey:incoming.persistentID] : nil;
         if (existing) {
             // At the end, so an arrangement made by hand is left alone.
             for (j = 0; j < [joining count]; j++) {
                 NSString *trackID = [joining objectAtIndex:j];
                 if (![existing.trackIDs containsObject:trackID]) [existing.trackIDs addObject:trackID];
-            }
-            if ([existing.sourcePersistentID length] == 0) {
-                existing.sourcePersistentID = incoming.persistentID;
             }
             playlistsGrown++;
             continue;
@@ -413,20 +449,11 @@
 
     [library noteChanged];
     return @{@"songsAdded": @(songsAdded),
+             @"songsFilledIn": @(songsFilledIn),
              @"playlistsAdded": @(playlistsAdded),
              @"playlistsGrown": @(playlistsGrown)};
 }
 
-- (BTPlaylist *)playlistIn:(BTLibrary *)library
-              matchingName:(NSString *)name
-                    source:(NSString *)persistentID {
-    NSMutableDictionary *bySource = [NSMutableDictionary dictionary];
-    NSMutableDictionary *byName = [NSMutableDictionary dictionary];
-    [self collectPlaylists:library.playlists intoBySource:bySource byName:byName];
-
-    BTPlaylist *found = [persistentID length] > 0 ? [bySource objectForKey:persistentID] : nil;
-    return found ? found : [byName objectForKey:[name lowercaseString]];
-}
 
 // The folder a playlist belongs in, made if it is not here yet. Folders already
 // present are joined rather than duplicated.
@@ -457,10 +484,12 @@
 #pragma mark - Summary
 
 - (NSString *)summary {
-    NSUInteger songs = 0, added = 0, grown = 0;
+    NSUInteger songs = 0, fillIns = 0, added = 0, grown = 0;
     NSUInteger i;
     for (i = 0; i < [self.incomingTracks count]; i++) {
-        if ([[self.incomingTracks objectAtIndex:i] eligible]) songs++;
+        BTITunesSyncTrack *track = [self.incomingTracks objectAtIndex:i];
+        if (![track eligible]) continue;
+        if ([track fillsInDetails]) fillIns++; else songs++;
     }
     for (i = 0; i < [self.playlists count]; i++) {
         BTITunesSyncPlaylist *playlist = [self.playlists objectAtIndex:i];
@@ -468,12 +497,21 @@
         if (playlist.change == BTITunesPlaylistIsNew) added++; else grown++;
     }
 
-    if (songs == 0 && added == 0 && grown == 0) return @"Nothing new in iTunes.";
+    if (songs == 0 && fillIns == 0 && added == 0 && grown == 0) {
+        return @"Nothing new in iTunes.";
+    }
 
     NSMutableArray *parts = [NSMutableArray array];
     if (songs > 0) {
         [parts addObject:[NSString stringWithFormat:@"%lu new song%@ to import",
                           (unsigned long)songs, (songs == 1 ? @"" : @"s")]];
+    }
+    // Said apart from the new songs, because nothing is copied or added for
+    // these: what arrives is the rating and the play count for a song already
+    // sitting in the library.
+    if (fillIns > 0) {
+        [parts addObject:[NSString stringWithFormat:@"%lu song%@ to fill in",
+                          (unsigned long)fillIns, (fillIns == 1 ? @"" : @"s")]];
     }
     if (added > 0) {
         [parts addObject:[NSString stringWithFormat:@"%lu new playlist%@",

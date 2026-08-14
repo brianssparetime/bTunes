@@ -11,7 +11,12 @@
 //
 // A song is matched first on its iTunes persistent id and then on its file
 // path, because songs added here by scanning a folder carry no iTunes id and
-// must not be imported a second time.
+// must not be imported a second time. Matching one that way is not the end of
+// it: see fillsInTrackID below.
+//
+// A playlist is matched on its persistent id alone. Matching on name as well
+// meant a playlist made here by hand was silently grown by an iTunes one that
+// happened to share its name.
 
 // A song iTunes has that BTunes does not.
 @interface BTITunesSyncTrack : NSObject
@@ -28,6 +33,16 @@
 // once does not have to be turned down again. Ticking it imports it.
 @property (nonatomic, assign) BOOL excludedBefore;
 @property (nonatomic, assign) BOOL alreadyHere;      // imported by an earlier sync
+// The BTunes track this song already is, when that track got here by scanning a
+// folder and so carries no iTunes identity at all. Nil for everything else.
+//
+// Such a song is in the library and its file is the right file, but nothing
+// iTunes knows about it has ever reached it: no rating, no play count, no date
+// added. Nor would it ever, since every sync saw the matching file and stopped
+// there. Ticking one of these attaches the iTunes id and fills those in; it
+// adds no second copy of the song.
+@property (nonatomic, copy) NSString *fillsInTrackID;
+@property (nonatomic, readonly) BOOL fillsInDetails;
 // A free recording is standing in for a locked purchase, so this song comes
 // from detune rather than from where iTunes keeps it.
 @property (nonatomic, assign) BOOL fromDetune;

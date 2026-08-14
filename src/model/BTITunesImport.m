@@ -14,6 +14,13 @@ static NSDate *BTDateFor(NSDictionary *d, NSString *key) {
     return [v isKindOfClass:[NSDate class]] ? v : nil;
 }
 
+// iTunes stores a rating out of 100 and BTunes shows stars, so five stars is
+// anything from 91 to 100 and nothing at all is a genuine nought.
+static NSInteger BTStarsFromITunes(NSDictionary *entry) {
+    NSInteger stars = (BTIntFor(entry, @"Rating") + 10) / 20;
+    return (stars > 5) ? 5 : stars;
+}
+
 - (BTTrack *)trackFromEntry:(BTITunesEntry *)source {
     NSDictionary *entry = source.entry;
     if (entry == nil || [source.path length] == 0) return nil;
@@ -44,12 +51,49 @@ static NSDate *BTDateFor(NSDictionary *d, NSString *key) {
     track.lastPlayed = BTDateFor(entry, @"Play Date UTC");
     track.isProtected = source.isProtected;
 
-    // iTunes stores a rating out of 100; BTunes shows stars.
-    NSInteger rating = BTIntFor(entry, @"Rating");
-    track.rating = (rating + 10) / 20;
-    if (track.rating > 5) track.rating = 5;
+    track.rating = BTStarsFromITunes(entry);
 
     return track;
+}
+
+- (BOOL)fillInTrack:(BTTrack *)track fromEntry:(BTITunesEntry *)source {
+    NSDictionary *entry = source.entry;
+    if (track == nil || entry == nil) return NO;
+
+    NSString *persistentID = BTITunesString(entry, @"Persistent ID");
+    if ([persistentID length] == 0) return NO;
+
+    // Recognised by id from here on, which is what stops every later sync
+    // reaching this same point and stopping.
+    track.persistentID = persistentID;
+
+    NSInteger stars = BTStarsFromITunes(entry);
+    if (stars > track.rating) track.rating = stars;
+
+    // Both counts are real listening: what iTunes saw over the years, and
+    // whatever has been played here since the folder was scanned.
+    track.playCount += BTIntFor(entry, @"Play Count");
+
+    NSDate *added = BTDateFor(entry, @"Date Added");
+    if (added && (track.dateAdded == nil ||
+                  [added compare:track.dateAdded] == NSOrderedAscending)) {
+        track.dateAdded = added;
+    }
+
+    NSDate *played = BTDateFor(entry, @"Play Date UTC");
+    if (played && (track.lastPlayed == nil ||
+                   [played compare:track.lastPlayed] == NSOrderedDescending)) {
+        track.lastPlayed = played;
+    }
+
+    // Only what a scan could not have known. The tags on the file are what the
+    // file says it is, and iTunes reading them differently is not a reason to
+    // overwrite them.
+    if ([track.albumArtist length] == 0) {
+        track.albumArtist = BTITunesString(entry, @"Album Artist");
+    }
+    if (track.discNumber <= 0) track.discNumber = BTIntFor(entry, @"Disc Number");
+    return YES;
 }
 
 - (NSDictionary *)placesForMissingFiles:(NSArray *)missing

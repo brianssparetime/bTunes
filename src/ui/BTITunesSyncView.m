@@ -155,10 +155,14 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     _songsHeading = BTLabelWithText(@"Music", [BTStyle boldFont]);
     _playlistsHeading = BTLabelWithText(@"Playlists", [BTStyle boldFont]);
 
+    // The songs carry a status column for the same reason the playlists do:
+    // "already here" and "the rating is missing" look identical without one,
+    // and they are opposite answers.
     _songsScroll = [self listWithColumns:@[@[@"check", @"", @20],
                                            @[@"title", @"Song Name", @180],
                                            @[@"artist", @"Artist", @130],
-                                           @[@"album", @"Album", @130]]];
+                                           @[@"album", @"Album", @130],
+                                           @[@"what", @"", @90]]];
     _playlistsScroll = [self outlineWithColumns:@[@[@"check", @"", @20],
                                                   @[@"name", @"Playlist", @200],
                                                   @[@"what", @"", @90]]];
@@ -858,6 +862,7 @@ static NSString *BTChosenSummary(NSUInteger playlists, NSUInteger songs) {
         return [track.title length] > 0 ? track.title : @"(untitled)";
     }
     if ([identifier isEqualToString:@"artist"]) return track.artist ? track.artist : @"";
+    if ([identifier isEqualToString:@"what"]) return [self wordForSong:track];
     return track.album ? track.album : @"";
 }
 
@@ -953,7 +958,24 @@ static NSString *BTChosenSummary(NSUInteger playlists, NSUInteger songs) {
 // somewhere else is a list that goes stale the first time one is reworded.
 + (NSArray *)statusVocabulary {
     return @[@"smart", @"locked songs", @"not downloaded", @"already here",
-             @"+9999 songs", @"9999 songs", @"999 playlists"];
+             @"+9999 songs", @"9999 songs", @"999 playlists",
+             @"locked", @"details only"];
+}
+
+// What is about to happen to a song, or why nothing can. A song that is simply
+// new says nothing: that is what the whole list is for and repeating it on
+// every row would say less, not more.
+- (NSString *)wordForSong:(BTITunesSyncTrack *)track {
+    switch (track.blocked) {
+        case BTITunesBlockProtected:  return @"locked";
+        case BTITunesBlockNotOnDisk:  return @"not downloaded";
+        default: break;
+    }
+    if (track.alreadyHere) return @"already here";
+    // Here already, under no iTunes name, so what arrives is the rating and the
+    // play count rather than the song.
+    if ([track fillsInDetails]) return @"details only";
+    return @"";
 }
 
 - (NSString *)wordForPlaylist:(BTITunesSyncPlaylist *)playlist {
@@ -1102,13 +1124,19 @@ static NSString *BTChosenSummary(NSUInteger playlists, NSUInteger songs) {
 
     NSAlert *alert = [[NSAlert alloc] init];
     [alert setMessageText:@"The sync finished."];
-    [alert setInformativeText:[NSString stringWithFormat:
-        @"%@ songs and %@ playlists came across, and %@ playlists here grew.\n\n"
-        @"The songs are played where they already sit. Nothing was moved, copied, "
-        @"or written back to iTunes.",
+    NSMutableString *what = [NSMutableString stringWithFormat:
+        @"%@ songs and %@ playlists came across, and %@ playlists here grew.",
         [result objectForKey:@"songsAdded"],
         [result objectForKey:@"playlistsAdded"],
-        [result objectForKey:@"playlistsGrown"]]];
+        [result objectForKey:@"playlistsGrown"]];
+    NSUInteger filledIn = [[result objectForKey:@"songsFilledIn"] unsignedIntegerValue];
+    if (filledIn > 0) {
+        [what appendFormat:@"\n\n%lu song%@ already here took its rating and play count "
+                           @"from iTunes.", (unsigned long)filledIn, (filledIn == 1 ? @"" : @"s")];
+    }
+    [what appendString:@"\n\nThe songs are played where they already sit. Nothing was moved, "
+                       @"copied, or written back to iTunes."];
+    [alert setInformativeText:what];
     [alert runModal];
 
     if (self.didFinish) self.didFinish();
