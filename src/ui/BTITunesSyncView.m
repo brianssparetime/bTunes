@@ -72,6 +72,11 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 @interface BTITunesSyncView () <NSTableViewDataSource, NSTableViewDelegate,
                                 NSOutlineViewDataSource, NSOutlineViewDelegate,
                                 NSSplitViewDelegate>
++ (NSArray *)statusVocabulary;
+- (void)sizeAllColumns;
+- (void)sizeColumnsOf:(NSTableView *)table in:(NSScrollView *)scroll;
+- (void)listRoomChanged:(NSNotification *)note;
+- (CGFloat)fixedWidthForColumn:(NSString *)identifier;
 @end
 
 @implementation BTITunesSyncView {
@@ -97,6 +102,11 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     NSView *_songsPane;
     NSView *_playlistsPane;
     BTSyncDivider *_panes;
+
+    // The width each column was built with, kept because those numbers are the
+    // proportions the columns share the pane in. Once a column has been resized
+    // to fit the pane its own width no longer says anything about the others.
+    NSDictionary *_columnShares;
 
     NSArray *_songs;          // what the two lists are showing, after hiding
     NSArray *_lists;          // the playlists, flat, after hiding
@@ -220,11 +230,19 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     [list setAllowsColumnSelection:NO];
     [list setDataSource:self];
     [list setDelegate:self];
+    // A click anywhere in a row ticks it. The tick box is a small target and
+    // the row is a large one, and the only thing either list is for is choosing.
+    [list setTarget:self];
+    [list setAction:@selector(rowClicked:)];
+
+    NSMutableDictionary *shares = _columnShares
+        ? [NSMutableDictionary dictionaryWithDictionary:_columnShares] : [NSMutableDictionary dictionary];
 
     NSUInteger i;
     for (i = 0; i < [specs count]; i++) {
         NSArray *spec = [specs objectAtIndex:i];
         NSString *identifier = [spec objectAtIndex:0];
+        [shares setObject:[spec objectAtIndex:2] forKey:identifier];
         NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:identifier];
         [[column headerCell] setStringValue:[spec objectAtIndex:1]];
         [[column headerCell] setFont:[BTStyle uiFont]];
@@ -254,7 +272,35 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     [scroll setBorderType:NSBezelBorder];
     [scroll setFocusRingType:NSFocusRingTypeNone];
     [scroll setDocumentView:list];
+    _columnShares = shares;
+
+    // The columns are sized to the room inside the scroller, and how much room
+    // that is changes the moment the list has enough rows to need one. Sizing
+    // them once when the pane is built happened before that, so the columns came
+    // out a scroller too wide: the last one was cut off at the edge and the list
+    // could be dragged sideways. Watching the clip view catches the scroller
+    // arriving, the bar being dragged, and the window being resized, which were
+    // three separate reasons to do the same thing.
+    NSClipView *clip = [scroll contentView];
+    [clip setPostsFrameChangedNotifications:YES];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                            selector:@selector(listRoomChanged:)
+                                                name:NSViewFrameDidChangeNotification
+                                              object:clip];
     return scroll;
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)listRoomChanged:(NSNotification *)note {
+    NSClipView *clip = [note object];
+    NSScrollView *scroll = (NSScrollView *)[clip superview];
+    if (![scroll isKindOfClass:[NSScrollView class]]) return;
+    NSTableView *list = (NSTableView *)[scroll documentView];
+    if (![list isKindOfClass:[NSTableView class]]) return;
+    [self sizeColumnsOf:list in:scroll];
 }
 
 - (NSScrollView *)listWithColumns:(NSArray *)specs {
@@ -348,8 +394,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     // the boxes leaves the words visibly out of line with each other.
     [_chosenSummary setFrame:NSMakeRect(countLeft, 22.0 - 10.5, countRight - countLeft, 17)];
 
-    [self sizeColumnsOf:_songsTable in:_songsScroll fixedFirst:20.0];
-    [self sizeColumnsOf:_playlistsTable in:_playlistsScroll fixedFirst:20.0];
+    [self sizeAllColumns];
 }
 
 #pragma mark - The bar between the lists
@@ -357,6 +402,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 // Neither list may be squeezed to nothing. Below this a list shows its tick
 // column and little else, which is not a view worth dragging to.
 #define BT_SYNC_SMALLEST_PANE 170.0
+#define BT_SYNC_TICK_WIDTH     20.0
 
 - (CGFloat)splitView:(NSSplitView *)splitView
 constrainMinCoordinate:(CGFloat)proposedMin
@@ -372,23 +418,78 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 
 // The columns inside each list follow the width the bar was dragged to.
 - (void)splitViewDidResizeSubviews:(NSNotification *)note {
-    [self sizeColumnsOf:_songsTable in:_songsScroll fixedFirst:20.0];
-    [self sizeColumnsOf:_playlistsTable in:_playlistsScroll fixedFirst:20.0];
+    [self sizeAllColumns];
 }
 
-// The tick column keeps its width and the rest share what is left, so neither
-// list leaves a gap at its right edge.
-- (void)sizeColumnsOf:(NSTableView *)table in:(NSScrollView *)scroll fixedFirst:(CGFloat)first {
+- (void)sizeAllColumns {
+    [self sizeColumnsOf:_songsTable in:_songsScroll];
+    [self sizeColumnsOf:_playlistsTable in:_playlistsScroll];
+}
+
+// How wide a column has to be for the widest thing it will ever hold. Used for
+// the two that show a fixed vocabulary, so they take what they need and the
+// names get the rest.
+static CGFloat BTWidestOf(NSArray *words) {
+    NSDictionary *attrs = @{NSFontAttributeName: [BTStyle uiFont]};
+    CGFloat widest = 0;
+    NSUInteger i;
+    for (i = 0; i < [words count]; i++) {
+        CGFloat w = ceil([[words objectAtIndex:i] sizeWithAttributes:attrs].width);
+        if (w > widest) widest = w;
+    }
+    return widest + 12.0;
+}
+
+// The tick keeps its width, anything that shows a set vocabulary takes what that
+// vocabulary needs, and the names share the rest in proportion to the widths
+// they were given. Sharing it equally gave a column of three-word statuses as
+// much room as the song titles, which is where the empty space down the right
+// came from.
+- (void)sizeColumnsOf:(NSTableView *)table in:(NSScrollView *)scroll {
     NSArray *columns = [table tableColumns];
     if ([columns count] < 2) return;
 
-    CGFloat available = [scroll contentSize].width - first - 4.0;
-    if (available < 60) available = 60;
-    [[columns objectAtIndex:0] setWidth:first];
+    // Measured from the clip view rather than the scroll view, so the width the
+    // vertical scroller takes is already gone. Sized to the whole width, the
+    // list came out a scroller wider than the room it had and slid sideways
+    // whenever it was scrolled.
+    CGFloat available = NSWidth([[scroll contentView] bounds]) - 2.0;
 
-    CGFloat each = available / (CGFloat)([columns count] - 1);
+    CGFloat fixed = 0, shares = 0;
+    NSMutableArray *sharing = [NSMutableArray array];
     NSUInteger i;
-    for (i = 1; i < [columns count]; i++) [[columns objectAtIndex:i] setWidth:each];
+    for (i = 0; i < [columns count]; i++) {
+        NSTableColumn *column = [columns objectAtIndex:i];
+        NSString *identifier = [column identifier];
+        CGFloat width = [self fixedWidthForColumn:identifier];
+        if (width > 0) {
+            [column setWidth:width];
+            fixed += width;
+        } else {
+            [sharing addObject:column];
+            shares += [[_columnShares objectForKey:identifier] doubleValue];
+        }
+    }
+
+    CGFloat room = available - fixed;
+    if (room < 80) room = 80;
+    for (i = 0; i < [sharing count]; i++) {
+        NSTableColumn *column = [sharing objectAtIndex:i];
+        CGFloat share = (shares > 0)
+            ? [[_columnShares objectForKey:[column identifier]] doubleValue] / shares
+            : 1.0 / (CGFloat)[sharing count];
+        [column setWidth:floor(room * share)];
+    }
+}
+
+// The two columns that hold a set vocabulary rather than a name: they take what
+// their longest word needs and no more. Everything else shares what is left.
+- (CGFloat)fixedWidthForColumn:(NSString *)identifier {
+    if ([identifier isEqualToString:@"check"]) return BT_SYNC_TICK_WIDTH;
+    if ([identifier isEqualToString:@"what"]) {
+        return BTWidestOf([BTITunesSyncView statusVocabulary]);
+    }
+    return 0;
 }
 
 #pragma mark - Comparing
@@ -446,11 +547,22 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 
     // What was turned down before starts turned down, and nothing more than
     // that: every one of these can still be ticked and brought across.
+    //
+    // Both lists, which is the whole of the fix here. The songs were restored
+    // and the playlists were not, so every playlist came up ticked however many
+    // times it had been turned down, and unticking them was work to be done
+    // again on every sync.
     NSUInteger i;
     for (i = 0; i < [_sync.incomingTracks count]; i++) {
         BTITunesSyncTrack *track = [_sync.incomingTracks objectAtIndex:i];
         if (track.excludedBefore && track.persistentID) {
             [_uncheckedSongs addObject:track.persistentID];
+        }
+    }
+    for (i = 0; i < [_sync.playlists count]; i++) {
+        BTITunesSyncPlaylist *playlist = [_sync.playlists objectAtIndex:i];
+        if (playlist.excludedBefore && playlist.persistentID) {
+            [_uncheckedLists addObject:playlist.persistentID];
         }
     }
 
@@ -836,6 +948,14 @@ static NSString *BTChosenSummary(NSUInteger playlists, NSUInteger songs) {
 }
 
 // What is about to happen to it, or why nothing can.
+// Everything the status column can ever say, so it can be made exactly wide
+// enough. Kept here, beside the words themselves, because a list of them
+// somewhere else is a list that goes stale the first time one is reworded.
++ (NSArray *)statusVocabulary {
+    return @[@"smart", @"locked songs", @"not downloaded", @"already here",
+             @"+9999 songs", @"9999 songs", @"999 playlists"];
+}
+
 - (NSString *)wordForPlaylist:(BTITunesSyncPlaylist *)playlist {
     switch (playlist.blocked) {
         case BTITunesBlockSmart:            return @"smart";
@@ -898,6 +1018,44 @@ static NSString *BTChosenSummary(NSUInteger playlists, NSUInteger songs) {
     [self updateButtons];
 }
 
+// Anywhere in the row, not only on the box.
+//
+// A click on the box itself is left alone: the cell has already turned it over
+// by the time this runs, and turning it over again would put it back.
+- (void)rowClicked:(id)sender {
+    NSTableView *list = sender;
+    NSInteger row = [list clickedRow];
+    if (row < 0) return;
+
+    NSInteger column = [list clickedColumn];
+    if (column >= 0) {
+        NSString *identifier = [[[list tableColumns] objectAtIndex:(NSUInteger)column] identifier];
+        if ([identifier isEqualToString:@"check"]) return;
+    }
+
+    if (list == _playlistsTable) {
+        id item = [_playlistsTable itemAtRow:row];
+        if (item == nil) return;
+        [self setItem:item chosen:([self stateOfItem:item] != NSOnState)];
+    } else {
+        if (row >= (NSInteger)[_songs count]) return;
+        BTITunesSyncTrack *track = [_songs objectAtIndex:(NSUInteger)row];
+        // The ones that cannot come across cannot be ticked, however they are
+        // clicked. Their boxes are already dead; the row has to agree.
+        if (track.blocked != BTITunesBlockNone || track.alreadyHere) return;
+        if (track.persistentID == nil) return;
+        if ([self songIsChosen:track]) {
+            [_uncheckedSongs addObject:track.persistentID];
+        } else {
+            [_uncheckedSongs removeObject:track.persistentID];
+        }
+    }
+
+    [_songsTable reloadData];
+    [_playlistsTable reloadData];
+    [self updateButtons];
+}
+
 #pragma mark - Doing it
 
 - (void)runSync:(id)sender {
@@ -921,10 +1079,15 @@ static NSString *BTChosenSummary(NSUInteger playlists, NSUInteger songs) {
             [leftBehind addObject:track.persistentID];
         }
     }
+    NSMutableArray *listsLeftBehind = [NSMutableArray array];
     for (i = 0; i < [_sync.playlists count]; i++) {
         BTITunesSyncPlaylist *playlist = [_sync.playlists objectAtIndex:i];
         if (![playlist eligible] || playlist.persistentID == nil) continue;
-        if ([self stateOfPlaylist:playlist] != NSOffState) [lists addObject:playlist.persistentID];
+        if ([self stateOfPlaylist:playlist] != NSOffState) {
+            [lists addObject:playlist.persistentID];
+        } else {
+            [listsLeftBehind addObject:playlist.persistentID];
+        }
     }
 
     BTLibrary *library = [BTLibrary sharedLibrary];
@@ -934,6 +1097,8 @@ static NSString *BTChosenSummary(NSUInteger playlists, NSUInteger songs) {
     // longer left behind, so it stops being remembered as such.
     [library setExcluded:YES forPersistentIDs:leftBehind];
     [library setExcluded:NO forPersistentIDs:[songs allObjects]];
+    [library setExcluded:YES forPersistentIDs:listsLeftBehind];
+    [library setExcluded:NO forPersistentIDs:[lists allObjects]];
 
     NSAlert *alert = [[NSAlert alloc] init];
     [alert setMessageText:@"The sync finished."];

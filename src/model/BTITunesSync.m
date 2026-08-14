@@ -272,6 +272,8 @@
                                                    : BTITunesPlaylistUnchanged;
         }
         change.incomingTrackIDs = incoming;
+        change.excludedBefore = ([persistentID length] > 0 &&
+                                 [[library excludedFromImport] containsObject:persistentID]);
         // Named in the order a reader would want to hear it: what iTunes will
         // never give up, then what is merely not downloaded yet.
         if (isSmart) {

@@ -50,6 +50,12 @@ static BTPlaylist *BTPlaylistFromSource(id item) {
 static NSString *const BTClosedFoldersKey = @"BTClosedFolders";
 static NSString *const BTSelectedSourceKey = @"BTSelectedSource";
 static NSString *const BTSelectedTrackKey = @"BTSelectedTrack";
+// Where the bars between the panes were left. Kept in this machine's settings
+// rather than with the library, since how wide a pane is says something about
+// the screen it is on rather than about the music.
+static NSString *const BTSourceWidthKey = @"BTSourcePaneWidth";
+static NSString *const BTBrowserHeightKey = @"BTBrowserHeight";
+
 // A playlist keeps its own sort, since that belongs to the playlist. The
 // library has nowhere of its own to keep one, so it goes here.
 static NSString *const BTLibrarySortKey = @"BTLibrarySort";
@@ -125,6 +131,10 @@ static CGFloat BTTitleBarHeight(void) {
     BTIPod *_iPod;
     BTSyncView *_syncView;
     NSMutableSet *_closedFolders;
+    // Whether the bars have been put where they were left. Until they have, a
+    // layout places them; after that a layout leaves them alone, or dragging one
+    // would be undone by the next resize.
+    BOOL _dividersPlaced;
     // Whether the last session has been read back yet. The window is built
     // before it has been, so until this is set there is nothing worth saving
     // and a great deal worth not overwriting.
@@ -671,6 +681,38 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     if ([columns count] > 0) [[columns objectAtIndex:0] setWidth:width];
 }
 
+// Where the bars were left, or where they start when nobody has moved them.
+- (CGFloat)rememberedSourceWidth {
+    NSNumber *saved = [[NSUserDefaults standardUserDefaults] objectForKey:BTSourceWidthKey];
+    CGFloat width = saved ? [saved doubleValue] : 170.0;
+    return (width >= 120.0) ? width : 170.0;
+}
+
+- (CGFloat)rememberedBrowserHeight {
+    NSNumber *saved = [[NSUserDefaults standardUserDefaults] objectForKey:BTBrowserHeightKey];
+    CGFloat height = saved ? [saved doubleValue] : 150.0;
+    return (height >= 60.0) ? height : 150.0;
+}
+
+// A bar has been dragged, or the window resized. Either way the pane sizes are
+// now what somebody is looking at, so they are what should come back.
+- (void)splitViewDidResizeSubviews:(NSNotification *)note {
+    if (!_dividersPlaced) return;
+    id split = [note object];
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+
+    if (split == _outerSplit && [[_outerSplit subviews] count] == 2) {
+        CGFloat width = NSWidth([[[_outerSplit subviews] objectAtIndex:0] frame]);
+        if (width >= 120.0) [defaults setDouble:width forKey:BTSourceWidthKey];
+    } else if (split == _innerSplit && [[_innerSplit subviews] count] == 2) {
+        // Not while the browser is put away: its height is zero then, and a zero
+        // is not a height anybody chose.
+        if (_browserHidden) return;
+        CGFloat height = NSHeight([[[_innerSplit subviews] objectAtIndex:0] frame]);
+        if (height >= 60.0) [defaults setDouble:height forKey:BTBrowserHeightKey];
+    }
+}
+
 - (void)layoutContent {
     NSRect bounds = [[[self window] contentView] bounds];
     CGFloat chromeHeight = BT_CHROME_HEIGHT + BTTitleBarHeight();
@@ -682,8 +724,16 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     [_outerSplit setFrame:NSMakeRect(0, BT_BOTTOM_HEIGHT, NSWidth(bounds),
                                      NSHeight(bounds) - chromeHeight - BT_BOTTOM_HEIGHT)];
 
-    [_outerSplit setPosition:170 ofDividerAtIndex:0];
-    [_innerSplit setPosition:150 ofDividerAtIndex:0];
+    // Only the first time. The two bars were placed at 170 and 150 on every
+    // layout, so a bar dragged anywhere went back the next time the window was
+    // resized and nothing about it survived a restart. Laying out again keeps
+    // whatever width each pane has, which is what resizeSubviewsWithOldSize:
+    // below is for.
+    if (!_dividersPlaced) {
+        _dividersPlaced = YES;
+        [_outerSplit setPosition:[self rememberedSourceWidth] ofDividerAtIndex:0];
+        [_innerSplit setPosition:[self rememberedBrowserHeight] ofDividerAtIndex:0];
+    }
     [_outerSplit adjustSubviews];
     [_innerSplit adjustSubviews];
 
@@ -818,10 +868,11 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight,
     [_browser setHidden:hidden];
     [self updateKeyViewLoop];
     if (!hidden) {
-        // Give it back the height it had before it was put away.
+        // Give it back the height it had before it was put away, and failing
+        // that the height it was last dragged to.
         NSRect frame = [_browser frame];
         if (NSHeight(frame) < 60.0) {
-            frame.size.height = 150.0;
+            frame.size.height = [self rememberedBrowserHeight];
             [_browser setFrame:frame];
         }
     }

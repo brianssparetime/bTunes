@@ -46,10 +46,15 @@ extern NSString *const BTLibraryDidChangeNotification;
 - (void)movePlaylist:(BTPlaylist *)playlist toFolder:(BTPlaylist *)folder atIndex:(NSInteger)index;
 - (BTPlaylist *)playlistWithID:(NSString *)playlistID;
 
-// iTunes persistent ids of songs deliberately left behind during a sync. A song
-// unchecked once stays unchecked, so a song not wanted here does not have to be
-// fought off every time. Kept with the library rather than in this machine's
-// settings, so the decision follows the library.
+// iTunes persistent ids deliberately left behind during a sync, songs and
+// playlists alike. Unticked once, it comes up unticked, so something not wanted
+// here does not have to be fought off every sync. Kept with the library rather
+// than in this machine's settings, so the decision follows the library.
+//
+// Only ever the tick a row starts with. Whether something *can* come across is
+// worked out from the iTunes entry and never from this: a remembered choice
+// that decides eligibility makes rows that cannot be ticked and gives no reason,
+// which is a fault this has had once already.
 - (NSSet *)excludedFromImport;
 - (void)setExcluded:(BOOL)excluded forPersistentIDs:(NSArray *)persistentIDs;
 

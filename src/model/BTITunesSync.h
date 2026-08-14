@@ -53,6 +53,9 @@ typedef NS_ENUM(NSInteger, BTITunesPlaylistChange) {
 @property (nonatomic, strong) NSArray *folderNames;
 @property (nonatomic, assign) BTITunesPlaylistChange change;
 @property (nonatomic, assign) BTITunesBlock blocked;
+// Turned down the last time a sync ran, so it starts unticked. Only the tick
+// it starts with: every one of these can still be ticked and brought across.
+@property (nonatomic, assign) BOOL excludedBefore;
 // iTunes persistent ids of the songs this playlist would add, in iTunes order.
 @property (nonatomic, strong) NSArray *incomingTrackIDs;
 @property (nonatomic, readonly) BOOL alreadyHere;

@@ -45,12 +45,28 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
     return shared;
 }
 
+// What the transport is set to carries over between runs. Volume, shuffle and
+// repeat are all the same kind of thing: a way of listening that somebody chose
+// and did not expect to have to choose again.
+//
+// Which song was playing and how far into it deliberately do not carry over.
+static NSString *const BTVolumeKey = @"BTVolume";
+static NSString *const BTShuffleKey = @"BTShuffle";
+static NSString *const BTRepeatKey = @"BTRepeatMode";
+
 - (id)init {
     self = [super init];
     if (self) {
-        // Volume carries over between runs.
-        NSNumber *saved = [[NSUserDefaults standardUserDefaults] objectForKey:@"BTVolume"];
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        NSNumber *saved = [defaults objectForKey:BTVolumeKey];
         _volume = saved ? [saved floatValue] : 0.75f;
+        _shuffle = [defaults boolForKey:BTShuffleKey];
+        // Read through the enum rather than trusting the number on disk: a
+        // value from some later version would otherwise leave the transport in
+        // a state none of the buttons can describe.
+        NSInteger mode = [defaults integerForKey:BTRepeatKey];
+        _repeatMode = (mode == BTRepeatModeAll || mode == BTRepeatModeOne)
+            ? (BTRepeatMode)mode : BTRepeatModeOff;
         _order = [NSMutableArray array];
         _orderPosition = -1;
     }
@@ -93,6 +109,7 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
 - (void)setShuffle:(BOOL)shuffle {
     if (_shuffle == shuffle) return;
     _shuffle = shuffle;
+    [[NSUserDefaults standardUserDefaults] setBool:shuffle forKey:BTShuffleKey];
     if ([self.queue count] > 0 && self.currentTrack) {
         NSInteger current = (NSInteger)[self.queue indexOfObject:self.currentTrack];
         [self rebuildOrderStartingAtIndex:(current == (NSInteger)NSNotFound ? 0 : current)];
@@ -102,6 +119,7 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
 
 - (void)setRepeatMode:(BTRepeatMode)repeatMode {
     _repeatMode = repeatMode;
+    [[NSUserDefaults standardUserDefaults] setInteger:repeatMode forKey:BTRepeatKey];
     [self postChange];
 }
 
@@ -424,7 +442,7 @@ NSString *const BTPlayerTimeDidChangeNotification = @"BTPlayerTimeDidChange";
 - (void)setVolume:(float)volume {
     _volume = volume;
     [self.node setVolume:volume];
-    [[NSUserDefaults standardUserDefaults] setFloat:volume forKey:@"BTVolume"];
+    [[NSUserDefaults standardUserDefaults] setFloat:volume forKey:BTVolumeKey];
     // Moving the volume off zero by any route ends the mute.
     if (volume > 0.0f) _muted = NO;
     [self postChange];
