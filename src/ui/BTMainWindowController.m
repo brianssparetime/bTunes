@@ -1,5 +1,7 @@
 #import "BTMainWindowController.h"
 #import "BTMainWindowViews.h"
+#import "BTSourceList.h"
+#import "BTDragTypes.h"
 #import "BTTrackColumns.h"
 #import "BTStyle.h"
 #import "BTControls.h"
@@ -24,14 +26,6 @@
 #import "BTTrack.h"
 #import "BTPlayer.h"
 
-static NSString *const BTTrackPasteboardType = @"com.btunes.tracks";
-static NSString *const BTPlaylistPasteboardType = @"com.btunes.playlist";
-static NSString *const BTLibrarySource = @"Library";
-// The same songs as the library, held in the order iTunes recorded them being
-// added. Deliberately not the order BTunes learned of them, which for anything
-// a sync brings is one moment for thousands of songs and says nothing at all.
-static NSString *const BTRecentlyAddedSource = @"Recently Added";
-
 // Column widths and their arrangement are left to the table, which saves them
 // under this name. What the table is allowed to change on its own is set per
 // column in BTTrackColumns: a saved width that anything may recompute is not a
@@ -40,14 +34,6 @@ static NSString *const BTRecentlyAddedSource = @"Recently Added";
 // restored over that decision.
 static NSString *const BTColumnsAutosaveName = @"BTunesTrackColumns2";
 static NSString *const BTHiddenColumnsKey = @"BTHiddenColumns";
-
-// The source list holds three kinds of row: the library, an attached iPod, and
-// playlists. Anything reaching for a playlist's own members has to ask first,
-// because the other two answer none of them and a bare cast crashes on the
-// first message sent.
-static BTPlaylist *BTPlaylistFromSource(id item) {
-    return [item isKindOfClass:[BTPlaylist class]] ? (BTPlaylist *)item : nil;
-}
 
 // What the window remembers between runs: which folders you closed, what you
 // had selected, and which song was highlighted.
@@ -76,10 +62,16 @@ static NSString *const BTRecentWasSelected = @"recent";
 // what is in it follows the size of the type.
 #define BT_CHROME_HEIGHT ([BTDisplayView naturalHeight] + 12.0)
 #define BT_BOTTOM_HEIGHT 24.0
-// Air above the first row, taken inside the list rather than between the panels.
-// A gap between them exposes the window's own background as a band of flat gray
-// running across the window.
-#define BT_SOURCE_TOP_INSET 6.0
+
+// The two round buttons at the right of the chrome, and how far up from its
+// floor they sit. Written down once: the arithmetic that places them and the
+// code that builds them both need the size, and it used to appear in five
+// places where any one of them could be changed alone.
+#define BT_CHROME_BUTTON_SIDE 27.0
+#define BT_CHROME_BUTTON_FOOT 14.0
+
+// How much one press of the volume keys moves the knob.
+#define BT_VOLUME_STEP 0.05f
 
 // How much of the window the title bar covers. Asked of AppKit rather than
 // assumed, since the content view now runs underneath it.
@@ -91,10 +83,10 @@ static CGFloat BTTitleBarHeight(void) {
 
 #pragma mark - Controller
 
-@interface BTMainWindowController () <NSOutlineViewDataSource, NSOutlineViewDelegate,
-                                      NSTableViewDataSource, NSTableViewDelegate,
+@interface BTMainWindowController () <NSTableViewDataSource, NSTableViewDelegate,
                                       NSSplitViewDelegate, BTBrowserViewDelegate,
-                                      NSWindowDelegate, BTKeyTableDelegate>
+                                      NSWindowDelegate, BTKeyTableDelegate,
+                                      BTSourceListDelegate>
 @end
 
 @implementation BTMainWindowController {
@@ -111,7 +103,7 @@ static CGFloat BTTitleBarHeight(void) {
 
     NSSplitView *_outerSplit;
     NSSplitView *_innerSplit;
-    BTKeyOutlineView *_sourceList;
+    BTSourceList *_sources;
     BTBrowserView *_browser;
     BTKeyTableView *_trackTable;
 
@@ -133,14 +125,12 @@ static CGFloat BTTitleBarHeight(void) {
     NSString *_sortColumn;
     BOOL _sortAscending;
     BOOL _browserHidden;
-    BOOL _renameRequested;
     BTIPod *_iPod;
     BTAudioDisc *_disc;
     // The disc already asked about, so it is asked about once and not on every
     // volume that comes and goes afterwards.
     __weak BTAudioDisc *_lookedUp;
     BTSyncView *_syncView;
-    NSMutableSet *_closedFolders;
     // Whether the bars have been put where they were left. Until they have, a
     // layout places them; after that a layout leaves them alone, or dragging one
     // would be undone by the next resize.
@@ -193,7 +183,6 @@ static CGFloat BTTitleBarHeight(void) {
     _selectedSource = BTLibrarySource;
     _sortColumn = @"track";
     _sortAscending = YES;
-    _closedFolders = [NSMutableSet set];
     _visibleTracks = @[];
     _speakerImage = [self buildSpeakerImage];
 
@@ -205,6 +194,7 @@ static CGFloat BTTitleBarHeight(void) {
 
     NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
     [nc addObserver:self selector:@selector(libraryChanged:) name:BTLibraryDidChangeNotification object:nil];
+    [nc addObserver:self selector:@selector(trackDetailChanged:) name:BTLibraryTrackDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(playerChanged:) name:BTPlayerDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(iPodChanged:) name:BTIPodDidChangeNotification object:nil];
     [nc addObserver:self selector:@selector(discChanged:) name:BTAudioDiscDidChangeNotification object:nil];
@@ -232,108 +222,6 @@ static CGFloat BTTitleBarHeight(void) {
     return image;
 }
 
-- (NSImage *)iconForSource:(id)item {
-    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(14, 14)];
-    [image lockFocus];
-
-    NSColor *blue = [BTStyle sourceIcon];
-    if ([item isKindOfClass:[BTIPod class]]) {
-        // A little white slab with a wheel on it.
-        NSBezierPath *body = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(3.5, 0.5, 7, 13)
-                                                             xRadius:1.5
-                                                             yRadius:1.5];
-        [[NSColor colorWithCalibratedWhite:0.97 alpha:1.0] set];
-        [body fill];
-        [[NSColor colorWithCalibratedWhite:0.40 alpha:1.0] set];
-        [body stroke];
-
-        [[NSColor colorWithCalibratedWhite:0.65 alpha:1.0] set];
-        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5, 2, 4, 4)] fill];
-        [[NSColor colorWithCalibratedRed:0.62 green:0.76 blue:0.93 alpha:1.0] set];
-        NSRectFill(NSMakeRect(5, 7.5, 4, 4));
-        [image unlockFocus];
-        return image;
-    }
-    if ([item isKindOfClass:[BTAudioDisc class]]) {
-        // A disc seen face on: the silver ring, the clear centre, and the hole.
-        NSBezierPath *edge = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 13, 13)];
-        [[NSColor colorWithCalibratedWhite:0.86 alpha:1.0] set];
-        [edge fill];
-        [[NSColor colorWithCalibratedWhite:0.45 alpha:1.0] set];
-        [edge stroke];
-
-        // A sheen across it, which is what says silver rather than white.
-        [[NSColor colorWithCalibratedWhite:1.0 alpha:0.9] set];
-        NSBezierPath *sheen = [NSBezierPath bezierPath];
-        [sheen moveToPoint:NSMakePoint(3.0, 11.6)];
-        [sheen lineToPoint:NSMakePoint(6.4, 12.9)];
-        [sheen lineToPoint:NSMakePoint(10.4, 6.0)];
-        [sheen lineToPoint:NSMakePoint(8.0, 4.4)];
-        [sheen closePath];
-        [sheen fill];
-
-        [blue set];
-        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5.0, 5.0, 4, 4)] fill];
-        [[NSColor whiteColor] set];
-        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(6.2, 6.2, 1.6, 1.6)] fill];
-        [image unlockFocus];
-        return image;
-    }
-    if (item == BTRecentlyAddedSource) {
-        // A clock face, since the list is about when rather than what.
-        NSBezierPath *face = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 13, 13)];
-        [blue set];
-        [face fill];
-        [[NSColor whiteColor] set];
-        NSBezierPath *hands = [NSBezierPath bezierPath];
-        [hands setLineWidth:1.4];
-        [hands moveToPoint:NSMakePoint(7, 7)];
-        [hands lineToPoint:NSMakePoint(7, 10.5)];      // to the hour
-        [hands moveToPoint:NSMakePoint(7, 7)];
-        [hands lineToPoint:NSMakePoint(9.8, 7)];       // and past it
-        [hands stroke];
-        [image unlockFocus];
-        return image;
-    }
-    if (item == BTLibrarySource) {
-        NSBezierPath *circle = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 13, 13)];
-        [blue set];
-        [circle fill];
-        [[NSColor whiteColor] set];
-        NSRectFill(NSMakeRect(8, 5, 1.6, 6));
-        NSBezierPath *head = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5.4, 3.4, 4, 3.2)];
-        [head fill];
-    } else {
-        BTPlaylist *playlist = (BTPlaylist *)item;
-        if (playlist.kind == BTPlaylistKindFolder) {
-            NSBezierPath *folder = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(0.5, 2.5, 13, 9)
-                                                                   xRadius:1.5
-                                                                   yRadius:1.5];
-            [[NSColor colorWithCalibratedRed:0.63 green:0.70 blue:0.80 alpha:1.0] set];
-            [folder fill];
-            [[NSColor colorWithCalibratedWhite:0.35 alpha:1.0] set];
-            [folder stroke];
-            NSRectFill(NSMakeRect(1.5, 11, 5, 1.5));
-        } else {
-            NSBezierPath *page = [NSBezierPath bezierPathWithRect:NSMakeRect(1.5, 1.5, 11, 11)];
-            [[NSColor whiteColor] set];
-            [page fill];
-            [[NSColor colorWithCalibratedWhite:0.45 alpha:1.0] set];
-            [page stroke];
-            NSColor *ink = (playlist.kind == BTPlaylistKindSmart)
-                ? [BTStyle smartPlaylistIcon] : blue;
-            [ink set];
-            NSRectFill(NSMakeRect(8, 5, 1.4, 5));
-            NSBezierPath *head = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5.6, 3.6, 3.6, 2.8)];
-            [head fill];
-            if (playlist.kind == BTPlaylistKindSmart) {
-                NSRectFill(NSMakeRect(3, 10, 2, 2));
-            }
-        }
-    }
-    [image unlockFocus];
-    return image;
-}
 
 - (void)buildChrome {
     NSView *content = [[self window] contentView];
@@ -426,44 +314,14 @@ static CGFloat BTTitleBarHeight(void) {
     [_outerSplit setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
     [content addSubview:_outerSplit];
 
-    // Source list.
-    NSScrollView *sourceScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 170, NSHeight(bodyFrame))];
-    [sourceScroll setHasVerticalScroller:YES];
-    [sourceScroll setAutohidesScrollers:YES];
-    [sourceScroll setBorderType:NSNoBorder];
-    [sourceScroll setDrawsBackground:YES];
-    [sourceScroll setBackgroundColor:[BTStyle listBackground]];
-    [sourceScroll setFocusRingType:NSFocusRingTypeNone];
-    [sourceScroll setAutomaticallyAdjustsContentInsets:NO];
-    [sourceScroll setContentInsets:NSEdgeInsetsMake(BT_SOURCE_TOP_INSET, 0, 0, 0)];
+    // The source list builds itself. What it is for is choosing a row; what a
+    // chosen row means to the rest of the window is answered back here.
+    _sources = [[BTSourceList alloc] initWithDelegate:self];
+    [[_sources scrollView] setFrame:NSMakeRect(0, 0, 170, NSHeight(bodyFrame))];
 
-    _sourceList = [[BTKeyOutlineView alloc] initWithFrame:[[sourceScroll contentView] bounds]];
-    [_sourceList setFocusRingType:NSFocusRingTypeNone];
-    NSTableColumn *sourceColumn = [[NSTableColumn alloc] initWithIdentifier:@"source"];
-    // A starting width only. It follows the pane from here on, or a name wider
-    // than this stays cut short however far the pane is dragged open.
-    [sourceColumn setWidth:150];
-    BTSourceCell *sourceCell = [[BTSourceCell alloc] init];
-    [sourceCell setFont:[BTStyle uiFont]];
-    [sourceCell setLineBreakMode:NSLineBreakByTruncatingTail];
-    [sourceCell setEditable:YES];
-    [sourceColumn setDataCell:sourceCell];
-    [_sourceList addTableColumn:sourceColumn];
-    [_sourceList setOutlineTableColumn:sourceColumn];
-    [_sourceList setHeaderView:nil];
-    [_sourceList setRowHeight:[BTStyle sourceRowHeight]];
-    [_sourceList setIndentationPerLevel:14.0];
-    [_sourceList setDataSource:self];
-    [_sourceList setDelegate:self];
-    [_sourceList setAllowsMultipleSelection:NO];
-    [_sourceList setAllowsColumnSelection:NO];
-    [_sourceList setTarget:self];
-    [_sourceList setAction:@selector(sourceClicked:)];
-    [_sourceList setDoubleAction:@selector(renameSelectedPlaylist:)];
-    [_sourceList registerForDraggedTypes:@[BTTrackPasteboardType, BTPlaylistPasteboardType]];
-
-    // Making a playlist is the thing this pane is for, so it is offered where
+    // Making a playlist is the thing that pane is for, so it is offered where
     // the pane is, empty space included, rather than only from the File menu.
+    // Built here because every item on it is an action of this window's.
     NSMenu *sourceMenu = [[NSMenu alloc] initWithTitle:@"Source"];
     [sourceMenu addItem:[self sourceItemTitled:@"New Playlist" action:@selector(newPlaylist:)]];
     [sourceMenu addItem:[self sourceItemTitled:@"New Smart Playlist..."
@@ -476,9 +334,8 @@ static CGFloat BTTitleBarHeight(void) {
     // selected.
     [sourceMenu addItem:[self sourceItemTitled:@"Edit Smart Playlist..."
                                         action:@selector(editSmartPlaylist:)]];
-    [_sourceList setMenu:sourceMenu];
-    [sourceScroll setDocumentView:_sourceList];
-    [_outerSplit addSubview:sourceScroll];
+    [[_sources outlineView] setMenu:sourceMenu];
+    [_outerSplit addSubview:[_sources scrollView]];
 
     // Browser above, track list below.
     _innerSplit = [[NSSplitView alloc] initWithFrame:NSMakeRect(0, 0, NSWidth(bodyFrame) - 170, NSHeight(bodyFrame))];
@@ -675,8 +532,8 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
                     CGFloat *outDisplayLeft, CGFloat *outDisplayWidth,
                     CGFloat *outSearchLeft, CGFloat *outSearchWidth) {
     const CGFloat rightMargin = 15.0;
-    const CGFloat miniWidth = 27.0;
-    const CGFloat actionWidth = 27.0;
+    const CGFloat miniWidth = BT_CHROME_BUTTON_SIDE;
+    const CGFloat actionWidth = BT_CHROME_BUTTON_SIDE;
     const CGFloat displayLeft = 230.0;
     const CGFloat preferredSearch = 180.0;
     const CGFloat minimumSearch = 88.0;
@@ -723,23 +580,12 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
                    &miniLeft, &actionLeft, &displayLeft, &displayWidth,
                    &searchLeft, &searchWidth);
 
-    [_miniButton setFrame:NSMakeRect(miniLeft, 14, 27.0, 27.0)];
-    [_actionButton setFrame:NSMakeRect(actionLeft, 14, 27.0, 27.0)];
+    [_miniButton setFrame:NSMakeRect(miniLeft, BT_CHROME_BUTTON_FOOT,
+                                     BT_CHROME_BUTTON_SIDE, BT_CHROME_BUTTON_SIDE)];
+    [_actionButton setFrame:NSMakeRect(actionLeft, BT_CHROME_BUTTON_FOOT,
+                                       BT_CHROME_BUTTON_SIDE, BT_CHROME_BUTTON_SIDE)];
     [_display setFrame:NSMakeRect(displayLeft, 6, displayWidth, [BTDisplayView naturalHeight])];
     [_searchField setFrame:NSMakeRect(searchLeft, 17, searchWidth, 21)];
-}
-
-// The source list has one column and it is the whole width of the pane. Set by
-// hand rather than left to a column autoresizing style, because the outline view
-// is inside a scroll view whose width is what the column has to match.
-- (void)sizeSourceColumn {
-    NSScrollView *scroll = [_sourceList enclosingScrollView];
-    CGFloat width = [scroll contentSize].width;
-    if (width < 20.0) return;
-
-    [_sourceList setFrameSize:NSMakeSize(width, NSHeight([_sourceList frame]))];
-    NSArray *columns = [_sourceList tableColumns];
-    if ([columns count] > 0) [[columns objectAtIndex:0] setWidth:width];
 }
 
 // Where the bars were left, or where they start when nobody has moved them.
@@ -804,7 +650,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     // given. That is what stopped the columns walking two points to the right on
     // every launch over whatever had been set by hand.
     [_trackTable sizeToFit];
-    [self sizeSourceColumn];
+    [_sources sizeColumnToPane];
 }
 
 - (void)showWindow:(id)sender {
@@ -818,11 +664,11 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
 // browser columns, the track list, back to search. The browser drops out of the
 // order while it is put away.
 - (void)updateKeyViewLoop {
-    [_searchField setNextKeyView:_sourceList];
+    [_searchField setNextKeyView:[_sources outlineView]];
     if (_browserHidden) {
-        [_sourceList setNextKeyView:_trackTable];
+        [[_sources outlineView] setNextKeyView:_trackTable];
     } else {
-        [_sourceList setNextKeyView:[_browser firstColumnView]];
+        [[_sources outlineView] setNextKeyView:[_browser firstColumnView]];
         [[_browser lastColumnView] setNextKeyView:_trackTable];
     }
     [_trackTable setNextKeyView:_searchField];
@@ -873,13 +719,6 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     [_iTunesSyncView beginComparing];
 }
 
-// A click that lands on the row already selected sends no selection change, so
-// the sync pane would sit there while the source list looked as though it had
-// been answered.
-- (void)sourceClicked:(id)sender {
-    if (_showingITunesSync) [self closeITunesSync];
-}
-
 - (void)closeITunesSync {
     if (!_showingITunesSync) return;
     _showingITunesSync = NO;
@@ -899,36 +738,48 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
         [self updateRightPane];
         [self updateBrowserVisibility];
     }
-    [_sourceList reloadData];
+    _sources.iPod = found;
     [self updateBottomBar];
     if (had != (found != nil)) [self reloadEverything];
 }
 
 // A disc arriving or leaving. What was selected falls back to the library when
 // the disc it was showing has gone, the way the iPod already does.
+//
+// This runs on any volume mounting or unmounting anywhere, not only on a disc,
+// and every run reads the drive afresh. So the disc already in hand is kept
+// whenever the drive holds that same disc: a new reading knows nothing of the
+// names a lookup put on the old one, and swapping the object underneath the
+// selection leaves the left bar pointing at a disc that is no longer in the list.
 - (void)discChanged:(NSNotification *)note {
     BTAudioDisc *found = [BTAudioDisc insertedDisc];
-    BOOL had = (_disc != nil);
-    _disc = found;
+    BTAudioDisc *was = _disc;
+    _disc = [found isSameDiscAs:was] ? was : found;
 
-    if (_disc == nil && [_selectedSource isKindOfClass:[BTAudioDisc class]]) {
+    // Gone, or a different disc: either way what was on screen is not there any
+    // more. Kept on the same test as the reload below, so the two agree.
+    if (_selectedSource != _disc && [_selectedSource isKindOfClass:[BTAudioDisc class]]) {
         _selectedSource = BTLibrarySource;
         [self updateRightPane];
         [self updateBrowserVisibility];
     }
-    [_sourceList reloadData];
-    if (had != (found != nil) || [_selectedSource isKindOfClass:[BTAudioDisc class]]) {
-        [self reloadEverything];
-    }
+    _sources.disc = _disc;
+    // Only when the drive actually changed. A memory stick being plugged in is
+    // no reason to rebuild a list of twelve thousand songs.
+    if (was != _disc) [self reloadEverything];
     [self updateActionButton];
 
     // A disc that did not name itself gets looked up, once, as it arrives. It is
     // shown numbered in the meantime rather than held back: the songs play
     // either way and the names arrive when they arrive.
-    if (found && ![found named] && found != _lookedUp &&
+    //
+    // The disc that was kept, never the reading that was thrown away. Naming a
+    // discarded object puts the answer nowhere, which is what happened every
+    // time a volume appeared while a lookup was in flight.
+    if (_disc && ![_disc named] && _disc != _lookedUp &&
         [[BTPreferences sharedPreferences] looksUpDiscs]) {
-        _lookedUp = found;
-        [self lookUpDisc:found];
+        _lookedUp = _disc;
+        [self lookUpDisc:_disc];
     }
 }
 
@@ -947,7 +798,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
                   (unsigned long)[titles count], (unsigned long)[[disc tracks] count]);
             return;
         }
-        [self->_sourceList reloadData];
+        [self->_sources reload];
         if ([self->_selectedSource isKindOfClass:[BTAudioDisc class]]) [self reloadEverything];
     }];
 }
@@ -955,8 +806,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
 // The mark on a row ejects that row's device, whichever kind it is. The button
 // at the bottom right is the iPod's alone and goes through ejectIPod: below.
 - (void)ejectSource:(id)sender {
-    NSInteger row = [_sourceList clickedRow];
-    id item = (row >= 0) ? [_sourceList itemAtRow:row] : nil;
+    id item = [_sources clickedSource];
 
     if ([item isKindOfClass:[BTAudioDisc class]]) {
         if (![(BTAudioDisc *)item eject]) {
@@ -1006,7 +856,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
         [_actionButton setToolTip:@"Import this CD"];
     } else if ([BTBlankDisc present] && !_showingITunesSync) {
         // A blank disc is in, so a playlist that would actually fit can go on it.
-        BTPlaylist *playlist = [self selectedPlaylist];
+        BTPlaylist *playlist = [_sources selectedPlaylist];
         if ([BTBurnPlan canBurnPlaylist:playlist] && ![BTBurnController isBusy]) {
             BTBurnPlan *plan = [BTBurnPlan planForPlaylist:playlist
                                                     tracks:[BTLibrary sharedLibrary].tracks];
@@ -1144,40 +994,6 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     return BTPlaylistFromSource(_selectedSource) ? @"order" : @"track";
 }
 
-// Folders come up open, since a closed one hides the playlists it holds. One
-// you have closed yourself stays closed: the list is rebuilt on every library
-// change, and without remembering that, playing a song would open it again.
-// Both ways, not only open. A folder left closed last time has to be closed
-// here, and the window is built with every folder open before the record of
-// which ones were closed has even been read.
-- (void)expandFolders {
-    NSInteger row;
-    for (row = 0; row < [_sourceList numberOfRows]; row++) {
-        id item = [_sourceList itemAtRow:row];
-        if (item == nil || ![_sourceList isExpandable:item]) continue;
-        BTPlaylist *folder = BTPlaylistFromSource(item);
-        if (folder && [_closedFolders containsObject:folder.playlistID]) {
-            [_sourceList collapseItem:item];
-            continue;
-        }
-        [_sourceList expandItem:item];
-    }
-}
-
-- (void)outlineViewItemDidCollapse:(NSNotification *)note {
-    BTPlaylist *folder = BTPlaylistFromSource([[note userInfo] objectForKey:@"NSObject"]);
-    if (folder == nil) return;
-    [_closedFolders addObject:folder.playlistID];
-    [self saveSessionState];
-}
-
-- (void)outlineViewItemDidExpand:(NSNotification *)note {
-    BTPlaylist *folder = BTPlaylistFromSource([[note userInfo] objectForKey:@"NSObject"]);
-    if (folder == nil) return;
-    [_closedFolders removeObject:folder.playlistID];
-    [self saveSessionState];
-}
-
 #pragma mark - Session state
 
 // Nothing is written back before the last session has been read.
@@ -1191,7 +1007,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     if (!_sessionRestored) return;
 
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults setObject:[_closedFolders allObjects] forKey:BTClosedFoldersKey];
+    [defaults setObject:[_sources closedFolderIDs] forKey:BTClosedFoldersKey];
 
     BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
     NSString *source = BTLibraryWasSelected;
@@ -1222,7 +1038,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     NSString *rememberedTrack = [defaults stringForKey:BTSelectedTrackKey];
 
     NSArray *closed = [defaults arrayForKey:BTClosedFoldersKey];
-    if (closed) [_closedFolders addObjectsFromArray:closed];
+    if (closed) [_sources setClosedFolderIDs:closed];
 
     // Whatever was open last time comes back, so long as it still exists. A
     // playlist may have been deleted since, and the iPod may simply not be
@@ -1248,14 +1064,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     // The left pane has to agree with what the right one is showing. A playlist
     // sitting in a folder that was left closed would otherwise leave nothing
     // highlighted beside a track list full of its songs.
-    BTPlaylist *restored = BTPlaylistFromSource(_selectedSource);
-    if (restored) [self revealPlaylist:restored];
-
-    NSInteger row = [_sourceList rowForItem:_selectedSource];
-    if (row >= 0) {
-        [_sourceList selectRowIndexes:[NSIndexSet indexSetWithIndex:(NSUInteger)row]
-                 byExtendingSelection:NO];
-    }
+    [_sources selectSource:_selectedSource];
 
     if ([rememberedTrack length] > 0) {
         NSUInteger i;
@@ -1300,8 +1109,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
 
     [_browser setSourceTracks:base];
 
-    [_sourceList reloadData];
-    [self expandFolders];
+    [_sources reload];
     [self reloadTrackList];
     [self updateTransport];
 }
@@ -1349,6 +1157,14 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     [self updateActionButton];
 }
 
+// A play count or a date, on a song that is already in the list where it is.
+// The cells are redrawn and nothing else: the rows are the same rows, and a
+// list that resorted itself under the pointer because a song started playing
+// would be worse than one that waits until it is next built.
+- (void)trackDetailChanged:(NSNotification *)note {
+    [_trackTable setNeedsDisplay:YES];
+}
+
 - (void)blankDiscChanged:(NSNotification *)note {
     [self updateActionButton];
 }
@@ -1374,167 +1190,14 @@ static void BTRedrawEverything(NSView *view) {
     [_trackTable setNeedsDisplay:YES];
 }
 
-#pragma mark - Source list data
 
-// Playlists come in three kinds and each kind sits together: the smart ones
-// first, then the folders, then the ones built by hand. The same order applies
-// inside a folder as at the top, so a smart playlist is at the top of whatever
-// holds it.
-//
-// Within a kind nothing is rearranged. Whatever arrangement is there is somebody
-// having put it there, and grouping is no reason to lose it.
-// By name, the way a list of names is looked through: you know what the playlist
-// is called, so the question is always where that name falls.
-//
-// Compared the way the Finder compares, so "Disc 2" comes before "Disc 10"
-// rather than after it, and so an accent or a capital does not send a name
-// somewhere nobody would look for it.
-static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
-    NSString *left = a.name ? a.name : @"";
-    NSString *right = b.name ? b.name : @"";
-    NSComparisonResult result = [left localizedStandardCompare:right];
-    // Two playlists of the same name still have to fall in a settled order, or
-    // they would swap places every time the list was rebuilt.
-    if (result == NSOrderedSame) {
-        result = [(a.playlistID ? a.playlistID : @"") compare:(b.playlistID ? b.playlistID : @"")];
-    }
-    return result;
-}
 
-- (NSArray *)sourcesArranged:(NSArray *)playlists {
-    NSMutableArray *smart = [NSMutableArray array];
-    NSMutableArray *folders = [NSMutableArray array];
-    NSMutableArray *byHand = [NSMutableArray array];
+#pragma mark - What the source list says
 
-    NSUInteger i;
-    for (i = 0; i < [playlists count]; i++) {
-        BTPlaylist *playlist = [playlists objectAtIndex:i];
-        if (playlist.kind == BTPlaylistKindSmart) {
-            [smart addObject:playlist];
-        } else if (playlist.kind == BTPlaylistKindFolder) {
-            [folders addObject:playlist];
-        } else {
-            [byHand addObject:playlist];
-        }
-    }
-
-    NSComparator byName = ^NSComparisonResult(id a, id b) {
-        return BTCompareSourceNames(a, b);
-    };
-    [smart sortUsingComparator:byName];
-    [folders sortUsingComparator:byName];
-    [byHand sortUsingComparator:byName];
-
-    [smart addObjectsFromArray:folders];
-    [smart addObjectsFromArray:byHand];
-    return smart;
-}
-
-- (NSArray *)childrenOfSourceItem:(id)item {
-    if (item == nil) {
-        // A disc sits directly under the library, because it is another place
-        // songs come from. Recently Added is a second view of the library rather
-        // than a source of its own, so it follows.
-        NSMutableArray *roots = [NSMutableArray arrayWithObject:BTLibrarySource];
-        if (_disc) [roots addObject:_disc];
-        [roots addObject:BTRecentlyAddedSource];
-        // The iPod sits under the library views, above the playlists.
-        if (_iPod) [roots addObject:_iPod];
-        [roots addObjectsFromArray:[self sourcesArranged:[BTLibrary sharedLibrary].playlists]];
-        return roots;
-    }
-    BTPlaylist *playlist = BTPlaylistFromSource(item);
-    if (playlist == nil || playlist.kind != BTPlaylistKindFolder) return @[];
-    return [self sourcesArranged:playlist.children];
-}
-
-- (NSInteger)outlineView:(NSOutlineView *)outlineView numberOfChildrenOfItem:(id)item {
-    return (NSInteger)[[self childrenOfSourceItem:item] count];
-}
-
-- (id)outlineView:(NSOutlineView *)outlineView child:(NSInteger)index ofItem:(id)item {
-    return [[self childrenOfSourceItem:item] objectAtIndex:(NSUInteger)index];
-}
-
-- (BOOL)outlineView:(NSOutlineView *)outlineView isItemExpandable:(id)item {
-    return [[self childrenOfSourceItem:item] count] > 0;
-}
-
-- (id)outlineView:(NSOutlineView *)outlineView
-    objectValueForTableColumn:(NSTableColumn *)tableColumn
-                       byItem:(id)item {
-    if (item == BTLibrarySource) return @"Library";
-    if (item == BTRecentlyAddedSource) return @"Recently Added";
-    if ([item isKindOfClass:[BTIPod class]]) return [(BTIPod *)item name];
-    if ([item isKindOfClass:[BTAudioDisc class]]) return [(BTAudioDisc *)item name];
-    return [(BTPlaylist *)item name];
-}
-
-- (void)outlineView:(NSOutlineView *)outlineView
-     setObjectValue:(id)object
-     forTableColumn:(NSTableColumn *)tableColumn
-             byItem:(id)item {
-    BTPlaylist *playlist = BTPlaylistFromSource(item);
-    if (playlist == nil) return;
-    if ([object isKindOfClass:[NSString class]] && [(NSString *)object length] > 0) {
-        [playlist setName:object];
-        [[BTLibrary sharedLibrary] noteChanged];
-    }
-}
-
-- (void)outlineView:(NSOutlineView *)outlineView
-    willDisplayCell:(id)cell
-     forTableColumn:(NSTableColumn *)tableColumn
-               item:(id)item {
-    if ([cell isKindOfClass:[BTSourceCell class]]) {
-        BTSourceCell *sourceCell = cell;
-        sourceCell.icon = [self iconForSource:item];
-        sourceCell.showsEject = ([item isKindOfClass:[BTIPod class]] ||
-                                 [item isKindOfClass:[BTAudioDisc class]]);
-
-        BOOL selected = ([outlineView selectedRow] == [outlineView rowForItem:item]);
-        [sourceCell setHighlighted:NO];
-        // White words on the gray fill are barely words, so the text follows
-        // the fill rather than the selection.
-        BOOL strong = (selected && BTListHasFocus(outlineView));
-        [sourceCell setTextColor:(strong ? [NSColor whiteColor] : [NSColor blackColor])];
-    }
-}
-
-// Renaming happens on a double click, or right after a playlist is created.
-// Without this gate, tabbing through the window opens an editor on whatever
-// row it lands on.
-- (BOOL)outlineView:(NSOutlineView *)outlineView
-shouldEditTableColumn:(NSTableColumn *)tableColumn
-               item:(id)item {
-    return _renameRequested && BTPlaylistFromSource(item) != nil;
-}
-
-- (void)beginRenamingRow:(NSInteger)row {
-    if (row < 0) return;
-    if (BTPlaylistFromSource([_sourceList itemAtRow:row]) == nil) return;
-
-    _renameRequested = YES;
-    [_sourceList editColumn:0 row:row withEvent:nil select:YES];
-    _renameRequested = NO;
-}
-
-- (void)renameSelectedPlaylist:(id)sender {
-    NSInteger row = [_sourceList clickedRow];
-    if (row < 0) row = [_sourceList selectedRow];
-    [self beginRenamingRow:row];
-}
-
-// The playlist the source list has selected, or nil when the selection is the
-// library, the iPod, or nothing at all.
-- (BTPlaylist *)selectedPlaylist {
-    NSInteger row = [_sourceList selectedRow];
-    return (row >= 0) ? BTPlaylistFromSource([_sourceList itemAtRow:row]) : nil;
-}
-
-- (void)outlineViewSelectionDidChange:(NSNotification *)notification {
-    NSInteger row = [_sourceList selectedRow];
-    id item = (row >= 0) ? [_sourceList itemAtRow:row] : BTLibrarySource;
+// A row was chosen. Everything that follows from that is here, because the
+// source list knows which row and this window knows what a row means.
+- (void)sourceListSelectionDidChange:(BTSourceList *)list {
+    id item = [list selectedSource];
     if (item == nil) item = BTLibrarySource;
     _selectedSource = item;
     _showingITunesSync = NO;
@@ -1557,83 +1220,19 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
     [self reloadEverything];
 }
 
-#pragma mark - Source list drag and drop
-
-- (BOOL)outlineView:(NSOutlineView *)outlineView
-         writeItems:(NSArray *)items
-       toPasteboard:(NSPasteboard *)pasteboard {
-    if ([items count] != 1) return NO;
-    BTPlaylist *playlist = BTPlaylistFromSource([items objectAtIndex:0]);
-    if (playlist == nil) return NO;
-
-    [pasteboard declareTypes:@[BTPlaylistPasteboardType] owner:self];
-    [pasteboard setString:playlist.playlistID forType:BTPlaylistPasteboardType];
-    return YES;
+// A click that landed on the row already chosen sends no selection change, so
+// the sync pane would sit there while the source list looked as though it had
+// been answered.
+- (void)sourceListWasClicked:(BTSourceList *)list {
+    if (_showingITunesSync) [self closeITunesSync];
 }
 
-- (NSDragOperation)outlineView:(NSOutlineView *)outlineView
-                  validateDrop:(id<NSDraggingInfo>)info
-                  proposedItem:(id)item
-            proposedChildIndex:(NSInteger)index {
-    NSPasteboard *pasteboard = [info draggingPasteboard];
-    BTPlaylist *target = BTPlaylistFromSource(item);
-
-    if ([[pasteboard types] containsObject:BTTrackPasteboardType]) {
-        // Songs land on a static playlist, never on the library, the iPod, or a
-        // folder.
-        if (target == nil || target.kind != BTPlaylistKindStatic) return NSDragOperationNone;
-        if (index != NSOutlineViewDropOnItemIndex) return NSDragOperationNone;
-        return NSDragOperationCopy;
-    }
-
-    if ([[pasteboard types] containsObject:BTPlaylistPasteboardType]) {
-        // The top level, or a folder. Dropping onto the library or the iPod
-        // means nothing.
-        if (item != nil && (target == nil || target.kind != BTPlaylistKindFolder)) {
-            return NSDragOperationNone;
-        }
-        // Which folder, not which position. Names decide the order now, so a
-        // line drawn between two playlists would promise a place the list would
-        // not keep. Dropping between them is taken as dropping into whatever
-        // holds them, and the folder lights up to say so.
-        if (index != NSOutlineViewDropOnItemIndex) {
-            [outlineView setDropItem:item dropChildIndex:NSOutlineViewDropOnItemIndex];
-        }
-        return NSDragOperationMove;
-    }
-    return NSDragOperationNone;
+- (void)sourceListDeletePressed:(BTSourceList *)list {
+    [self deleteSelectedPlaylist];
 }
 
-- (BOOL)outlineView:(NSOutlineView *)outlineView
-         acceptDrop:(id<NSDraggingInfo>)info
-               item:(id)item
-         childIndex:(NSInteger)index {
-    NSPasteboard *pasteboard = [info draggingPasteboard];
-    BTLibrary *library = [BTLibrary sharedLibrary];
-    BTPlaylist *target = BTPlaylistFromSource(item);
-
-    if ([[pasteboard types] containsObject:BTTrackPasteboardType]) {
-        if (target == nil) return NO;
-        NSArray *ids = [NSKeyedUnarchiver unarchiveObjectWithData:[pasteboard dataForType:BTTrackPasteboardType]];
-        NSUInteger i;
-        for (i = 0; i < [ids count]; i++) {
-            NSString *trackID = [ids objectAtIndex:i];
-            if (![target.trackIDs containsObject:trackID]) [target.trackIDs addObject:trackID];
-        }
-        [library noteChanged];
-        return YES;
-    }
-
-    if ([[pasteboard types] containsObject:BTPlaylistPasteboardType]) {
-        NSString *playlistID = [pasteboard stringForType:BTPlaylistPasteboardType];
-        BTPlaylist *moving = [library playlistWithID:playlistID];
-        if (moving == nil) return NO;
-        // The end of wherever it lands. Where it sits in the list is decided by
-        // its name, so the place in the array is only where it is kept.
-        [library movePlaylist:moving toFolder:target atIndex:-1];
-        return YES;
-    }
-    return NO;
+- (void)sourceListFoldersDidChange:(BTSourceList *)list {
+    [self saveSessionState];
 }
 
 #pragma mark - Track table
@@ -1877,8 +1476,8 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
 // it opens the rules; on a song it opens the song. Both are "tell me about the
 // thing I am looking at", which is the one idea the shortcut carries.
 - (BTPlaylist *)smartPlaylistForInfo {
-    if ([[self window] firstResponder] != _sourceList) return nil;
-    BTPlaylist *playlist = [self selectedPlaylist];
+    if ([[self window] firstResponder] != [_sources outlineView]) return nil;
+    BTPlaylist *playlist = [_sources selectedPlaylist];
     return (playlist && playlist.kind == BTPlaylistKindSmart) ? playlist : nil;
 }
 
@@ -1926,15 +1525,11 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
 #pragma mark - Delete
 
 - (void)tableViewDeletePressed:(NSTableView *)tableView {
-    if (tableView == (NSTableView *)_sourceList) {
-        [self deleteSelectedPlaylist];
-    } else {
-        [self deleteSelectedTracks];
-    }
+    [self deleteSelectedTracks];
 }
 
 - (void)deleteSelectedPlaylist {
-    BTPlaylist *playlist = [self selectedPlaylist];
+    BTPlaylist *playlist = [_sources selectedPlaylist];
     if (playlist == nil) return;
 
     NSAlert *alert = [[NSAlert alloc] init];
@@ -2011,7 +1606,7 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
         if (right < 0) right = 0;
         [first setFrame:NSMakeRect(0, 0, left, size.height)];
         [second setFrame:NSMakeRect(left + divider, 0, right, size.height)];
-        [self sizeSourceColumn];
+        [_sources sizeColumnToPane];
         return;
     }
 
@@ -2111,7 +1706,7 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 // an order to renumber: a folder takes its from its children and a smart
 // playlist from its rules, and the library has none at all.
 - (void)syncPlaylistOrder:(id)sender {
-    BTPlaylist *playlist = [self selectedPlaylist];
+    BTPlaylist *playlist = [_sources selectedPlaylist];
     if (playlist == nil || playlist.kind != BTPlaylistKindStatic) return;
 
     [self recordOrder:[NSArray arrayWithArray:playlist.trackIDs]
@@ -2126,64 +1721,38 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     [self updateTransport];
 }
 
-- (void)volumeUp:(id)sender {
+// Both keys move the knob by the same step, so the two are one method with a
+// direction. Written out twice, one of them could be given a different step and
+// the volume would move further one way than the other.
+- (void)moveVolumeBy:(float)step {
     BTPlayer *player = [BTPlayer sharedPlayer];
-    float v = [player volume] + 0.05f;
-    [player setVolume:(v > 1.0f ? 1.0f : v)];
+    float wanted = [player volume] + step;
+    if (wanted > 1.0f) wanted = 1.0f;
+    if (wanted < 0.0f) wanted = 0.0f;
+    [player setVolume:wanted];
     [self updateTransport];
 }
 
-- (void)volumeDown:(id)sender {
-    BTPlayer *player = [BTPlayer sharedPlayer];
-    float v = [player volume] - 0.05f;
-    [player setVolume:(v < 0.0f ? 0.0f : v)];
-    [self updateTransport];
-}
+- (void)volumeUp:(id)sender { [self moveVolumeBy:BT_VOLUME_STEP]; }
+
+- (void)volumeDown:(id)sender { [self moveVolumeBy:-BT_VOLUME_STEP]; }
 
 - (BTPlaylist *)folderForNewPlaylist {
-    BTPlaylist *selected = [self selectedPlaylist];
+    BTPlaylist *selected = [_sources selectedPlaylist];
     if (selected == nil) return nil;
     return (selected.kind == BTPlaylistKindFolder) ? selected : selected.parent;
-}
-
-// Opens whatever folders it takes to bring a playlist into view, outermost
-// first, since the source list can only place a row whose folders are all open.
-// A folder that was closed by hand is reopened, because a selection nothing can
-// see is worse than a folder that did not stay shut.
-- (void)revealPlaylist:(BTPlaylist *)playlist {
-    NSMutableArray *ancestors = [NSMutableArray array];
-    BTPlaylist *parent = playlist.parent;
-    while (parent) {
-        [ancestors insertObject:parent atIndex:0];
-        parent = parent.parent;
-    }
-    NSUInteger i;
-    for (i = 0; i < [ancestors count]; i++) {
-        [_sourceList expandItem:[ancestors objectAtIndex:i]];
-    }
-}
-
-- (void)selectPlaylist:(BTPlaylist *)playlist {
-    [self revealPlaylist:playlist];
-    NSInteger row = [_sourceList rowForItem:playlist];
-    if (row >= 0) {
-        [_sourceList selectRowIndexes:[NSIndexSet indexSetWithIndex:(NSUInteger)row] byExtendingSelection:NO];
-        [self beginRenamingRow:row];
-    }
 }
 
 - (void)newPlaylist:(id)sender {
     BTPlaylist *playlist = [BTPlaylist playlistWithName:@"untitled playlist" kind:BTPlaylistKindStatic];
     [[BTLibrary sharedLibrary] addPlaylist:playlist toFolder:[self folderForNewPlaylist]];
-    [_sourceList reloadData];
-    [self selectPlaylist:playlist];
+    [_sources selectPlaylistForRenaming:playlist];
 }
 
 - (void)newPlaylistFolder:(id)sender {
     BTPlaylist *folder = [BTPlaylist playlistWithName:@"untitled folder" kind:BTPlaylistKindFolder];
     [[BTLibrary sharedLibrary] addPlaylist:folder toFolder:[self folderForNewPlaylist]];
-    [_sourceList reloadData];
-    [self selectPlaylist:folder];
+    [_sources selectPlaylistForRenaming:folder];
 }
 
 - (void)newSmartPlaylist:(id)sender {
@@ -2194,17 +1763,14 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     [_sheetController beginSheetForWindow:[self window] completion:^(BOOL accepted) {
         if (accepted) {
             [[BTLibrary sharedLibrary] addPlaylist:playlist toFolder:folder];
-            [self->_sourceList reloadData];
-            [self selectPlaylist:playlist];
+            [self->_sources selectPlaylistForRenaming:playlist];
         }
         self->_sheetController = nil;
     }];
 }
 
 - (void)editSmartPlaylist:(id)sender {
-    NSInteger clicked = [_sourceList clickedRow];
-    BTPlaylist *playlist = (clicked >= 0) ? BTPlaylistFromSource([_sourceList itemAtRow:clicked])
-                                          : [self selectedPlaylist];
+    BTPlaylist *playlist = [_sources clickedPlaylist];
     if (playlist == nil || playlist.kind != BTPlaylistKindSmart) return;
 
     _sheetController = [[BTSmartPlaylistController alloc] initWithPlaylist:playlist];
@@ -2251,7 +1817,7 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 // One playlist, one disc. A folder takes its contents from its children and the
 // library never fits, so neither is offered; the menu is dead for both.
 - (void)burnPlaylist:(id)sender {
-    BTPlaylist *playlist = [self selectedPlaylist];
+    BTPlaylist *playlist = [_sources selectedPlaylist];
     if (![BTBurnPlan canBurnPlaylist:playlist]) return;
     [BTBurnController burnPlaylist:playlist modalForWindow:[self window]];
 }
@@ -2321,7 +1887,7 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 }
 
 - (void)deleteSelection:(id)sender {
-    if ([[self window] firstResponder] == _sourceList) {
+    if ([[self window] firstResponder] == [_sources outlineView]) {
         [self deleteSelectedPlaylist];
     } else {
         [self deleteSelectedTracks];
@@ -2348,9 +1914,7 @@ static BOOL BTSomethingIsBeingTyped(NSWindow *window) {
     }
 
     if (action == @selector(editSmartPlaylist:)) {
-        NSInteger clicked = [_sourceList clickedRow];
-        BTPlaylist *selected = (clicked >= 0)
-            ? BTPlaylistFromSource([_sourceList itemAtRow:clicked]) : [self selectedPlaylist];
+        BTPlaylist *selected = [_sources clickedPlaylist];
         return (selected != nil && selected.kind == BTPlaylistKindSmart);
     }
     // The menu says which of the two it is about to do rather than making it a
@@ -2368,10 +1932,10 @@ static BOOL BTSomethingIsBeingTyped(NSWindow *window) {
     // the dialog says it and holds the Burn button dead instead.
     if (action == @selector(burnPlaylist:)) {
         if ([BTBurnController isBusy]) return NO;
-        return [BTBurnPlan canBurnPlaylist:[self selectedPlaylist]];
+        return [BTBurnPlan canBurnPlaylist:[_sources selectedPlaylist]];
     }
     if (action == @selector(syncPlaylistOrder:)) {
-        BTPlaylist *selected = [self selectedPlaylist];
+        BTPlaylist *selected = [_sources selectedPlaylist];
         return (selected != nil && selected.kind == BTPlaylistKindStatic &&
                 [selected.trackIDs count] > 1);
     }

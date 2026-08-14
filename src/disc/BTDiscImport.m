@@ -3,13 +3,12 @@
 #import "BTLibrary.h"
 #import "BTTrack.h"
 #import "BTPreferences.h"
+#import "BTRedBook.h"
 #import <AudioToolbox/AudioToolbox.h>
 
-// A CD is 44100 samples a second, two channels. Everything written here keeps
-// that rate and that many channels; only how the samples are packed changes.
-#define BT_CD_RATE 44100.0
-#define BT_CD_CHANNELS 2
-
+// Everything written here keeps the disc's own rate and channel count; only how
+// the samples are packed changes.
+//
 // AAC at this rate is about a tenth of the disc. Apple Lossless is about a half
 // and is exact. Neither is a setting worth putting in front of anyone beyond the
 // choice between them.
@@ -71,13 +70,13 @@ static BOOL BTEncodeTrack(NSString *source, NSString *destination, BOOL lossless
         }
 
         memset(&client, 0, sizeof(client));
-        client.mSampleRate = BT_CD_RATE;
+        client.mSampleRate = BT_CD_SAMPLE_RATE;
         client.mFormatID = kAudioFormatLinearPCM;
         client.mFormatFlags = kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
         client.mChannelsPerFrame = BT_CD_CHANNELS;
-        client.mBitsPerChannel = 16;
+        client.mBitsPerChannel = BT_CD_BYTES_PER_SAMPLE * 8;
         client.mFramesPerPacket = 1;
-        client.mBytesPerFrame = 2 * BT_CD_CHANNELS;
+        client.mBytesPerFrame = BT_CD_BYTES_PER_SAMPLE * BT_CD_CHANNELS;
         client.mBytesPerPacket = client.mBytesPerFrame;
 
         if (ExtAudioFileSetProperty(in, kExtAudioFileProperty_ClientDataFormat,
@@ -90,7 +89,7 @@ static BOOL BTEncodeTrack(NSString *source, NSString *destination, BOOL lossless
         // itself, which is why so little is set here.
         AudioStreamBasicDescription written;
         memset(&written, 0, sizeof(written));
-        written.mSampleRate = BT_CD_RATE;
+        written.mSampleRate = BT_CD_SAMPLE_RATE;
         written.mChannelsPerFrame = BT_CD_CHANNELS;
         written.mFormatID = lossless ? kAudioFormatAppleLossless : kAudioFormatMPEG4AAC;
         if (lossless) written.mFormatFlags = kAppleLosslessFormatFlag_16BitSourceData;
@@ -226,7 +225,7 @@ static BOOL BTEncodeTrack(NSString *source, NSString *destination, BOOL lossless
         dispatch_async(dispatch_get_main_queue(), ^{
             NSUInteger j;
             for (j = 0; j < [made count]; j++) {
-                [library.tracks addObject:[made objectAtIndex:j]];
+                [library addTrack:[made objectAtIndex:j]];
             }
             if ([made count] > 0) [library noteChanged];
             if (completion) completion([made count], failure);

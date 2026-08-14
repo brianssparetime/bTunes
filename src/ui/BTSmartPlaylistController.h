@@ -1,11 +1,11 @@
-#import <Cocoa/Cocoa.h>
+#import "BTSheetController.h"
 
 @class BTPlaylist;
 
-// Sheet for building and editing a smart playlist's rules.
-@interface BTSmartPlaylistController : NSWindowController
+// Sheet for building and editing a smart playlist's rules. Going up, coming
+// down, and the two buttons at the foot are the base class's business.
+@interface BTSmartPlaylistController : BTSheetController
 
 - (instancetype)initWithPlaylist:(BTPlaylist *)playlist;
-- (void)beginSheetForWindow:(NSWindow *)parent completion:(void (^)(BOOL accepted))completion;
 
 @end

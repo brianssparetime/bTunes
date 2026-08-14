@@ -6,6 +6,15 @@
 // the library rather than tracking incremental edits.
 extern NSString *const BTLibraryDidChangeNotification;
 
+// Posted when a song records something about itself — a play count, a date last
+// played — and nothing has joined or left any list.
+//
+// Separate because the reload above is not cheap: it rebuilds the left bar, the
+// three browser columns and the sort, over the whole library. Starting a song
+// raises its play count, so on a library this size the reload was the largest
+// thing that happened every time a song began, all to move one number.
+extern NSString *const BTLibraryTrackDidChangeNotification;
+
 @interface BTLibrary : NSObject
 
 + (instancetype)sharedLibrary;
@@ -34,6 +43,15 @@ extern NSString *const BTLibraryDidChangeNotification;
 - (NSString *)writeMissingFilesLog:(NSArray *)tracks;
 - (NSString *)missingFilesLogPath;
 
+// Puts a song in the library and records where its file is.
+//
+// Every route in goes through here: a folder scanned, a sync from iTunes, a CD
+// taken in, and the database read back at startup. The record of which files
+// are already held is what stops a later scan of the same folder offering them
+// a second time, and reaching past this to the array leaves that record short
+// by however many songs took the shortcut.
+- (void)addTrack:(BTTrack *)track;
+
 // Recursively imports every supported audio file under the given paths. Files
 // already in the library are skipped. The completion block runs on the main
 // thread with the number of tracks added.
@@ -58,7 +76,10 @@ extern NSString *const BTLibraryDidChangeNotification;
 - (NSSet *)excludedFromImport;
 - (void)setExcluded:(BOOL)excluded forPersistentIDs:(NSArray *)persistentIDs;
 
-- (void)noteChanged;   // posts the change notification and schedules a save
+- (void)noteChanged;        // posts the change notification and schedules a save
+// The same save, the lighter notification. For a play count or a date, never
+// for a song or a playlist joining or leaving.
+- (void)noteTrackChanged;
 
 + (NSArray *)supportedExtensions;
 

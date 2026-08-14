@@ -282,7 +282,9 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
 
     track.playCount += 1;
     track.lastPlayed = [NSDate date];
-    [[BTLibrary sharedLibrary] noteChanged];
+    // The song recorded something about itself. Nothing joined or left a list,
+    // so the window redraws the count where it stands rather than rebuilding.
+    [[BTLibrary sharedLibrary] noteTrackChanged];
 
     [self startTick];
     [self postChange];

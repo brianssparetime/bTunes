@@ -43,7 +43,6 @@ static BTBurnController *sRunning = nil;
 
 @implementation BTBurnController {
     BTBurnPlan *_plan;
-    NSWindow *_parent;
     NSArray *_devices;              // DRDevice, the ones that write CD-R
     NSArray *_reserved;             // the ones whose blank media is spoken for
     DRNotificationCenter *_center;
@@ -57,8 +56,6 @@ static BTBurnController *sRunning = nil;
     NSPopUpButton *_gapPopUp;
     NSButton *_verifyCheck;
     NSTextField *_status;
-    BTPushButton *_burnButton;
-    BTPushButton *_cancelButton;
     // Set while the trimmed songs are being written out. Nothing can be
     // touched then, including Cancel: a half-decoded song has no clean place
     // to stop and the wait is seconds rather than minutes.
@@ -80,11 +77,11 @@ static BTBurnController *sRunning = nil;
     }
     BTBurnPlan *plan = [BTBurnPlan planForPlaylist:playlist
                                             tracks:[BTLibrary sharedLibrary].tracks];
-    sRunning = [[BTBurnController alloc] initWithPlan:plan parent:parent];
-    [sRunning present];
+    sRunning = [[BTBurnController alloc] initWithPlan:plan];
+    [sRunning beginSheetForWindow:parent completion:nil];
 }
 
-- (instancetype)initWithPlan:(BTBurnPlan *)plan parent:(NSWindow *)parent {
+- (instancetype)initWithPlan:(BTBurnPlan *)plan {
     NSRect frame = NSMakeRect(0, 0, BT_BURN_SHEET_WIDTH, 260);
     NSWindow *window = [[NSWindow alloc] initWithContentRect:frame
                                                    styleMask:NSTitledWindowMask
@@ -96,7 +93,6 @@ static BTBurnController *sRunning = nil;
     if (self == nil) return nil;
 
     _plan = plan;
-    _parent = parent;
     [self buildInterface];
     return self;
 }
@@ -158,18 +154,10 @@ static BTBurnController *sRunning = nil;
     _status = [self wrappingLabelWithFont:[BTStyle uiFont]];
     [content addSubview:_status];
 
-    _cancelButton = [BTPushButton buttonWithTitle:@"Cancel"
-                                           target:self
-                                           action:@selector(cancel:)];
-    [_cancelButton setFrame:NSMakeRect(BT_BURN_SHEET_WIDTH - 190, 14, 80,
-                                       NSHeight([_cancelButton frame]))];
-    [_cancelButton setKeyEquivalent:@"\033"];
-    [content addSubview:_cancelButton];
-
-    _burnButton = [BTPushButton buttonWithTitle:@"Burn" target:self action:@selector(burn:)];
-    [_burnButton setFrame:NSMakeRect(BT_BURN_SHEET_WIDTH - 104, 14, 84, NSHeight([_burnButton frame]))];
-    [_burnButton setKeyEquivalent:@"\r"];
-    [content addSubview:_burnButton];
+    [self addButtonsAccepting:@"Burn"
+                       action:@selector(burn:)
+                       cancel:@selector(cancel:)
+                      inWidth:BT_BURN_SHEET_WIDTH];
 
     [self layoutWindow];
     [self reloadDevices];
@@ -179,10 +167,13 @@ static BTBurnController *sRunning = nil;
 // The buttons stay pinned to the bottom.
 - (void)layoutWindow {
     CGFloat textWidth = BT_BURN_SHEET_WIDTH - 40;
-    CGFloat noteHeight = BTHeightForWords([_note stringValue], [BTStyle smallFont], textWidth);
+    CGFloat noteHeight = [BTStyle heightForText:[_note stringValue]
+                                           font:[BTStyle smallFont]
+                                          width:textWidth];
     if (noteHeight > 0) noteHeight += 6.0;      // air under it
-    CGFloat statusHeight = MAX(BT_STATUS_MIN,
-                               BTHeightForWords([_status stringValue], [BTStyle uiFont], textWidth) + 4.0);
+    CGFloat statusHeight = MAX(BT_STATUS_MIN, [BTStyle heightForText:[_status stringValue]
+                                                                font:[BTStyle uiFont]
+                                                               width:textWidth] + 4.0);
 
     // Heading, summary, the note when there is one, then the drive, the gap, the
     // tick box, the reason, and the strip the buttons sit in.
@@ -311,7 +302,7 @@ static BTBurnController *sRunning = nil;
 
     [_status setStringValue:(problem ? problem
                                      : @"Ready. Nothing is written until Burn is pressed.")];
-    [_burnButton setEnabled:(problem == nil)];
+    [self.acceptButton setEnabled:(problem == nil)];
 
     [self layoutWindow];
 }
@@ -375,20 +366,20 @@ static BTBurnController *sRunning = nil;
 
 #pragma mark - The sheet
 
-- (void)present {
-    [_parent beginSheet:[self window] completionHandler:nil];
+// The drive is watched only while the dialog is up, so the two are tied to the
+// sheet going up and coming down rather than tracked by hand.
+- (void)beginSheetForWindow:(NSWindow *)parent completion:(void (^)(BOOL accepted))completion {
+    [super beginSheetForWindow:parent completion:completion];
     [self startWatching];
 }
 
-- (void)dismiss {
+- (void)finishAccepted:(BOOL)accepted {
     [self stopWatching];
-    NSWindow *sheet = [self window];
-    [[sheet sheetParent] endSheet:sheet];
-    [sheet orderOut:nil];
+    [super finishAccepted:accepted];
 }
 
 - (void)cancel:(id)sender {
-    [self dismiss];
+    [self finishAccepted:NO];
     [BTBurnController releaseRunning];
 }
 
@@ -444,8 +435,8 @@ static BTBurnController *sRunning = nil;
 // cannot is on screen rather than left to be guessed at.
 - (void)setPreparing:(BOOL)preparing count:(NSUInteger)count {
     _preparing = preparing;
-    [_burnButton setEnabled:!preparing];
-    [_cancelButton setEnabled:!preparing];
+    [self.acceptButton setEnabled:!preparing];
+    [self.cancelButton setEnabled:!preparing];
     [_drivePopUp setEnabled:(!preparing && [_devices count] > 0)];
     [_gapPopUp setEnabled:!preparing];
     [_verifyCheck setEnabled:!preparing];
@@ -485,7 +476,8 @@ static BTBurnController *sRunning = nil;
     [burn setProperties:properties];
 
     NSString *name = [_plan name];
-    [self dismiss];
+    NSWindow *parent = [self parentWindow];
+    [self finishAccepted:YES];
 
     // The progress panel is a sheet on the same window this one was, so it goes
     // up once ours is actually gone rather than fighting it for the position.
@@ -493,19 +485,8 @@ static BTBurnController *sRunning = nil;
         DRBurnProgressPanel *panel = [DRBurnProgressPanel progressPanel];
         [panel setDelegate:self];
         [panel setDescription:[NSString stringWithFormat:@"Burning \"%@\" to disc.", name]];
-        [panel beginProgressSheetForBurn:burn layout:tracks modalForWindow:self->_parent];
+        [panel beginProgressSheetForBurn:burn layout:tracks modalForWindow:parent];
     });
-}
-
-// How tall a run of words needs to be at a given width. Measured rather than
-// counted in lines, since how many lines a sentence takes depends on the words
-// and on the size of the type, and getting it wrong loses the end of it.
-static CGFloat BTHeightForWords(NSString *text, NSFont *font, CGFloat width) {
-    if ([text length] == 0) return 0.0;
-    NSRect box = [text boundingRectWithSize:NSMakeSize(width, 10000.0)
-                                    options:NSStringDrawingUsesLineFragmentOrigin
-                                 attributes:@{NSFontAttributeName: font}];
-    return ceil(NSHeight(box));
 }
 
 // Said in the dialog rather than in an alert on top of it, and it stays said:

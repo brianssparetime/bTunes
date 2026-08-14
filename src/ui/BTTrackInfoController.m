@@ -11,7 +11,7 @@
 #define BT_HEAD   ([BTStyle lineHeight] + 4.0)    // the song's name
 #define BT_SUB    ([BTStyle lineHeight] + 2.0)    // the artist and album under it
 #define BT_NOTE   ([BTStyle smallLabelHeight])    // a gray note
-#define BT_BOX    ([BTStyle lineHeight] + 5.0)    // a tick box and its words
+#define BT_BOX    ([BTStyle checkboxHeight])      // a tick box and its words
 #define BT_FIELD  ([BTStyle fieldHeight])
 
 // One row down to the next. Each is a row plus the air under it, so the sheet
@@ -32,7 +32,6 @@
     NSTextField *_endField;
     NSButton *_startBox;
     NSButton *_endBox;
-    void (^_completion)(BOOL changed);
 }
 
 - (instancetype)initWithTrack:(BTTrack *)track {
@@ -96,15 +95,10 @@
     [hint setFrame:NSMakeRect(160, y, BT_INFO_WIDTH - 180, BT_NOTE)];
     [content addSubview:hint];
 
-    BTPushButton *cancel = [BTPushButton buttonWithTitle:@"Cancel" target:self action:@selector(cancel:)];
-    [cancel setFrame:NSMakeRect(BT_INFO_WIDTH - 190, 14, 80, NSHeight([cancel frame]))];
-    [cancel setKeyEquivalent:@"\033"];
-    [content addSubview:cancel];
-
-    BTPushButton *ok = [BTPushButton buttonWithTitle:@"OK" target:self action:@selector(accept:)];
-    [ok setFrame:NSMakeRect(BT_INFO_WIDTH - 104, 14, 84, NSHeight([ok frame]))];
-    [ok setKeyEquivalent:@"\r"];
-    [content addSubview:ok];
+    [self addButtonsAccepting:@"OK"
+                       action:@selector(accept:)
+                       cancel:@selector(cancel:)
+                      inWidth:BT_INFO_WIDTH];
 }
 
 - (NSButton *)boxTitled:(NSString *)title on:(BOOL)on atY:(CGFloat)y in:(NSView *)content {
@@ -145,19 +139,6 @@
 
 #pragma mark - Sheet
 
-- (void)beginSheetForWindow:(NSWindow *)parent completion:(void (^)(BOOL changed))completion {
-    _completion = [completion copy];
-    [parent beginSheet:[self window] completionHandler:nil];
-}
-
-- (void)finishChanged:(BOOL)changed {
-    NSWindow *sheet = [self window];
-    [[sheet sheetParent] endSheet:sheet];
-    [sheet orderOut:nil];
-    if (_completion) _completion(changed);
-    _completion = nil;
-}
-
 - (void)complain:(NSString *)what {
     NSAlert *alert = [[NSAlert alloc] init];
     [alert setMessageText:what];
@@ -191,11 +172,11 @@
     _track.usesEndTime = wantsEnd;
     if (wantsEnd) _track.endTime = end;
 
-    [self finishChanged:YES];
+    [self finishAccepted:YES];
 }
 
 - (void)cancel:(id)sender {
-    [self finishChanged:NO];
+    [self finishAccepted:NO];
 }
 
 @end

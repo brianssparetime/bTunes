@@ -1,4 +1,5 @@
 #import "BTAudioDisc.h"
+#import "BTRedBook.h"
 #import "BTTrack.h"
 #import <AppKit/AppKit.h>
 #import <sys/param.h>
@@ -11,10 +12,6 @@ NSString *const BTAudioDiscDidChangeNotification = @"BTAudioDiscDidChange";
 static NSString *const BTUnnamedTrack = @"Audio Track";
 static NSString *const BTUnnamedDisc = @"Audio CD";
 static NSString *const BTNameSeparator = @" - ";
-
-// Red Book: 44100 samples a second, two channels, two bytes each. A track's
-// length is its size, because there is nothing else in the file worth counting.
-#define BT_CD_BYTES_PER_SECOND 176400.0
 
 @interface BTAudioDisc ()
 @property (nonatomic, copy) NSString *mountPath;
@@ -162,6 +159,16 @@ static void BTReadTrackName(NSString *filename, NSInteger *outNumber,
         if (disc) return disc;
     }
     return nil;
+}
+
+- (BOOL)isSameDiscAs:(BTAudioDisc *)other {
+    if (other == nil) return NO;
+    if (other == self) return YES;
+    // The count as well as the place. An unmount always arrives before the next
+    // mount, so a swapped disc is normally seen as an absence first; the count
+    // is what catches the swap if the two ever land in one step.
+    return [self.mountPath isEqualToString:other.mountPath] &&
+           [self.tracks count] == [other.tracks count];
 }
 
 - (BOOL)applyTitles:(NSArray *)titles album:(NSString *)album artist:(NSString *)artist {

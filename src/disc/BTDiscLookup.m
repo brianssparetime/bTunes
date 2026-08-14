@@ -1,11 +1,7 @@
 #import "BTDiscLookup.h"
 #import "BTAudioDisc.h"
+#import "BTRedBook.h"
 #import <CommonCrypto/CommonDigest.h>
-
-// Every offset on a CD is counted from two seconds before the first track, and
-// a second is 75 frames. Nothing in the table of contents includes that, so it
-// is added here.
-#define BT_CD_PREGAP_FRAMES 150
 
 // The identifier is always a hundred offsets, whatever the disc actually holds:
 // the lead-out, then ninety-nine tracks, with nothing standing as zero.
@@ -50,7 +46,7 @@
     // track is 2 puts its first track in slot 2.
     NSInteger offsets[BT_TOC_SLOTS];
     memset(offsets, 0, sizeof(offsets));
-    offsets[0] = leadout + BT_CD_PREGAP_FRAMES;
+    offsets[0] = leadout + BT_CD_PREGAP_SECTORS;
 
     NSArray *tracks = [session objectForKey:@"Track Array"];
     if (![tracks isKindOfClass:[NSArray class]]) return nil;
@@ -60,7 +56,7 @@
         if (![track isKindOfClass:[NSDictionary class]]) continue;
         NSInteger point = [[track objectForKey:@"Point"] integerValue];
         if (point < 1 || point > 99) continue;
-        offsets[point] = [[track objectForKey:@"Start Block"] integerValue] + BT_CD_PREGAP_FRAMES;
+        offsets[point] = [[track objectForKey:@"Start Block"] integerValue] + BT_CD_PREGAP_SECTORS;
     }
 
     NSMutableString *text = [NSMutableString string];

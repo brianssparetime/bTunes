@@ -7,6 +7,7 @@
 #import <AudioToolbox/AudioToolbox.h>
 
 NSString *const BTLibraryDidChangeNotification = @"BTLibraryDidChange";
+NSString *const BTLibraryTrackDidChangeNotification = @"BTLibraryTrackDidChange";
 
 @interface BTLibrary ()
 @property (nonatomic, strong) NSMutableArray *tracks;
@@ -190,11 +191,7 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
     NSArray *trackDicts = [root objectForKey:@"tracks"];
     if ([trackDicts isKindOfClass:[NSArray class]]) {
         for (i = 0; i < [trackDicts count]; i++) {
-            BTTrack *t = [BTTrack trackWithDictionary:[trackDicts objectAtIndex:i]];
-            if (t) {
-                [self.tracks addObject:t];
-                [self.knownPaths addObject:[t resolvedPath]];
-            }
+            [self addTrack:[BTTrack trackWithDictionary:[trackDicts objectAtIndex:i]]];
         }
     }
 
@@ -225,10 +222,22 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
     if (data) [data writeToFile:[self libraryFilePath] atomically:YES];
 }
 
-- (void)noteChanged {
-    [[NSNotificationCenter defaultCenter] postNotificationName:BTLibraryDidChangeNotification object:self];
+// The library is written on a delay so a run of edits costs one write. Both
+// kinds of change schedule it the same way; they differ only in what they tell
+// the window to do about it.
+- (void)scheduleSave {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(saveToDisk) object:nil];
     [self performSelector:@selector(saveToDisk) withObject:nil afterDelay:2.0];
+}
+
+- (void)noteChanged {
+    [[NSNotificationCenter defaultCenter] postNotificationName:BTLibraryDidChangeNotification object:self];
+    [self scheduleSave];
+}
+
+- (void)noteTrackChanged {
+    [[NSNotificationCenter defaultCenter] postNotificationName:BTLibraryTrackDidChangeNotification object:self];
+    [self scheduleSave];
 }
 
 #pragma mark - Left behind on purpose
@@ -249,12 +258,23 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
 
 #pragma mark - Lookup
 
+// The one way in. A track whose path does not resolve is still held, since a
+// missing file is not a reason to lose the ratings hanging off it; it simply
+// contributes nothing to the record of what is already here.
+- (void)addTrack:(BTTrack *)track {
+    if (track == nil) return;
+    [self.tracks addObject:track];
+    NSString *resolved = [track resolvedPath];
+    if ([resolved length] > 0) [self.knownPaths addObject:resolved];
+}
+
 - (void)removeTracks:(NSArray *)tracks {
     NSMutableArray *goneIDs = [NSMutableArray arrayWithCapacity:[tracks count]];
     NSUInteger i;
     for (i = 0; i < [tracks count]; i++) {
         BTTrack *t = [tracks objectAtIndex:i];
-        [self.knownPaths removeObject:[t resolvedPath]];
+        NSString *resolved = [t resolvedPath];
+        if ([resolved length] > 0) [self.knownPaths removeObject:resolved];
         [self.tracks removeObject:t];
         if (t.trackID) [goneIDs addObject:t.trackID];
     }
@@ -476,9 +496,7 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
         dispatch_async(dispatch_get_main_queue(), ^{
             NSUInteger j;
             for (j = 0; j < [newTracks count]; j++) {
-                BTTrack *t = [newTracks objectAtIndex:j];
-                [self.tracks addObject:t];
-                [self.knownPaths addObject:[t resolvedPath]];
+                [self addTrack:[newTracks objectAtIndex:j]];
             }
             [self noteChanged];
             if (completion) completion([newTracks count]);

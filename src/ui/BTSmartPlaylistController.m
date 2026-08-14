@@ -38,7 +38,6 @@
     NSTextField *_matchLabel;
     NSTextField *_rulesLabel;
     NSTextField *_songsLabel;
-    void (^_completion)(BOOL accepted);
 }
 
 - (instancetype)initWithPlaylist:(BTPlaylist *)playlist {
@@ -109,15 +108,10 @@
     [content addSubview:_limitField];
     [content addSubview:_songsLabel];
 
-    BTPushButton *cancel = [BTPushButton buttonWithTitle:@"Cancel" target:self action:@selector(cancel:)];
-    [cancel setFrame:NSMakeRect(BT_SHEET_WIDTH - 190, 14, 80, NSHeight([cancel frame]))];
-    [cancel setKeyEquivalent:@"\033"];
-    [content addSubview:cancel];
-
-    BTPushButton *ok = [BTPushButton buttonWithTitle:@"OK" target:self action:@selector(accept:)];
-    [ok setFrame:NSMakeRect(BT_SHEET_WIDTH - 104, 14, 84, NSHeight([ok frame]))];
-    [ok setKeyEquivalent:@"\r"];
-    [content addSubview:ok];
+    [self addButtonsAccepting:@"OK"
+                       action:@selector(accept:)
+                       cancel:@selector(cancel:)
+                      inWidth:BT_SHEET_WIDTH];
 
     [self rebuildRuleRows];
 }
@@ -279,19 +273,6 @@
 }
 
 #pragma mark - Sheet
-
-- (void)beginSheetForWindow:(NSWindow *)parent completion:(void (^)(BOOL accepted))completion {
-    _completion = [completion copy];
-    [parent beginSheet:[self window] completionHandler:nil];
-}
-
-- (void)finishAccepted:(BOOL)accepted {
-    NSWindow *sheet = [self window];
-    [[sheet sheetParent] endSheet:sheet];
-    [sheet orderOut:nil];
-    if (_completion) _completion(accepted);
-    _completion = nil;
-}
 
 - (void)accept:(id)sender {
     [self commitVisibleValues];

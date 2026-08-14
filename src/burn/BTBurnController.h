@@ -1,10 +1,10 @@
-#import <Cocoa/Cocoa.h>
+#import "BTSheetController.h"
 
 @class BTPlaylist;
 
 // The one dialog a burn gets. Everything is chosen here, before anything is
 // written, because after that point the disc is either right or it is scrap.
-@interface BTBurnController : NSWindowController
+@interface BTBurnController : BTSheetController
 
 // Puts the dialog up as a sheet, and burns if it is accepted. One at a time:
 // there is one drive and a burn holds it for its whole length.

@@ -60,6 +60,14 @@ static CGFloat BTLineHeightOf(NSFont *font) {
 + (CGFloat)fieldHeight      { return [self lineHeight] + 9.0; }
 + (CGFloat)checkboxHeight   { return [self lineHeight] + 7.0; }
 
++ (CGFloat)heightForText:(NSString *)text font:(NSFont *)font width:(CGFloat)width {
+    if ([text length] == 0) return 0.0;
+    NSRect box = [text boundingRectWithSize:NSMakeSize(width, 10000.0)
+                                    options:NSStringDrawingUsesLineFragmentOrigin
+                                 attributes:@{NSFontAttributeName: font}];
+    return ceil(NSHeight(box));
+}
+
 // #8400FF. Change this alongside the palette at the top of tools/make_logo.py
 // and every purple in the application follows it.
 + (NSColor *)accent { return [NSColor colorWithCalibratedRed:0.518 green:0.000 blue:1.000 alpha:1.0]; }
@@ -373,6 +381,26 @@ static NSImage *BTSteelGrain(void) {
 
 #pragma mark - Glyphs
 
+// How far up from the floor of a rect, in points, whichever way the context
+// runs.
+//
+// Cells and buttons draw in a flipped context and images do not, so a mark with
+// a top and a bottom comes out upside down in one of them if it is built the
+// same way in both. Four glyphs asked the context this question themselves and
+// carried their own closure to answer it; the eject mark spent two of its lines
+// undoing the flip a third time.
+static CGFloat BTUpPoints(NSRect rect, CGFloat points) {
+    return [[NSGraphicsContext currentContext] isFlipped] ? NSMaxY(rect) - points
+                                                          : NSMinY(rect) + points;
+}
+
+// The same, as a fraction of the rect's own height. A glyph that places a dozen
+// points this way shortens it to a local `up`, which is what the flame and the
+// arrow below do; one that places two or three calls it by name.
+static CGFloat BTUpFraction(NSRect rect, CGFloat fraction) {
+    return BTUpPoints(rect, NSHeight(rect) * fraction);
+}
+
 + (void)drawTriangleInRect:(NSRect)rect pointingRight:(BOOL)right color:(NSColor *)color {
     // A triangle carries its weight at its base, a third of the way along
     // rather than halfway, so centring the box it sits in leaves the mark
@@ -534,23 +562,20 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
     // triangle hanging under it, which is what it had been doing beside the iPod
     // in the left bar and on the button at the bottom right.
     NSRect r = NSInsetRect(rect, NSWidth(rect) * 0.26, NSHeight(rect) * 0.26);
-    BOOL flipped = [[NSGraphicsContext currentContext] isFlipped];
-    CGFloat (^up)(CGFloat) = ^CGFloat(CGFloat fraction) {
-        return flipped ? NSMaxY(r) - NSHeight(r) * fraction : NSMinY(r) + NSHeight(r) * fraction;
-    };
 
     CGFloat barHeight = MAX(1.5, NSHeight(r) * 0.20);
     CGFloat gap = MAX(1.0, NSHeight(r) * 0.14);
 
     [color set];
-    CGFloat barTop = up(0.0) + (flipped ? -barHeight : barHeight);
-    NSRectFill(NSMakeRect(NSMinX(r), MIN(up(0.0), barTop), NSWidth(r), barHeight));
+    CGFloat floor = BTUpPoints(r, 0.0);
+    CGFloat barTop = BTUpPoints(r, barHeight);
+    NSRectFill(NSMakeRect(NSMinX(r), MIN(floor, barTop), NSWidth(r), barHeight));
 
-    CGFloat base = up(0.0) + (flipped ? -(barHeight + gap) : (barHeight + gap));
+    CGFloat base = BTUpPoints(r, barHeight + gap);
     NSBezierPath *triangle = [NSBezierPath bezierPath];
     [triangle moveToPoint:NSMakePoint(NSMinX(r), base)];
     [triangle lineToPoint:NSMakePoint(NSMaxX(r), base)];
-    [triangle lineToPoint:NSMakePoint(NSMidX(r), up(1.0))];
+    [triangle lineToPoint:NSMakePoint(NSMidX(r), BTUpFraction(r, 1.0))];
     [triangle closePath];
     [triangle fill];
 }
@@ -563,12 +588,9 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
 
 + (void)drawBurnGlyphInRect:(NSRect)rect color:(NSColor *)color {
     NSRect r = NSInsetRect(rect, NSWidth(rect) * 0.10, NSHeight(rect) * 0.10);
-    // Buttons draw in a flipped context and images do not, so every height here
-    // is a fraction of the box measured from whichever edge is the top.
-    BOOL flipped = [[NSGraphicsContext currentContext] isFlipped];
-    CGFloat (^up)(CGFloat) = ^CGFloat(CGFloat fraction) {
-        return flipped ? NSMaxY(r) - NSHeight(r) * fraction : NSMinY(r) + NSHeight(r) * fraction;
-    };
+    // Every height here is a fraction of the box measured from its floor,
+    // whichever edge that turns out to be.
+    CGFloat (^up)(CGFloat) = ^CGFloat(CGFloat fraction) { return BTUpFraction(r, fraction); };
 
     // The disc seen almost edge on, drawn as a line rather than filled. Wide and
     // flat against a tall narrow flame, so the two cannot be mistaken for each
@@ -610,10 +632,7 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
 
 + (void)drawImportGlyphInRect:(NSRect)rect color:(NSColor *)color {
     NSRect r = NSInsetRect(rect, NSWidth(rect) * 0.14, NSHeight(rect) * 0.14);
-    BOOL flipped = [[NSGraphicsContext currentContext] isFlipped];
-    CGFloat (^up)(CGFloat) = ^CGFloat(CGFloat fraction) {
-        return flipped ? NSMaxY(r) - NSHeight(r) * fraction : NSMinY(r) + NSHeight(r) * fraction;
-    };
+    CGFloat (^up)(CGFloat) = ^CGFloat(CGFloat fraction) { return BTUpFraction(r, fraction); };
     [color set];
 
     // An arrow coming down onto a line. No disc: what is being taken in is
@@ -691,18 +710,16 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
 
     // A tick. Table rows draw top down, so the mark is built against whichever
     // way the context runs; taken one way in both it comes out as a caret.
-    BOOL flipped = [[NSGraphicsContext currentContext] isFlipped];
-    CGFloat (^up)(CGFloat) = ^CGFloat(CGFloat fraction) {
-        return flipped ? NSMaxY(box) - side * fraction : NSMinY(box) + side * fraction;
-    };
-
+    //
+    // Measured against the side rather than against the box's height, which is
+    // half a point less after the inset. The two are not interchangeable here.
     NSBezierPath *tick = [NSBezierPath bezierPath];
     [tick setLineWidth:1.9];
     [tick setLineCapStyle:NSRoundLineCapStyle];
     [tick setLineJoinStyle:NSRoundLineJoinStyle];
-    [tick moveToPoint:NSMakePoint(NSMinX(box) + side * 0.24, up(0.52))];
-    [tick lineToPoint:NSMakePoint(NSMinX(box) + side * 0.44, up(0.30))];
-    [tick lineToPoint:NSMakePoint(NSMinX(box) + side * 0.78, up(0.74))];
+    [tick moveToPoint:NSMakePoint(NSMinX(box) + side * 0.24, BTUpPoints(box, side * 0.52))];
+    [tick lineToPoint:NSMakePoint(NSMinX(box) + side * 0.44, BTUpPoints(box, side * 0.30))];
+    [tick lineToPoint:NSMakePoint(NSMinX(box) + side * 0.78, BTUpPoints(box, side * 0.74))];
     [tick stroke];
 }
 

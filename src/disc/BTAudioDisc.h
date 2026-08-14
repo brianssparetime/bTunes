@@ -48,6 +48,14 @@ extern NSString *const BTAudioDiscDidChangeNotification;
 // exercised without one in the drive.
 + (BTAudioDisc *)discAtMountPath:(NSString *)path;
 
+// Whether another reading of the drive is this same disc: mounted in the same
+// place and holding the same number of songs.
+//
+// Every reading builds a new object, and a volume coming or going anywhere on
+// the machine causes one. Only the object already in hand carries the names a
+// lookup put on it, so the two have to be told apart before the new one is kept.
+- (BOOL)isSameDiscAs:(BTAudioDisc *)other;
+
 // Names found somewhere else, put on the songs. In disc order, and only when
 // there are exactly as many as there are tracks: a disc and an answer that
 // disagree about how many songs there are would otherwise rename the wrong ones,

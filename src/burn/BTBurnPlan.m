@@ -1,10 +1,11 @@
 #import "BTBurnPlan.h"
+#import "BTRedBook.h"
 #import "BTPlaylist.h"
 #import "BTTrack.h"
 #import <DiscRecording/DiscRecording.h>
 #import <AudioToolbox/AudioToolbox.h>
 
-const NSUInteger BTBurnSectorsPerSecond = 75;
+const NSUInteger BTBurnSectorsPerSecond = BT_CD_SECTORS_PER_SECOND;
 const NSUInteger BTBurnNominalDiscSectors = 360000;   // 80 minutes, the standard blank
 
 @interface BTBurnPlan ()
@@ -185,7 +186,10 @@ static NSString *BTWriteTrimmedCopy(BTTrack *song, NSString *directory,
             break;
         }
 
-        double rate = (sourceFormat.mSampleRate > 0) ? sourceFormat.mSampleRate : 44100.0;
+        // A file that does not say what rate it is gets the disc's own, which is
+        // the only rate worth guessing at here.
+        double rate = (sourceFormat.mSampleRate > 0) ? sourceFormat.mSampleRate
+                                                     : BT_CD_SAMPLE_RATE;
         UInt32 channels = sourceFormat.mChannelsPerFrame;
         if (channels < 1) channels = 2;
         if (channels > 2) channels = 2;
@@ -291,7 +295,8 @@ static NSString *BTWriteTrimmedCopy(BTTrack *song, NSString *directory,
     long long needed = 0;
     NSUInteger i;
     for (i = 0; i < [_trimmed count]; i++) {
-        needed += (long long)(BTBurnLengthOfSong([_trimmed objectAtIndex:i]) * 44100.0 * 4.0);
+        needed += (long long)(BTBurnLengthOfSong([_trimmed objectAtIndex:i]) *
+                              BT_CD_BYTES_PER_SECOND);
     }
 
     NSString *temp = NSTemporaryDirectory();

@@ -358,7 +358,7 @@
         // eligibility was decided about, substitution and all.
         BTTrack *track = [library trackFromEntry:incoming.source];
         if (track == nil) continue;
-        [library.tracks addObject:track];
+        [library addTrack:track];
         [importedByITunesID setObject:track forKey:incoming.persistentID];
         songsAdded++;
     }

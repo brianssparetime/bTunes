@@ -11,7 +11,11 @@
 // and 56 that carry one setting to the next.
 #define BT_NAME     ([BTStyle lineHeight] + 4.0)     // "Music:" beside the path
 #define BT_FIELD    ([BTStyle fieldHeight])          // the path itself
-#define BT_BOX      ([BTStyle lineHeight] + 5.0)     // a tick box and its words
+// A tick box and the words beside it. Asked of the palette, which is where the
+// same question is answered for the burn dialog and the smart playlist sheet.
+// Two of the four windows worked it out for themselves and came to two points
+// less, which is drift rather than a decision.
+#define BT_BOX      ([BTStyle checkboxHeight])
 // The air around a note. Ten points under the box or field it explains, and
 // sixteen under the note before the next setting starts, which is what the
 // numbers written here used to come to.
@@ -22,16 +26,12 @@
 #define BT_BOX_TO_NOTE 4.0
 #define BT_NOTE_WIDTH (BT_PREFS_WIDTH - 104.0)
 
-// How tall a note is: asked of its own words rather than counted in lines. Said
-// as a number of lines it was right for one size of type and one wording, and
-// the first time either changed the end of the sentence went missing with
-// nothing to show it had.
+// How tall a note is: asked of its own words rather than counted in lines. The
+// measuring belongs to the palette, since the burn dialog wants the same answer
+// about its own wrapping lines; a note is always in the small face, which is the
+// whole of what this adds.
 static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
-    if ([text length] == 0) return 0.0;
-    NSRect box = [text boundingRectWithSize:NSMakeSize(width, 10000.0)
-                                    options:NSStringDrawingUsesLineFragmentOrigin
-                                 attributes:@{NSFontAttributeName: [BTStyle smallFont]}];
-    return ceil(NSHeight(box));
+    return [BTStyle heightForText:text font:[BTStyle smallFont] width:width];
 }
 
 @implementation BTPreferencesController {

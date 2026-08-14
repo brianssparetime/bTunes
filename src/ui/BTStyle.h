@@ -46,6 +46,13 @@
 + (CGFloat)fieldHeight;         // text field, popup button
 + (CGFloat)checkboxHeight;
 
+// How tall a run of words needs to be at a given width, measured rather than
+// counted in lines. How many lines a sentence takes depends on the words and on
+// the size of the type, so a number written down is right for one wording at one
+// size and loses the end of the sentence the first time either changes. Two
+// windows had worked this out separately under two names.
++ (CGFloat)heightForText:(NSString *)text font:(NSFont *)font width:(CGFloat)width;
+
 // The one purple everything purple is made from: the logo, the mini player, and
 // the whole of the main window while purple mode is on. Change this and the
 // rest follows.
