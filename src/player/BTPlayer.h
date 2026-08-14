@@ -16,6 +16,27 @@ extern NSString *const BTPlayerTimeDidChangeNotification;
 
 @interface BTPlayer : NSObject
 
+// Nothing in the list would play, and here is why: a short line in userInfo
+// under "reason". The readout shows it for a moment. Pressing play on a
+// playlist of locked purchases used to do nothing at all and say nothing, which
+// on screen is indistinguishable from a player that has stopped working.
+extern NSString *const BTPlayerCouldNotPlayNotification;
+
+// Walks a queue looking for a place that will play, from where it is told and
+// in the direction it is given, passing over what will not. Answers where it
+// stopped, or -1 when nothing would play, and says how many it passed over.
+//
+// Kept apart from the playing itself so the walking can be checked on a machine
+// with no sound in it: hand it a block that says which places would play. The
+// block does the starting when it succeeds, which is why it is a try rather
+// than a question.
+//
+// It takes no more turns than there are places, so a queue where nothing at all
+// plays comes to an end rather than going round for ever.
+NSInteger BTWalkForPlayable(NSInteger count, NSInteger from, NSInteger step,
+                            BOOL wrapping, NSUInteger *outPassedOver,
+                            BOOL (^tryAt)(NSInteger place));
+
 + (instancetype)sharedPlayer;
 
 // How far into a song counts as having listened to it: half of whatever

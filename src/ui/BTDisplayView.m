@@ -23,10 +23,19 @@
 NSString *const BTDisplayProgressNotification = @"BTDisplayProgress";
 NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd";
 
+// How long a notice stands before the readout goes back to the song. Long
+// enough to read a short line twice, short enough not to sit in the way.
+#define BT_NOTICE_SECONDS 5.0
+
 @implementation BTDisplayView {
     BOOL _showRemaining;
     BOOL _scrubbing;
     BOOL _syncing;
+    // Something the player could not do, shown in place of the song for a
+    // moment. Nothing else in the window is anywhere for the player to say
+    // this, and an alert for a locked song would be worse than the silence it
+    // replaces.
+    NSString *_notice;
     double _syncFraction;
     NSString *_syncMessage;
     NSString *_syncTitle;
@@ -45,6 +54,7 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
         [nc addObserver:self selector:@selector(syncFinished:) name:BTIPodSyncDidFinishNotification object:nil];
         [nc addObserver:self selector:@selector(progress:) name:BTDisplayProgressNotification object:nil];
         [nc addObserver:self selector:@selector(syncFinished:) name:BTDisplayProgressDidEndNotification object:nil];
+        [nc addObserver:self selector:@selector(couldNotPlay:) name:BTPlayerCouldNotPlayNotification object:nil];
     }
     return self;
 }
@@ -55,6 +65,47 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
 
 - (void)refresh {
     [self setNeedsDisplay:YES];
+}
+
+- (void)couldNotPlay:(NSNotification *)note {
+    _notice = [[note userInfo] objectForKey:@"reason"];
+    [self setNeedsDisplay:YES];
+
+    // Cleared on a timer of its own, because with nothing playing there is no
+    // tick to come round and take it away.
+    [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                             selector:@selector(clearNotice)
+                                               object:nil];
+    [self performSelector:@selector(clearNotice) withObject:nil afterDelay:BT_NOTICE_SECONDS];
+}
+
+- (void)clearNotice {
+    _notice = nil;
+    [self setNeedsDisplay:YES];
+}
+
+// Two lines, centred, in place of the song. The same shape the readout uses
+// while something slow is running, so it reads as the panel speaking rather
+// than as a song with a strange name.
+- (void)drawNoticeInRect:(NSRect)bounds {
+    NSMutableParagraphStyle *centred = [[NSMutableParagraphStyle alloc] init];
+    [centred setAlignment:NSCenterTextAlignment];
+    [centred setLineBreakMode:NSLineBreakByTruncatingTail];
+
+    NSDictionary *headAttrs = @{NSFontAttributeName: [BTStyle displayBoldFont],
+                                NSForegroundColorAttributeName: [BTStyle displayText],
+                                NSParagraphStyleAttributeName: centred};
+    NSDictionary *lineAttrs = @{NSFontAttributeName: [BTStyle displayFont],
+                                NSForegroundColorAttributeName: [BTStyle displayText],
+                                NSParagraphStyleAttributeName: centred};
+
+    CGFloat top = NSMaxY(bounds) - BT_DISPLAY_LINE - BT_DISPLAY_TOP;
+    [@"Nothing played" drawInRect:NSMakeRect(NSMinX(bounds) + 6, top,
+                                             NSWidth(bounds) - 12, BT_DISPLAY_LINE)
+                   withAttributes:headAttrs];
+    [_notice drawInRect:NSMakeRect(NSMinX(bounds) + 6, top - BT_DISPLAY_LINE,
+                                   NSWidth(bounds) - 12, BT_DISPLAY_LINE)
+         withAttributes:lineAttrs];
 }
 
 #pragma mark - Sync progress
@@ -185,6 +236,12 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
 
     if (_syncing) {
         [self drawSyncInRect:bounds];
+        return;
+    }
+    // After the progress, before the song: something slow running is the more
+    // urgent thing to show, and a notice arrives when nothing is playing anyway.
+    if ([_notice length] > 0) {
+        [self drawNoticeInRect:bounds];
         return;
     }
 
