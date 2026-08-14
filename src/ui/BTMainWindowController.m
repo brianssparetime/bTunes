@@ -1235,6 +1235,63 @@ static void BTRedrawEverything(NSView *view) {
     [self saveSessionState];
 }
 
+- (void)sourceList:(BTSourceList *)list
+    renamePlaylist:(BTPlaylist *)playlist
+                to:(NSString *)name {
+    [self renamePlaylist:playlist to:name];
+}
+
+// Songs dropped on a playlist. The ones it already holds are left where they
+// are rather than moved to the end, so a drop of five songs where two were
+// already there adds three.
+- (void)sourceList:(BTSourceList *)list
+       addTrackIDs:(NSArray *)trackIDs
+        toPlaylist:(BTPlaylist *)playlist {
+    NSMutableArray *joined = [NSMutableArray arrayWithArray:playlist.trackIDs];
+    NSUInteger i;
+    for (i = 0; i < [trackIDs count]; i++) {
+        NSString *trackID = [trackIDs objectAtIndex:i];
+        if (![joined containsObject:trackID]) [joined addObject:trackID];
+    }
+    if ([joined count] == [playlist.trackIDs count]) return;   // every one already there
+
+    [self restoreSongs:joined ofPlaylist:playlist named:@"Add To Playlist"];
+}
+
+- (void)sourceList:(BTSourceList *)list
+      movePlaylist:(BTPlaylist *)playlist
+          toFolder:(BTPlaylist *)folder {
+    if (playlist.parent == folder) return;
+
+    BTPlaylist *was = playlist.parent;
+    NSArray *siblings = was ? was.children : [BTLibrary sharedLibrary].playlists;
+    NSInteger where = (NSInteger)[siblings indexOfObject:playlist];
+
+    NSUndoManager *undo = [self undoManager];
+    [[undo prepareWithInvocationTarget:self]
+        putPlaylist:playlist backInFolder:was atIndex:where];
+    [undo setActionName:@"Move Playlist"];
+
+    // The end of wherever it lands. Where it sits in the list is decided by its
+    // name, so the place in the array is only where it is kept.
+    [[BTLibrary sharedLibrary] movePlaylist:playlist toFolder:folder atIndex:-1];
+}
+
+- (void)putPlaylist:(BTPlaylist *)playlist
+       backInFolder:(BTPlaylist *)folder
+            atIndex:(NSInteger)index {
+    BTPlaylist *was = playlist.parent;
+    NSArray *siblings = was ? was.children : [BTLibrary sharedLibrary].playlists;
+    NSInteger where = (NSInteger)[siblings indexOfObject:playlist];
+
+    NSUndoManager *undo = [self undoManager];
+    [[undo prepareWithInvocationTarget:self]
+        putPlaylist:playlist backInFolder:was atIndex:where];
+    [undo setActionName:@"Move Playlist"];
+
+    [[BTLibrary sharedLibrary] movePlaylist:playlist toFolder:folder atIndex:index];
+}
+
 #pragma mark - Track table
 
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView {
@@ -1367,26 +1424,142 @@ static void BTRedrawEverything(NSView *view) {
 - (void)undo:(id)sender { [[self undoManager] undo]; }
 - (void)redo:(id)sender { [[self undoManager] redo]; }
 
-// Every rearrangement goes through here, so all of them can be taken back the
-// same way. Restoring registers the arrangement it replaced, which is what
-// makes redo work without a second path through the code.
-- (void)restoreOrder:(NSArray *)order ofPlaylist:(BTPlaylist *)playlist named:(NSString *)name {
+// Which songs a playlist holds, and in what order. One operation covers all
+// three ways that changes — rearranged, added to, taken from — because all
+// three are the same change to the same array, and each registers the version
+// it replaced. That is what makes redo work without a second path through the
+// code.
+- (void)restoreSongs:(NSArray *)songs ofPlaylist:(BTPlaylist *)playlist named:(NSString *)name {
     NSUndoManager *undo = [self undoManager];
     [[undo prepareWithInvocationTarget:self]
-        restoreOrder:[NSArray arrayWithArray:playlist.trackIDs] ofPlaylist:playlist named:name];
+        restoreSongs:[NSArray arrayWithArray:playlist.trackIDs] ofPlaylist:playlist named:name];
     [undo setActionName:name];
 
     [playlist.trackIDs removeAllObjects];
-    [playlist.trackIDs addObjectsFromArray:order];
+    [playlist.trackIDs addObjectsFromArray:songs];
     [[BTLibrary sharedLibrary] noteChanged];
 }
 
-// Records what a playlist looked like before it was changed. Call it with the
-// order as it stood, then make the change.
-- (void)recordOrder:(NSArray *)previous ofPlaylist:(BTPlaylist *)playlist named:(NSString *)name {
+// Records what a playlist held before it was changed. Call it with the songs as
+// they stood, then make the change.
+- (void)recordSongs:(NSArray *)previous ofPlaylist:(BTPlaylist *)playlist named:(NSString *)name {
     NSUndoManager *undo = [self undoManager];
-    [[undo prepareWithInvocationTarget:self] restoreOrder:previous ofPlaylist:playlist named:name];
+    [[undo prepareWithInvocationTarget:self] restoreSongs:previous ofPlaylist:playlist named:name];
     [undo setActionName:name];
+}
+
+// A playlist leaving the library, and coming back to the same place.
+//
+// A folder takes what it holds with it and brings it back the same way, since
+// its children hang off the folder itself and nothing has to be unpicked.
+// Where it sat in its array is kept because that array is where a playlist
+// lives, even though the left bar arranges rows by name.
+- (void)takeOutPlaylist:(BTPlaylist *)playlist named:(NSString *)name {
+    BTPlaylist *folder = playlist.parent;
+    NSArray *siblings = folder ? folder.children : [BTLibrary sharedLibrary].playlists;
+    NSInteger where = (NSInteger)[siblings indexOfObject:playlist];
+    if (where == (NSInteger)NSNotFound) return;
+
+    NSUndoManager *undo = [self undoManager];
+    [[undo prepareWithInvocationTarget:self]
+        putBackPlaylist:playlist intoFolder:folder atIndex:where named:name];
+    [undo setActionName:name];
+
+    if (_selectedSource == playlist) _selectedSource = BTLibrarySource;
+    [[BTLibrary sharedLibrary] removePlaylist:playlist];
+}
+
+- (void)putBackPlaylist:(BTPlaylist *)playlist
+             intoFolder:(BTPlaylist *)folder
+                atIndex:(NSInteger)index
+                  named:(NSString *)name {
+    NSUndoManager *undo = [self undoManager];
+    [[undo prepareWithInvocationTarget:self] takeOutPlaylist:playlist named:name];
+    [undo setActionName:name];
+
+    [[BTLibrary sharedLibrary] addPlaylist:playlist toFolder:folder];
+    // addPlaylist: puts it at the end, which is where a new one belongs but not
+    // where this one was.
+    [[BTLibrary sharedLibrary] movePlaylist:playlist toFolder:folder atIndex:index];
+}
+
+// A new playlist, which is a change like any other and can be taken back. It
+// goes in at the end of wherever it lands, which is where a new one belongs;
+// putting it back after an undo uses the place it actually had.
+- (void)makePlaylist:(BTPlaylist *)playlist inFolder:(BTPlaylist *)folder named:(NSString *)name {
+    NSUndoManager *undo = [self undoManager];
+    [[undo prepareWithInvocationTarget:self] takeOutPlaylist:playlist named:name];
+    [undo setActionName:name];
+
+    [[BTLibrary sharedLibrary] addPlaylist:playlist toFolder:folder];
+}
+
+- (void)renamePlaylist:(BTPlaylist *)playlist to:(NSString *)name {
+    if ([name isEqualToString:playlist.name]) return;
+
+    NSUndoManager *undo = [self undoManager];
+    [[undo prepareWithInvocationTarget:self] renamePlaylist:playlist to:playlist.name];
+    [undo setActionName:@"Rename"];
+
+    playlist.name = name;
+    [[BTLibrary sharedLibrary] noteChanged];
+}
+
+// Songs leaving the library, and coming back with every playlist that held
+// them. Taking one out strips it from every playlist, so putting it back has to
+// put that membership back too or the song returns belonging nowhere.
+- (void)takeOutTracks:(NSArray *)tracks {
+    NSMutableDictionary *memberships = [NSMutableDictionary dictionary];
+    [BTPlaylist enumerate:[BTLibrary sharedLibrary].playlists
+               usingBlock:^(BTPlaylist *playlist, BOOL *stop) {
+        NSUInteger i;
+        for (i = 0; i < [tracks count]; i++) {
+            NSString *trackID = [[tracks objectAtIndex:i] trackID];
+            if (trackID && [playlist.trackIDs containsObject:trackID]) {
+                [memberships setObject:[NSArray arrayWithArray:playlist.trackIDs]
+                                forKey:playlist.playlistID];
+                return;
+            }
+        }
+    }];
+
+    NSUndoManager *undo = [self undoManager];
+    [[undo prepareWithInvocationTarget:self] putBackTracks:tracks memberships:memberships];
+    [undo setActionName:@"Remove From Library"];
+
+    [[BTLibrary sharedLibrary] removeTracks:tracks];
+}
+
+- (void)putBackTracks:(NSArray *)tracks memberships:(NSDictionary *)memberships {
+    NSUndoManager *undo = [self undoManager];
+    [[undo prepareWithInvocationTarget:self] takeOutTracks:tracks];
+    [undo setActionName:@"Remove From Library"];
+
+    BTLibrary *library = [BTLibrary sharedLibrary];
+    NSUInteger i;
+    for (i = 0; i < [tracks count]; i++) {
+        [library addTrack:[tracks objectAtIndex:i]];
+    }
+
+    NSArray *keys = [memberships allKeys];
+    for (i = 0; i < [keys count]; i++) {
+        BTPlaylist *playlist = [library playlistWithID:[keys objectAtIndex:i]];
+        if (playlist == nil) continue;
+        [playlist.trackIDs removeAllObjects];
+        [playlist.trackIDs addObjectsFromArray:[memberships objectForKey:[keys objectAtIndex:i]]];
+    }
+    [library noteChanged];
+}
+
+// Asked before anything is thrown away. Every delete gets one of these, since
+// what a delete costs is not always obvious from the row it started on.
+- (BOOL)confirm:(NSString *)question detail:(NSString *)detail doing:(NSString *)action {
+    NSAlert *alert = [[NSAlert alloc] init];
+    [alert setMessageText:question];
+    [alert setInformativeText:detail];
+    [alert addButtonWithTitle:action];
+    [alert addButtonWithTitle:@"Cancel"];
+    return [alert runModal] == NSAlertFirstButtonReturn;
 }
 
 #pragma mark - Rearranging a playlist
@@ -1438,7 +1611,7 @@ static void BTRedrawEverything(NSView *view) {
         if (found != NSNotFound) target = (NSInteger)found;
     }
 
-    [self recordOrder:[NSArray arrayWithArray:playlist.trackIDs]
+    [self recordSongs:[NSArray arrayWithArray:playlist.trackIDs]
            ofPlaylist:playlist
                 named:@"Rearrange"];
     [playlist moveTrackIDs:dragged toIndex:target];
@@ -1528,19 +1701,38 @@ static void BTRedrawEverything(NSView *view) {
     [self deleteSelectedTracks];
 }
 
+// How many playlists a folder would take with it, however deep they sit.
+static NSUInteger BTPlaylistsInside(BTPlaylist *folder) {
+    __block NSUInteger count = 0;
+    [BTPlaylist enumerate:folder.children usingBlock:^(BTPlaylist *one, BOOL *stop) {
+        if (one.kind != BTPlaylistKindFolder) count++;
+    }];
+    return count;
+}
+
 - (void)deleteSelectedPlaylist {
     BTPlaylist *playlist = [_sources selectedPlaylist];
     if (playlist == nil) return;
 
-    NSAlert *alert = [[NSAlert alloc] init];
-    [alert setMessageText:[NSString stringWithFormat:@"Delete the playlist \"%@\"?", playlist.name]];
-    [alert setInformativeText:@"The songs stay in the library."];
-    [alert addButtonWithTitle:@"Delete"];
-    [alert addButtonWithTitle:@"Cancel"];
-    if ([alert runModal] != NSAlertFirstButtonReturn) return;
+    NSString *question;
+    if (playlist.kind == BTPlaylistKindFolder) {
+        // A folder takes everything in it, which the dialog used to leave
+        // unsaid while talking about songs instead.
+        NSUInteger inside = BTPlaylistsInside(playlist);
+        question = (inside == 0)
+            ? [NSString stringWithFormat:@"Delete the empty folder \"%@\"?", playlist.name]
+            : [NSString stringWithFormat:@"Delete the folder \"%@\" and the %lu playlist%@ in it?",
+               playlist.name, (unsigned long)inside, (inside == 1 ? @"" : @"s")];
+    } else {
+        question = [NSString stringWithFormat:@"Delete the playlist \"%@\"?", playlist.name];
+    }
 
-    if (_selectedSource == playlist) _selectedSource = BTLibrarySource;
-    [[BTLibrary sharedLibrary] removePlaylist:playlist];
+    if (![self confirm:question
+                detail:@"The songs stay in the library. This can be undone."
+                 doing:@"Delete"]) {
+        return;
+    }
+    [self takeOutPlaylist:playlist named:@"Delete Playlist"];
 }
 
 - (void)deleteSelectedTracks {
@@ -1554,29 +1746,44 @@ static void BTRedrawEverything(NSView *view) {
         row = [rows indexGreaterThanIndex:row];
     }
 
-    BTLibrary *library = [BTLibrary sharedLibrary];
+    NSUInteger count = [tracks count];
+    NSString *songs = [NSString stringWithFormat:@"%lu song%@",
+                       (unsigned long)count, (count == 1 ? @"" : @"s")];
+
     BTPlaylist *playlist = BTPlaylistFromSource(_selectedSource);
     if (playlist && playlist.kind == BTPlaylistKindStatic) {
-        NSUInteger i;
-        for (i = 0; i < [tracks count]; i++) {
-            [playlist.trackIDs removeObject:[[tracks objectAtIndex:i] trackID]];
+        if (![self confirm:[NSString stringWithFormat:@"Take %@ out of \"%@\"?",
+                            songs, playlist.name]
+                    detail:@"They stay in the library. This can be undone."
+                     doing:@"Remove"]) {
+            return;
         }
-        [library noteChanged];
+
+        NSMutableArray *kept = [NSMutableArray arrayWithArray:playlist.trackIDs];
+        NSUInteger i;
+        for (i = 0; i < count; i++) {
+            [kept removeObject:[[tracks objectAtIndex:i] trackID]];
+        }
+        [self restoreSongs:kept ofPlaylist:playlist named:@"Remove From Playlist"];
         return;
     }
-    // A smart playlist, a folder, and the iPod have no manual removal. Only the
-    // library itself takes songs out.
-    if (_selectedSource != BTLibrarySource) return;
 
-    NSAlert *alert = [[NSAlert alloc] init];
-    [alert setMessageText:[NSString stringWithFormat:@"Remove %lu song%@ from the library?",
-                           (unsigned long)[tracks count], ([tracks count] == 1 ? @"" : @"s")]];
-    [alert setInformativeText:@"The files stay on disk. BTunes never deletes audio files."];
-    [alert addButtonWithTitle:@"Remove"];
-    [alert addButtonWithTitle:@"Cancel"];
-    if ([alert runModal] != NSAlertFirstButtonReturn) return;
+    // A smart playlist takes its songs from its rules, a folder from its
+    // children, and a device and a disc are not the library's to change. Said
+    // with a beep rather than with nothing at all, which reads as a key that
+    // does not work.
+    if (_selectedSource != BTLibrarySource) {
+        NSBeep();
+        return;
+    }
 
-    [library removeTracks:tracks];
+    if (![self confirm:[NSString stringWithFormat:@"Remove %@ from the library?", songs]
+                detail:@"The files stay on disk. BTunes never deletes audio files. "
+                       @"This can be undone."
+                 doing:@"Remove"]) {
+        return;
+    }
+    [self takeOutTracks:tracks];
 }
 
 #pragma mark - Split view
@@ -1709,7 +1916,7 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     BTPlaylist *playlist = [_sources selectedPlaylist];
     if (playlist == nil || playlist.kind != BTPlaylistKindStatic) return;
 
-    [self recordOrder:[NSArray arrayWithArray:playlist.trackIDs]
+    [self recordSongs:[NSArray arrayWithArray:playlist.trackIDs]
            ofPlaylist:playlist
                 named:@"Sync Playlist Order"];
     [playlist arrangeByAlbumUsingTracks:[BTLibrary sharedLibrary].tracks];
@@ -1745,13 +1952,13 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 
 - (void)newPlaylist:(id)sender {
     BTPlaylist *playlist = [BTPlaylist playlistWithName:@"untitled playlist" kind:BTPlaylistKindStatic];
-    [[BTLibrary sharedLibrary] addPlaylist:playlist toFolder:[self folderForNewPlaylist]];
+    [self makePlaylist:playlist inFolder:[self folderForNewPlaylist] named:@"New Playlist"];
     [_sources selectPlaylistForRenaming:playlist];
 }
 
 - (void)newPlaylistFolder:(id)sender {
     BTPlaylist *folder = [BTPlaylist playlistWithName:@"untitled folder" kind:BTPlaylistKindFolder];
-    [[BTLibrary sharedLibrary] addPlaylist:folder toFolder:[self folderForNewPlaylist]];
+    [self makePlaylist:folder inFolder:[self folderForNewPlaylist] named:@"New Folder"];
     [_sources selectPlaylistForRenaming:folder];
 }
 
@@ -1762,7 +1969,7 @@ constrainMaxCoordinate:(CGFloat)proposedMax
     _sheetController = [[BTSmartPlaylistController alloc] initWithPlaylist:playlist];
     [_sheetController beginSheetForWindow:[self window] completion:^(BOOL accepted) {
         if (accepted) {
-            [[BTLibrary sharedLibrary] addPlaylist:playlist toFolder:folder];
+            [self makePlaylist:playlist inFolder:folder named:@"New Smart Playlist"];
             [self->_sources selectPlaylistForRenaming:playlist];
         }
         self->_sheetController = nil;

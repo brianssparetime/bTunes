@@ -315,10 +315,10 @@ static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
              byItem:(id)item {
     BTPlaylist *playlist = BTPlaylistFromSource(item);
     if (playlist == nil) return;
-    if ([object isKindOfClass:[NSString class]] && [(NSString *)object length] > 0) {
-        [playlist setName:object];
-        [[BTLibrary sharedLibrary] noteChanged];
-    }
+    if (![object isKindOfClass:[NSString class]] || [(NSString *)object length] == 0) return;
+    if ([object isEqualToString:playlist.name]) return;
+
+    [_delegate sourceList:self renamePlaylist:playlist to:object];
 }
 
 // Which of the seven marks a row wears. The only place that has to know what a
@@ -441,28 +441,21 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
                item:(id)item
          childIndex:(NSInteger)index {
     NSPasteboard *pasteboard = [info draggingPasteboard];
-    BTLibrary *library = [BTLibrary sharedLibrary];
     BTPlaylist *target = BTPlaylistFromSource(item);
 
     if ([[pasteboard types] containsObject:BTTrackPasteboardType]) {
         if (target == nil) return NO;
         NSArray *ids = [NSKeyedUnarchiver unarchiveObjectWithData:[pasteboard dataForType:BTTrackPasteboardType]];
-        NSUInteger i;
-        for (i = 0; i < [ids count]; i++) {
-            NSString *trackID = [ids objectAtIndex:i];
-            if (![target.trackIDs containsObject:trackID]) [target.trackIDs addObject:trackID];
-        }
-        [library noteChanged];
+        if ([ids count] == 0) return NO;
+        [_delegate sourceList:self addTrackIDs:ids toPlaylist:target];
         return YES;
     }
 
     if ([[pasteboard types] containsObject:BTPlaylistPasteboardType]) {
         NSString *playlistID = [pasteboard stringForType:BTPlaylistPasteboardType];
-        BTPlaylist *moving = [library playlistWithID:playlistID];
+        BTPlaylist *moving = [[BTLibrary sharedLibrary] playlistWithID:playlistID];
         if (moving == nil) return NO;
-        // The end of wherever it lands. Where it sits in the list is decided by
-        // its name, so the place in the array is only where it is kept.
-        [library movePlaylist:moving toFolder:target atIndex:-1];
+        [_delegate sourceList:self movePlaylist:moving toFolder:target];
         return YES;
     }
     return NO;

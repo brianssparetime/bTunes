@@ -35,6 +35,19 @@ BTPlaylist *BTPlaylistFromSource(id item);
 // and the window is what writes that down.
 - (void)sourceListFoldersDidChange:(BTSourceList *)list;
 
+// The three ways a row changes something. Handed over rather than done here,
+// because every change to a playlist has to be one that can be taken back, and
+// the undo manager belongs to the window.
+- (void)sourceList:(BTSourceList *)list
+    renamePlaylist:(BTPlaylist *)playlist
+                to:(NSString *)name;
+- (void)sourceList:(BTSourceList *)list
+       addTrackIDs:(NSArray *)trackIDs
+        toPlaylist:(BTPlaylist *)playlist;
+- (void)sourceList:(BTSourceList *)list
+      movePlaylist:(BTPlaylist *)playlist
+          toFolder:(BTPlaylist *)folder;
+
 @end
 
 // The left bar: the library, a disc, Recently Added, an attached iPod, and the
