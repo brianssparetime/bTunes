@@ -177,7 +177,19 @@ static NSFont *BTMiniReadoutFont(void) { return BTMiniFixedFont(BT_MINI_FONT_SIZ
 
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = [self bounds];
-    NSRect groove = NSMakeRect(NSMinX(bounds), NSMidY(bounds) - 3, NSWidth(bounds), 6);
+
+    // The knob is the full height of the slider, so the bar has to be centred on
+    // whole pixels or the two are half a pixel apart and the knob reads as
+    // sitting on top of the bar rather than straddling it.
+    //
+    // It was placed at the middle less three, and both sliders are an odd number
+    // of points tall, so that middle is a half and the bar landed on a half
+    // pixel: it drew a row lower than it measured, leaving the knob overhanging
+    // by two above and none below. An odd bar in an odd slider, inset by a whole
+    // number, puts both centres on the same line.
+    CGFloat barHeight = 7.0;
+    CGFloat inset = floor((NSHeight(bounds) - barHeight) / 2.0);
+    NSRect groove = NSMakeRect(NSMinX(bounds), NSMinY(bounds) + inset, NSWidth(bounds), barHeight);
     BTDrawSunken(groove, BTMiniBodyDark(), BTMiniBodyLight(), [NSColor blackColor]);
 
     CGFloat thumbWidth = self.wideThumb ? 29.0 : 14.0;
