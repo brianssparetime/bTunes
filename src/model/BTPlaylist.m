@@ -70,6 +70,43 @@
     return @"is";
 }
 
+// A year, a year and a month, or a whole day. Read by hand rather than by a
+// date formatter, because a formatter follows the reader's region and a rule
+// saved on one machine would then mean something else on another.
++ (NSDate *)dateFromText:(NSString *)text {
+    NSString *trimmed = [text stringByTrimmingCharactersInSet:
+                         [NSCharacterSet whitespaceCharacterSet]];
+    NSArray *parts = [trimmed componentsSeparatedByString:@"-"];
+    if ([parts count] < 1 || [parts count] > 3) return nil;
+
+    NSInteger numbers[3] = {0, 1, 1};
+    NSUInteger i;
+    for (i = 0; i < [parts count]; i++) {
+        NSString *part = [parts objectAtIndex:i];
+        if ([part length] == 0) return nil;
+        if ([part rangeOfCharacterFromSet:
+             [[NSCharacterSet decimalDigitCharacterSet] invertedSet]].location != NSNotFound) {
+            return nil;
+        }
+        numbers[i] = [part integerValue];
+    }
+    if (numbers[0] < 1 || numbers[1] < 1 || numbers[1] > 12 ||
+        numbers[2] < 1 || numbers[2] > 31) {
+        return nil;
+    }
+
+    NSDateComponents *when = [[NSDateComponents alloc] init];
+    [when setYear:numbers[0]];
+    [when setMonth:numbers[1]];
+    [when setDay:numbers[2]];
+    return [[NSCalendar currentCalendar] dateFromComponents:when];
+}
+
++ (NSString *)valueHintForField:(BTRuleField)field operator:(BTRuleOperator)op {
+    if (field != BTRuleFieldDateAdded) return @"";
+    return (op == BTRuleOperatorInTheLast) ? @"days" : @"2003-06-01";
+}
+
 + (NSArray *)operatorNamesForField:(BTRuleField)field {
     NSArray *ops = [self operatorsForField:field];
     NSMutableArray *names = [NSMutableArray array];
@@ -108,13 +145,19 @@
     if ([BTSmartRule fieldIsNumeric:self.field]) {
         double lhs = [self numericValueForTrack:track];
         if (self.field == BTRuleFieldDateAdded) {
-            double days = [self.value doubleValue];
+            // Counting days is what "in the last" is for.
             if (self.op == BTRuleOperatorInTheLast) {
+                double days = [self.value doubleValue];
                 if (days <= 0) return NO;
                 return lhs > [[NSDate date] timeIntervalSince1970] - days * 86400.0;
             }
-            // "is after" and "is before" compare against a day offset from now.
-            double cutoff = [[NSDate date] timeIntervalSince1970] - days * 86400.0;
+
+            // "is after" and "is before" mean a date, and say so. A date that
+            // cannot be read matches nothing: a rule nobody can satisfy is
+            // plainer than one that quietly takes in the whole library.
+            NSDate *when = [BTSmartRule dateFromText:self.value];
+            if (when == nil) return NO;
+            double cutoff = [when timeIntervalSince1970];
             return (self.op == BTRuleOperatorGreaterThan) ? (lhs > cutoff) : (lhs < cutoff);
         }
         double rhs = [self.value doubleValue];
@@ -157,6 +200,49 @@
              stop:(BOOL *)stop;
 @end
 
+// A date that is not there sorts as long ago, so a song nobody has played does
+// not win "most recently played" by having no answer at all.
+static double BTWhen(NSDate *date) {
+    return date ? [date timeIntervalSince1970] : -DBL_MAX;
+}
+
+// The best songs first, for whichever meaning of best the limit was given.
+//
+// Every ordering falls back to the title, since a library holds thousands of
+// songs played nought times and a tie that breaks differently on each rebuild
+// is a playlist whose contents change while nothing about it did.
+static NSComparator BTComparatorForLimit(BTSmartLimitOrder order) {
+    return ^NSComparisonResult(id a, id b) {
+        BTTrack *left = a, *right = b;
+        double mine = 0, theirs = 0;
+
+        // Every "least" is the matching "most" with the sign turned over, and
+        // nothing else changes. Swapping the two songs round instead turns it
+        // over a second time and leaves the ordering exactly as it was, which
+        // is what "least recently added" did until a check said so.
+        switch (order) {
+            case BTSmartLimitMostRecentlyAdded:
+                mine = BTWhen(left.dateAdded); theirs = BTWhen(right.dateAdded); break;
+            case BTSmartLimitLeastRecentlyAdded:
+                mine = -BTWhen(left.dateAdded); theirs = -BTWhen(right.dateAdded); break;
+            case BTSmartLimitMostOftenPlayed:
+                mine = (double)left.playCount; theirs = (double)right.playCount; break;
+            case BTSmartLimitLeastOftenPlayed:
+                mine = -(double)left.playCount; theirs = -(double)right.playCount; break;
+            case BTSmartLimitHighestRated:
+                mine = (double)left.rating; theirs = (double)right.rating; break;
+            case BTSmartLimitMostRecentlyPlayed:
+                mine = BTWhen(left.lastPlayed); theirs = BTWhen(right.lastPlayed); break;
+            case BTSmartLimitLeastRecentlyPlayed:
+                mine = -BTWhen(left.lastPlayed); theirs = -BTWhen(right.lastPlayed); break;
+        }
+
+        if (mine > theirs) return NSOrderedAscending;    // more of it comes first
+        if (mine < theirs) return NSOrderedDescending;
+        return [[left displayTitle] caseInsensitiveCompare:[right displayTitle]];
+    };
+}
+
 @implementation BTPlaylist
 
 + (void)enumerate:(NSArray *)playlists usingBlock:(void (^)(BTPlaylist *playlist, BOOL *stop))block {
@@ -176,6 +262,13 @@
             [self enumerate:playlist.children usingBlock:block stop:stop];
         }
     }
+}
+
++ (NSArray *)limitOrderNames {
+    return @[@"most recently added", @"least recently added",
+             @"most often played", @"least often played",
+             @"highest rated",
+             @"most recently played", @"least recently played"];
 }
 
 + (instancetype)playlistWithName:(NSString *)name kind:(BTPlaylistKind)kind {
@@ -200,6 +293,9 @@
     p.sourcePersistentID = BTSavedString(dict, @"sourcePersistentID");
     p.matchAll = BTSavedBool(dict, @"matchAll");
     p.limit = BTSavedInteger(dict, @"limit");
+    // A playlist saved before a limit had anything to choose by takes the
+    // ordering anybody would have meant: the newest of what matched.
+    p.limitOrder = (BTSmartLimitOrder)BTSavedInteger(dict, @"limitOrder");
 
     NSString *sort = BTSavedString(dict, @"sortColumn");
     if ([sort length] > 0) {
@@ -244,6 +340,9 @@
     [d setObject:@(self.kind) forKey:@"kind"];
     [d setObject:@(self.matchAll) forKey:@"matchAll"];
     [d setObject:@(self.limit) forKey:@"limit"];
+    // Written only where it means something, so a playlist with no limit reads
+    // exactly as it did before there was anything to choose by.
+    if (self.limit > 0) [d setObject:@(self.limitOrder) forKey:@"limitOrder"];
     [d setObject:self.trackIDs forKey:@"trackIDs"];
     // Left out entirely until the playlist has been sorted by hand, so an
     // untouched playlist keeps opening the way its kind suggests.
@@ -288,6 +387,13 @@
     }
 
     if (self.kind == BTPlaylistKindSmart) {
+        // A playlist with no rules at all holds nothing. Read as "all of
+        // nothing", every song matches and the whole library arrives under a
+        // name somebody meant to fill in, which is a surprise rather than an
+        // answer. The sheet will not let a rule list empty; a library file
+        // edited by hand can.
+        if ([self.rules count] == 0) return @[];
+
         NSMutableArray *out = [NSMutableArray array];
         for (i = 0; i < [allTracks count]; i++) {
             BTTrack *t = [allTracks objectAtIndex:i];
@@ -300,9 +406,16 @@
                     if (one) { matched = YES; break; }
                 }
             }
-            if ([self.rules count] == 0) matched = YES;
             if (matched) [out addObject:t];
-            if (self.limit > 0 && (NSInteger)[out count] >= self.limit) break;
+        }
+
+        // The limit is applied to everything that matched, not to the first few
+        // the scan reached. Cutting the scan short took whichever songs the
+        // library file happened to list first, which is not an order anybody
+        // chose and not one anybody could see.
+        if (self.limit > 0 && (NSInteger)[out count] > self.limit) {
+            NSArray *best = [out sortedArrayUsingComparator:BTComparatorForLimit(self.limitOrder)];
+            return [best subarrayWithRange:NSMakeRange(0, (NSUInteger)self.limit)];
         }
         return out;
     }

@@ -29,6 +29,7 @@
     NSPopUpButton *_matchPopUp;
     NSButton *_limitCheck;
     NSTextField *_limitField;
+    NSPopUpButton *_limitOrderPopUp;
     NSView *_rulesContainer;
     // The captions are held rather than looked up. The sheet grows and shrinks
     // with the number of rules, so every one of these is repositioned on each
@@ -104,9 +105,19 @@
     _limitField = [[NSTextField alloc] initWithFrame:NSZeroRect];
     [_limitField setFont:[BTStyle uiFont]];
     [_limitField setStringValue:(_playlist.limit > 0 ? [NSString stringWithFormat:@"%ld", (long)_playlist.limit] : @"25")];
-    _songsLabel = BTLabelWithText(@"songs", [BTStyle uiFont]);
+    _songsLabel = BTLabelWithText(@"songs selected by", [BTStyle uiFont]);
     [content addSubview:_limitField];
     [content addSubview:_songsLabel];
+
+    // Which of the matching songs the limit keeps. Without it a limit takes
+    // whichever the scan reached first, which is the order the library file
+    // happens to be in and is no answer at all.
+    _limitOrderPopUp = [[NSPopUpButton alloc] initWithFrame:NSZeroRect];
+    [_limitOrderPopUp addItemsWithTitles:[BTPlaylist limitOrderNames]];
+    [_limitOrderPopUp selectItemAtIndex:_playlist.limitOrder];
+    [[_limitOrderPopUp cell] setControlSize:NSSmallControlSize];
+    [_limitOrderPopUp setFont:[BTStyle uiFont]];
+    [content addSubview:_limitOrderPopUp];
 
     [self addButtonsAccepting:@"OK"
                        action:@selector(accept:)
@@ -155,6 +166,11 @@
         NSTextField *valueField = [[NSTextField alloc] initWithFrame:NSMakeRect(282, y, 160, BT_FIELD)];
         [valueField setFont:[BTStyle uiFont]];
         [valueField setStringValue:(rule.value ? rule.value : @"")];
+        // A date rule says what it wants. "is after" used to take a number of
+        // days and there was nothing on screen to say so, so a year typed into
+        // it asked for songs added in the last two thousand days.
+        [[valueField cell] setPlaceholderString:
+            [BTSmartRule valueHintForField:rule.field operator:rule.op]];
         [valueField setTag:(NSInteger)i];
         [valueField setTarget:self];
         [valueField setAction:@selector(valueChanged:)];
@@ -212,7 +228,8 @@
     y -= BT_LIMIT_STEP;
     [_limitCheck setFrame:NSMakeRect(20, y, 90, BT_CHECK)];
     [_limitField setFrame:NSMakeRect(110, y, 60, BT_CHECK)];
-    [_songsLabel setFrame:NSMakeRect(176, y + 3, 60, BT_LABEL)];
+    [_songsLabel setFrame:NSMakeRect(176, y + 3, 120, BT_LABEL)];
+    [_limitOrderPopUp setFrame:NSMakeRect(300, y, BT_SHEET_WIDTH - 320, BT_FIELD)];
 }
 
 #pragma mark - Rule edits
@@ -226,12 +243,37 @@
 }
 
 - (void)operatorChanged:(NSPopUpButton *)sender {
-    BTSmartRule *rule = [_workingRules objectAtIndex:(NSUInteger)[sender tag]];
+    NSUInteger row = (NSUInteger)[sender tag];
+    BTSmartRule *rule = [_workingRules objectAtIndex:row];
     NSArray *ops = [BTSmartRule operatorsForField:rule.field];
     NSInteger index = [sender indexOfSelectedItem];
     if (index >= 0 && index < (NSInteger)[ops count]) {
         rule.op = (BTRuleOperator)[[ops objectAtIndex:(NSUInteger)index] integerValue];
     }
+    // The hint follows the operator: a date rule wants a date one way and a
+    // number of days the other. Changed in place rather than by rebuilding the
+    // row, which would take the keyboard away mid-edit.
+    [self showHintForRow:row];
+}
+
+// The value field on one row, found by the tag every control in it carries.
+- (NSTextField *)valueFieldInRow:(NSUInteger)row {
+    NSArray *subviews = [_rulesContainer subviews];
+    NSUInteger i;
+    for (i = 0; i < [subviews count]; i++) {
+        NSView *view = [subviews objectAtIndex:i];
+        if ([view isKindOfClass:[NSTextField class]] && (NSUInteger)[(NSControl *)view tag] == row) {
+            return (NSTextField *)view;
+        }
+    }
+    return nil;
+}
+
+- (void)showHintForRow:(NSUInteger)row {
+    if (row >= [_workingRules count]) return;
+    BTSmartRule *rule = [_workingRules objectAtIndex:row];
+    [[[self valueFieldInRow:row] cell] setPlaceholderString:
+        [BTSmartRule valueHintForField:rule.field operator:rule.op]];
 }
 
 - (void)valueChanged:(NSTextField *)sender {
@@ -280,6 +322,7 @@
     _playlist.name = [[_nameField stringValue] length] > 0 ? [_nameField stringValue] : @"Smart Playlist";
     _playlist.matchAll = ([_matchPopUp indexOfSelectedItem] == 0);
     _playlist.limit = ([_limitCheck state] == NSOnState) ? [[_limitField stringValue] integerValue] : 0;
+    _playlist.limitOrder = (BTSmartLimitOrder)[_limitOrderPopUp indexOfSelectedItem];
     [_playlist.rules removeAllObjects];
     [_playlist.rules addObjectsFromArray:_workingRules];
 
