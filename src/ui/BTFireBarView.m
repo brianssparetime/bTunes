@@ -66,6 +66,10 @@
 // half while swinging half a block further.
 #define BT_CEILING_LEFT_AFTER_A_SECOND 0.95
 
+// The blocks a bar is built from, and the gap between them.
+#define BT_BLOCK_HEIGHT 2.0
+#define BT_BLOCK_GAP    1.0
+
 @implementation BTFireBarView {
     NSTimer *_timer;
     CGFloat _values[BT_BAR_COUNT];
@@ -74,7 +78,27 @@
     NSInteger _capHold[BT_BAR_COUNT];
     CGFloat _ceiling;
     BOOL _settled;
+
+    // Where every block and every dot goes, worked out once for a given size.
+    // None of it changes between one frame and the next, and at fifty frames a
+    // second the arithmetic and the several hundred colour objects it allocated
+    // cost more than the drawing did.
+    NSSize _laidOutFor;
+    CGFloat _laidOutWidth, _laidOutGap;
+    NSRect *_gridDots;
+    NSInteger _gridDotCount;
+    NSInteger _blocks;
+    CGFloat _originX;
+    NSArray *_blockColors;
+    // Scratch for one call to NSRectFillList: a whole row of blocks, or every
+    // cap, goes down in one operation under one colour.
+    NSRect _fillList[BT_BAR_COUNT];
 }
+
+// The whole of the bounds is filled, starting with black. Saying so is what
+// keeps the panel behind from being redrawn under the bars fifty times a
+// second, which is most of what mini mode used to cost.
+- (BOOL)isOpaque { return YES; }
 
 - (id)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
@@ -92,6 +116,7 @@
 
 - (void)dealloc {
     [_timer invalidate];
+    free(_gridDots);
 }
 
 - (void)startAnimating {
@@ -112,12 +137,20 @@
 // What a bar keeps from one frame to the next once its band has gone quiet,
 // worked out from how much it should keep over a whole second. Asking the
 // question in seconds is what keeps the fall the same speed whatever the frame
-// rate is set to.
-static CGFloat BTBandDecay(NSInteger index) {
-    CGFloat t = (CGFloat)index / (CGFloat)(BT_BAR_COUNT - 1);
-    double perSecond = BT_BAR_LEFT_AFTER_A_SECOND_LOW
-        + (BT_BAR_LEFT_AFTER_A_SECOND_HIGH - BT_BAR_LEFT_AFTER_A_SECOND_LOW) * (double)t;
-    return (CGFloat)pow(perSecond, BT_BAR_INTERVAL);
+// rate is set to. The answer is the same every frame, so it is worked out once.
+static const CGFloat *BTBandDecay(void) {
+    static CGFloat table[BT_BAR_COUNT];
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSInteger i;
+        for (i = 0; i < BT_BAR_COUNT; i++) {
+            CGFloat t = (CGFloat)i / (CGFloat)(BT_BAR_COUNT - 1);
+            double perSecond = BT_BAR_LEFT_AFTER_A_SECOND_LOW
+                + (BT_BAR_LEFT_AFTER_A_SECOND_HIGH - BT_BAR_LEFT_AFTER_A_SECOND_LOW) * (double)t;
+            table[i] = (CGFloat)pow(perSecond, BT_BAR_INTERVAL);
+        }
+    });
+    return table;
 }
 
 // Everything down and nothing left to fall.
@@ -157,6 +190,7 @@ static CGFloat BTBandDecay(NSInteger index) {
         return;
     }
     _settled = NO;
+    const CGFloat *decay = BTBandDecay();
 
     // Recordings differ in loudness by far more than the display has height, so
     // a fixed scale either pegs on a loud track or barely lifts on a quiet one.
@@ -189,7 +223,7 @@ static CGFloat BTBandDecay(NSInteger index) {
         if (value >= _values[i]) {
             _values[i] = value;
         } else {
-            _values[i] *= BTBandDecay(i);
+            _values[i] *= decay[i];
             if (_values[i] < value) _values[i] = value;
         }
 
@@ -213,7 +247,7 @@ static CGFloat BTBandDecay(NSInteger index) {
     [self setNeedsDisplay:YES];
 }
 
-- (NSColor *)colorForFraction:(CGFloat)f {
+static NSColor *BTBlockColor(CGFloat f) {
     // Green at the bottom, through yellow, to red at the top.
     if (f < 0.55f) {
         CGFloat t = f / 0.55f;
@@ -224,67 +258,120 @@ static CGFloat BTBandDecay(NSInteger index) {
     return [NSColor colorWithCalibratedRed:0.95f green:(0.90f - 0.72f * t) blue:0.12f alpha:1.0];
 }
 
-- (void)drawRect:(NSRect)dirtyRect {
+// Everything about the display that follows from its size rather than from the
+// music: how many blocks tall a bar can be, what colour each row of blocks is,
+// where the leftmost bar starts, and where the dots of the grid go.
+- (void)layOutForSize {
     NSRect bounds = [self bounds];
-    [[NSColor blackColor] set];
-    NSRectFill(bounds);
-
     CGFloat gap = self.barGap > 0 ? self.barGap : 1.0;
     CGFloat barWidth = self.barWidth > 0 ? self.barWidth : 3.0;
-    CGFloat blockHeight = 2.0;
-    CGFloat blockGap = 1.0;
-    NSInteger blocks = (NSInteger)((NSHeight(bounds) - 2) / (blockHeight + blockGap));
-    if (blocks < 1) blocks = 1;
+
+    if (NSEqualSizes(bounds.size, _laidOutFor)
+        && barWidth == _laidOutWidth && gap == _laidOutGap) return;
+    _laidOutFor = bounds.size;
+    _laidOutWidth = barWidth;
+    _laidOutGap = gap;
+
+    _blocks = (NSInteger)((NSHeight(bounds) - 2) / (BT_BLOCK_HEIGHT + BT_BLOCK_GAP));
+    if (_blocks < 1) _blocks = 1;
 
     CGFloat used = (CGFloat)BT_BAR_COUNT * barWidth + (CGFloat)(BT_BAR_COUNT - 1) * gap;
-    CGFloat originX = NSMinX(bounds) + (NSWidth(bounds) - used) / 2.0;
-    if (originX < 0) originX = 0;
+    _originX = NSMinX(bounds) + (NSWidth(bounds) - used) / 2.0;
+    if (_originX < 0) _originX = 0;
 
-    NSInteger i, b;
+    NSMutableArray *colors = [NSMutableArray arrayWithCapacity:(NSUInteger)_blocks];
+    NSInteger b;
+    for (b = 0; b < _blocks; b++) {
+        [colors addObject:BTBlockColor((CGFloat)b / (CGFloat)(_blocks - 1 > 0 ? _blocks - 1 : 1))];
+    }
+    _blockColors = colors;
 
-    if (self.drawsGrid) {
-        // The faint dot grid the original analyzer sat on.
-        [[NSColor colorWithCalibratedRed:0.10 green:0.16 blue:0.22 alpha:1.0] set];
+    // The grid is several hundred single points, and laying them out again
+    // every frame cost more than filling them does.
+    free(_gridDots);
+    _gridDots = NULL;
+    _gridDotCount = 0;
+    NSInteger columns = (NSInteger)ceil((NSWidth(bounds) - 1) / 2.0);
+    NSInteger rows = (NSInteger)ceil((NSHeight(bounds) - 1) / 3.0);
+    if (columns > 0 && rows > 0) {
+        _gridDots = malloc(sizeof(NSRect) * (size_t)(columns * rows));
         CGFloat gx, gy;
         for (gx = NSMinX(bounds) + 1; gx < NSMaxX(bounds); gx += 2.0) {
             for (gy = NSMinY(bounds) + 1; gy < NSMaxY(bounds); gy += 3.0) {
-                NSRectFill(NSMakeRect(gx, gy, 1, 1));
+                _gridDots[_gridDotCount++] = NSMakeRect(gx, gy, 1, 1);
             }
         }
     }
+}
 
+- (void)setFrameSize:(NSSize)size {
+    [super setFrameSize:size];
+    [self layOutForSize];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    [self layOutForSize];
+
+    [[NSColor blackColor] set];
+    NSRectFill([self bounds]);
+
+    if (self.drawsGrid && _gridDotCount > 0) {
+        // The faint dot grid the original analyzer sat on.
+        [[NSColor colorWithCalibratedRed:0.10 green:0.16 blue:0.22 alpha:1.0] set];
+        NSRectFillList(_gridDots, _gridDotCount);
+    }
+
+    CGFloat step = _laidOutWidth + _laidOutGap;
+    NSInteger lit[BT_BAR_COUNT];
+    NSInteger i, b, n;
     for (i = 0; i < BT_BAR_COUNT; i++) {
-        CGFloat x = originX + (CGFloat)i * (barWidth + gap);
-        NSInteger lit = (NSInteger)(_values[i] * (CGFloat)blocks + 0.5f);
+        lit[i] = (NSInteger)(_values[i] * (CGFloat)_blocks + 0.5f);
+    }
 
-        for (b = 0; b < lit; b++) {
-            CGFloat fraction = (CGFloat)b / (CGFloat)(blocks - 1 > 0 ? blocks - 1 : 1);
-            [[self colorForFraction:fraction] set];
-            NSRectFill(NSMakeRect(x, 1 + (CGFloat)b * (blockHeight + blockGap), barWidth, blockHeight));
-        }
-
-        // The cap floats clear of the bar and comes down in its own time, which
-        // is the whole of what a peak marker is for: the bar answers the music
-        // and the cap remembers where it got to.
-        //
-        // Clear of it in one direction only. Pushed up out of the bar when the
-        // two are level, and left alone when it is already above, since above is
-        // where it spends its time and dragging it back down to the bar is
-        // exactly what a peak marker must not do. Written the other way round it
-        // did both: the cap was pinned one block over the bar however far the
-        // bar had fallen, and while the bar was rising the cap painted its top
-        // block white, which is why the bars wore white tips instead of showing
-        // the red they had climbed to.
-        if (_peaks[i] > 0.0f) {
-            NSInteger peakBlock = (NSInteger)(_peaks[i] * (CGFloat)blocks + 0.5f) - 1;
-            if (peakBlock < lit) peakBlock = lit;
-            if (peakBlock > blocks - 1) peakBlock = blocks - 1;
-            if (peakBlock >= 0) {
-                [[NSColor colorWithCalibratedWhite:0.90 alpha:1.0] set];
-                NSRectFill(NSMakeRect(x, 1 + (CGFloat)peakBlock * (blockHeight + blockGap),
-                                      barWidth, blockHeight));
+    // A row at a time rather than a bar at a time. Every block in a row is the
+    // same colour, so the row goes down in one operation; taken bar by bar the
+    // display changed colour two hundred times a frame and allocated a colour
+    // for each of them.
+    for (b = 0; b < _blocks; b++) {
+        CGFloat y = 1 + (CGFloat)b * (BT_BLOCK_HEIGHT + BT_BLOCK_GAP);
+        n = 0;
+        for (i = 0; i < BT_BAR_COUNT; i++) {
+            if (lit[i] > b) {
+                _fillList[n++] = NSMakeRect(_originX + (CGFloat)i * step, y,
+                                            _laidOutWidth, BT_BLOCK_HEIGHT);
             }
         }
+        if (n > 0) {
+            [(NSColor *)[_blockColors objectAtIndex:(NSUInteger)b] set];
+            NSRectFillList(_fillList, n);
+        }
+    }
+
+    // The cap floats clear of the bar and comes down in its own time, which is
+    // the whole of what a peak marker is for: the bar answers the music and the
+    // cap remembers where it got to.
+    //
+    // Clear of it in one direction only. Pushed up out of the bar when the two
+    // are level, and left alone when it is already above, since above is where
+    // it spends its time and dragging it back down to the bar is exactly what a
+    // peak marker must not do. Written the other way round it did both: the cap
+    // was pinned one block over the bar however far the bar had fallen, and
+    // while the bar was rising the cap painted its top block white, which is why
+    // the bars wore white tips instead of showing the red they had climbed to.
+    n = 0;
+    for (i = 0; i < BT_BAR_COUNT; i++) {
+        if (_peaks[i] <= 0.0f) continue;
+        NSInteger peakBlock = (NSInteger)(_peaks[i] * (CGFloat)_blocks + 0.5f) - 1;
+        if (peakBlock < lit[i]) peakBlock = lit[i];
+        if (peakBlock > _blocks - 1) peakBlock = _blocks - 1;
+        if (peakBlock < 0) continue;
+        _fillList[n++] = NSMakeRect(_originX + (CGFloat)i * step,
+                                    1 + (CGFloat)peakBlock * (BT_BLOCK_HEIGHT + BT_BLOCK_GAP),
+                                    _laidOutWidth, BT_BLOCK_HEIGHT);
+    }
+    if (n > 0) {
+        [[NSColor colorWithCalibratedWhite:0.90 alpha:1.0] set];
+        NSRectFillList(_fillList, n);
     }
 }
 

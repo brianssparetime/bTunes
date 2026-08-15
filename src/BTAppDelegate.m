@@ -202,7 +202,11 @@
         [[_mini window] makeKeyAndOrderFront:nil];
         [[_main window] orderOut:nil];
     } else {
-        [[_mini window] orderOut:nil];
+        // Closed rather than ordered out: the analyzer and the marquee are
+        // driven by timers the controller starts when the window opens and
+        // stops when it closes. Ordering the window away left both running, so
+        // leaving mini mode did not give the processor back.
+        [_mini close];
         [[_main window] makeKeyAndOrderFront:nil];
     }
 }

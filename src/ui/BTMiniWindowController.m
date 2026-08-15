@@ -195,8 +195,11 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
 
 @implementation BTMiniButton
 
-- (void)setOn:(BOOL)on { _on = on; [self setNeedsDisplay:YES]; }
-- (void)setGlyph:(BTGlyph)glyph { _glyph = glyph; [self setNeedsDisplay:YES]; }
+// Both are set from the player every twentieth of a second and change once a
+// song, so a setter that redraws whatever it was handed keeps the whole panel
+// busy repainting what it already shows.
+- (void)setOn:(BOOL)on { if (_on == on) return; _on = on; [self setNeedsDisplay:YES]; }
+- (void)setGlyph:(BTGlyph)glyph { if (_glyph == glyph) return; _glyph = glyph; [self setNeedsDisplay:YES]; }
 
 // A button draws top down, unlike every other view in this panel. Said out loud
 // here, because a chiselled edge and a corner lamp both care which way is up,
@@ -252,6 +255,19 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
 @end
 
 @implementation BTMiniSlider
+
+// The position bar is told the time twenty times a second and moves one point
+// every few seconds, so it redraws when the thumb would actually land somewhere
+// else. The panel behind shows through above and below the groove, and repaints
+// with it, which is what made an unmoved slider expensive.
+- (void)setValue:(double)value {
+    if (value < 0) value = 0;
+    if (value > 1) value = 1;
+    CGFloat travel = NSWidth([self bounds]) - (self.wideThumb ? 29.0 : 14.0);
+    BOOL moved = floor(travel * value) != floor(travel * _value);
+    _value = value;
+    if (moved) [self setNeedsDisplay:YES];
+}
 
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = [self bounds];
@@ -323,14 +339,63 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
 @interface BTMiniPanelView : NSView
 @property (nonatomic, assign) CGFloat scrollOffset;
 @property (nonatomic, strong) NSImage *logo;
+- (void)refreshIfChanged;
+- (BOOL)headlineScrolls;
 @end
 
 @implementation BTMiniPanelView {
     NSPoint _dragStart;
     NSPoint _windowStart;
+
+    // What the panel last put on screen. Everything it shows is a song, a play
+    // state, or a clock counting in whole seconds, so comparing against these
+    // answers whether there is anything new to draw.
+    __weak BTTrack *_drawnTrack;
+    NSString *_drawnTime;
+    BOOL _drawnPlaying;
+
+    // Whether the song line is too long for its box, measured when the line
+    // changes rather than on every frame of the marquee.
+    NSString *_measuredHeadline;
+    BOOL _headlineOverflows;
 }
 
 - (BOOL)isOpaque { return YES; }
+
+// The line along the top of the readout, which is also the one thing on the
+// panel that moves by itself.
+- (NSString *)headline {
+    BTTrack *track = [[BTPlayer sharedPlayer] currentTrack];
+    if (track == nil) return @"BTunes";
+    return [NSString stringWithFormat:@"%@ - %@", [track displayArtist], [track displayTitle]];
+}
+
++ (NSRect)readoutRect {
+    return NSMakeRect(BT_READOUT_X, BT_TOP(24, 14), BT_MINI_RIGHT - BT_READOUT_X, 14);
+}
+
+- (BOOL)headlineScrolls {
+    NSString *headline = [self headline];
+    if (![headline isEqualToString:_measuredHeadline]) {
+        _measuredHeadline = headline;
+        self.scrollOffset = 0;
+        NSDictionary *attrs = @{NSFontAttributeName: BTMiniReadoutFont()};
+        NSRect clip = NSInsetRect([BTMiniPanelView readoutRect], 3, 2);
+        _headlineOverflows = [headline sizeWithAttributes:attrs].width > NSWidth(clip);
+    }
+    return _headlineOverflows;
+}
+
+// Redraw only for something the panel does not already show. Asked twenty times
+// a second and answering about once, since the clock is the fastest thing on it.
+- (void)refreshIfChanged {
+    BTPlayer *player = [BTPlayer sharedPlayer];
+    BTTrack *track = [player currentTrack];
+    NSString *time = track ? [BTStyle timeStringFromInterval:[player currentTime]] : @"--:--";
+    if (track == _drawnTrack && [player isPlaying] == _drawnPlaying
+        && [time isEqualToString:_drawnTime]) return;
+    [self setNeedsDisplay:YES];
+}
 
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = [self bounds];
@@ -377,6 +442,11 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
     BTTrack *track = [player currentTrack];
 
     NSString *time = track ? [BTStyle timeStringFromInterval:[player currentTime]] : @"--:--";
+    // Kept so refreshIfChanged can tell a new frame from the one already up.
+    _drawnTrack = track;
+    _drawnTime = time;
+    _drawnPlaying = [player isPlaying];
+
     NSDictionary *digitAttrs = @{NSFontAttributeName: BTMiniClockFont(),
                                  NSForegroundColorAttributeName: BTMiniLCD()};
     NSSize timeSize = [time sizeWithAttributes:digitAttrs];
@@ -398,13 +468,11 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
     }
 
     // Track readout on the right.
-    NSRect readout = NSMakeRect(BT_READOUT_X, BT_TOP(24, 14), BT_MINI_RIGHT - BT_READOUT_X, 14);
+    NSRect readout = [BTMiniPanelView readoutRect];
     BTDrawSunken(readout, [NSColor blackColor], BTMiniBodyLight(), [NSColor blackColor]);
 
     NSFont *textFont = BTMiniReadoutFont();
-    NSString *headline = track
-        ? [NSString stringWithFormat:@"%@ - %@", [track displayArtist], [track displayTitle]]
-        : @"BTunes";
+    NSString *headline = [self headline];
     NSDictionary *headlineAttrs = @{NSFontAttributeName: textFont,
                                     NSForegroundColorAttributeName: BTMiniLCD()};
     NSSize headlineSize = [headline sizeWithAttributes:headlineAttrs];
@@ -576,6 +644,9 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
     [window setHidesOnDeactivate:NO];
     [window setHasShadow:YES];
     [window setTitle:@"BTunes"];
+    // The controller owns the window and reopens the same one each time mini
+    // mode is entered, so closing it must not release it.
+    [window setReleasedWhenClosed:NO];
 
     self = [super initWithWindow:window];
     if (self == nil) return nil;
@@ -678,11 +749,18 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
     [super close];
 }
 
+// A title that fits does not travel, and a panel with nothing travelling on it
+// has nothing to redraw twelve times a second.
 - (void)scrollTick:(NSTimer *)timer {
+    if (![_panel headlineScrolls]) return;
     _panel.scrollOffset = _panel.scrollOffset + 1.5;
     [_panel setNeedsDisplay:YES];
 }
 
+// Every view here decides for itself whether the new value is worth a repaint.
+// Marking them all dirty on each tick redrew the whole panel twenty times a
+// second, since a slider that lets the panel show through above and below its
+// groove drags the panel along with it.
 - (void)playerChanged:(NSNotification *)note {
     BTPlayer *player = [BTPlayer sharedPlayer];
     _playButton.glyph = [player isPlaying] ? BTGlyphPause : BTGlyphPlay;
@@ -694,9 +772,7 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
     if (!_draggingPosition) {
         _position.value = (duration > 0) ? ([player currentTime] / duration) : 0.0;
     }
-    [_volume setNeedsDisplay:YES];
-    [_position setNeedsDisplay:YES];
-    [_panel setNeedsDisplay:YES];
+    [_panel refreshIfChanged];
 }
 
 #pragma mark - Actions
