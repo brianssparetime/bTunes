@@ -21,6 +21,18 @@
 + (double)lowestFrequency;
 + (double)highestFrequency;
 
+// How many decibels the nought-to-one a band is reported in covers. A band is
+// scaled evenly in decibels between silence and full, so anything wanting to
+// think in decibels multiplies by this, and anything comparing two bands can
+// subtract them and multiply by this to get the difference between them.
+//
+// Which is the only correct way to compare two of them. Both numbers are
+// already logarithmic, so dividing one by the other is not a ratio of
+// loudnesses and does not mean anything: it flattens the difference between a
+// loud band and a quiet one, and it flattens it by a different amount depending
+// on how loud the recording is.
++ (float)decibelSpan;
+
 - (instancetype)initWithSampleRate:(double)sampleRate;
 
 // Mono samples, in whatever lengths the render thread supplies them. Cheap

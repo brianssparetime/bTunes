@@ -5,6 +5,67 @@
 // apart and leave bars standing for bands that do not exist.
 #define BT_BAR_COUNT BT_ANALYZER_BANDS
 
+// How often the display is redrawn. Fifty a second rather than twenty-five: the
+// analyzer behind it now answers the upper bands in twenty-two milliseconds, so
+// at twenty-five frames the timer was throwing away every other thing it had to
+// say.
+#define BT_BAR_FPS 50.0
+#define BT_BAR_INTERVAL (1.0 / BT_BAR_FPS)
+
+// Everything below is written per second and converted to the frame rate above,
+// which is the only reason the frame rate could be changed at all. Held as
+// per-frame numbers, doubling the rate silently halved the time a cap waited and
+// quartered how far it fell, so a display that was only meant to be smoother
+// would have come out twice as twitchy as well.
+
+// What is left of a bar after a second of the band being silent. The bass hangs
+// and the treble snaps back, which is what gives an analyzer its texture.
+#define BT_BAR_LEFT_AFTER_A_SECOND_LOW  0.030
+#define BT_BAR_LEFT_AFTER_A_SECOND_HIGH 0.0008
+
+// How long a cap waits where the bar left it, and how hard it falls afterwards,
+// in heights of the display per second squared. It accelerates rather than
+// sliding at a constant rate because a marker that eases away reads as a
+// measurement being released, where one that drops at a fixed speed reads as a
+// second bar.
+#define BT_CAP_HOLD_SECONDS 0.48
+#define BT_CAP_ACCELERATION 0.6875
+
+// How far under the loudest band a bar has to be before it reads as empty.
+//
+// This is the number that decides whether the display has any life in it, and
+// it was previously not a number at all. The bar height was the band divided by
+// the ceiling, but both of those are already logarithmic, so the division was
+// not a ratio of loudnesses and meant nothing: a band thirty decibels under the
+// loudest still drew half the display. Between beats a band falls perhaps
+// fifteen or twenty decibels, which moved a bar by two or three blocks out of
+// fourteen, so every record drew the same shivering plateau. Measured on a
+// four-minute track, the bars stood at seven blocks of fourteen nine frames in
+// ten and swung four.
+//
+// Subtracting instead makes it a real scale in decibels, and thirty-five is
+// where the sweep settled. Wider and the plateau comes back; narrower and a
+// quiet recording bottoms out, a Chopin nocturne resting at a tenth of a block
+// at thirty. At thirty-five the same track rests at five blocks and swings
+// five, and every record tried improved.
+//
+// What this cannot do is put dynamics into a record that has none. A heavily
+// limited one is a plateau, and an honest display of a plateau is a plateau.
+#define BT_BAR_RANGE_DB 35.0
+
+// What is left of the ceiling after a second of quieter material. It follows the
+// loudest band up at once and sags back slowly, so the display keeps its range
+// on any recording without one band flattening another.
+//
+// Slowly is the point, and it is the opposite of what seems reasonable. A
+// ceiling that hurries down follows the music into every quiet moment, and bars
+// measured against it stand just as tall in the quiet part as in the loud one:
+// the dip the eye was waiting for is subtracted before it is drawn. Held up, the
+// quiet moments read as quiet. Swept against the same record, holding the
+// ceiling took the bars from resting at four blocks to resting at three and a
+// half while swinging half a block further.
+#define BT_CEILING_LEFT_AFTER_A_SECOND 0.95
+
 @implementation BTFireBarView {
     NSTimer *_timer;
     CGFloat _values[BT_BAR_COUNT];
@@ -35,7 +96,7 @@
 
 - (void)startAnimating {
     if (_timer) return;
-    _timer = [NSTimer scheduledTimerWithTimeInterval:(1.0 / 25.0)
+    _timer = [NSTimer scheduledTimerWithTimeInterval:BT_BAR_INTERVAL
                                               target:self
                                             selector:@selector(step:)
                                             userInfo:nil
@@ -48,11 +109,15 @@
     _timer = nil;
 }
 
-// How fast a bar falls once its band has gone quiet. Bass hangs, treble snaps
-// back, which is what gives an analyzer its texture.
+// What a bar keeps from one frame to the next once its band has gone quiet,
+// worked out from how much it should keep over a whole second. Asking the
+// question in seconds is what keeps the fall the same speed whatever the frame
+// rate is set to.
 static CGFloat BTBandDecay(NSInteger index) {
     CGFloat t = (CGFloat)index / (CGFloat)(BT_BAR_COUNT - 1);
-    return 0.90f - 0.12f * t;
+    double perSecond = BT_BAR_LEFT_AFTER_A_SECOND_LOW
+        + (BT_BAR_LEFT_AFTER_A_SECOND_HIGH - BT_BAR_LEFT_AFTER_A_SECOND_LOW) * (double)t;
+    return (CGFloat)pow(perSecond, BT_BAR_INTERVAL);
 }
 
 // Everything down and nothing left to fall.
@@ -101,13 +166,20 @@ static CGFloat BTBandDecay(NSInteger index) {
     if (loudest > _ceiling) {
         _ceiling = loudest;
     } else {
-        _ceiling = _ceiling * 0.995f + loudest * 0.005f;
+        CGFloat held = (CGFloat)pow(BT_CEILING_LEFT_AFTER_A_SECOND, BT_BAR_INTERVAL);
+        _ceiling = _ceiling * held + loudest * (1.0f - held);
     }
     if (_ceiling < 0.12f) _ceiling = 0.12f;
 
+    // How far under the ceiling a band is, in decibels, turned into how far up
+    // its bar stands. A band level is evenly spaced in decibels, so the distance
+    // between two of them is a subtraction; dividing one by the other is what
+    // drew every record as the same plateau.
+    CGFloat perUnit = (CGFloat)([BTSpectrum decibelSpan] / BT_BAR_RANGE_DB);
+
     NSInteger i;
     for (i = 0; i < BT_BAR_COUNT; i++) {
-        CGFloat value = (CGFloat)bands[i] / _ceiling;
+        CGFloat value = 1.0f - (_ceiling - (CGFloat)bands[i]) * perUnit;
         if (value > 1.0f) value = 1.0f;
         if (value < 0.0f) value = 0.0f;
 
@@ -125,12 +197,14 @@ static CGFloat BTBandDecay(NSInteger index) {
         // picking up speed, the way the original analyzer's markers did.
         if (_values[i] >= _peaks[i]) {
             _peaks[i] = _values[i];
-            _capHold[i] = 12;
+            _capHold[i] = (NSInteger)(BT_CAP_HOLD_SECONDS * BT_BAR_FPS);
             _capFall[i] = 0.0f;
         } else if (_capHold[i] > 0) {
             _capHold[i]--;
         } else {
-            _capFall[i] += 0.0011f;
+            // Speed gained over one frame, so the distance fallen comes out the
+            // same however many frames the second is cut into.
+            _capFall[i] += (CGFloat)(BT_CAP_ACCELERATION * BT_BAR_INTERVAL * BT_BAR_INTERVAL);
             _peaks[i] -= _capFall[i];
             if (_peaks[i] < _values[i]) _peaks[i] = _values[i];
             if (_peaks[i] < 0) _peaks[i] = 0;

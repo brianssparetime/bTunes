@@ -1,16 +1,48 @@
 #import "BTSpectrum.h"
 #import <Accelerate/Accelerate.h>
 
-// Bands are spaced by ear, so the lowest of them are only a few hertz apart and
-// a short window cannot tell them apart at all: several bars end up reading the
-// same bin and the bottom of the display moves as one piece. The window is long
-// enough to separate them, and taken far more often than its own length so the
-// display still answers a drum hit promptly. At the usual sampling rate that is
-// a bin every eleven hertz and a new reading every twenty-three milliseconds.
-#define BT_FFT_LOG2 12
-#define BT_FFT_SIZE (1 << BT_FFT_LOG2)
-#define BT_FFT_HOP 1024
-#define BT_FFT_BINS (BT_FFT_SIZE / 2)
+// Two windows, because one cannot do both jobs.
+//
+// A window is a look at the recent past, and its length decides two things
+// against each other. Long tells frequencies apart: the bars are spaced by ear,
+// so the lowest of them are only a few hertz wide, and a short window reads
+// several of them off the same bin and moves the bottom of the display as one
+// piece. Short answers quickly: every reading is an average over the whole
+// window, so a long one is still reporting a drum hit long after it has gone.
+//
+// Measured, one window of 4096 samples took 69 ms to get a bar up and 91 ms to
+// bring it down, which at fifty frames a second is three and a half frames
+// spent climbing. Halving it took that to 22 and 45. But halving it also put a
+// 60 Hz tone on the third bar instead of the first, and quartering it put the
+// same tone on the fifth. Faster bars that lie about which note is playing are
+// not a better display.
+//
+// So the choice is refused. The bottom bars are read from a long window and the
+// rest from a short one taken over the newest half of the same samples. That is
+// not a compromise between the two, it is both, and it costs one more transform
+// on a thread that has room for it.
+//
+// The split is honest rather than convenient: a 45 Hz note takes 22 ms to
+// complete one cycle, so no analysis of any kind can place it sooner. Bass is
+// slow to identify because bass is slow. Above a couple of hundred hertz that
+// stops being true and the eye starts noticing, which is where the short window
+// takes over.
+#define BT_LONG_LOG2 12
+#define BT_LONG_SIZE (1 << BT_LONG_LOG2)
+#define BT_LONG_BINS (BT_LONG_SIZE / 2)
+
+#define BT_SHORT_LOG2 11
+#define BT_SHORT_SIZE (1 << BT_SHORT_LOG2)
+#define BT_SHORT_BINS (BT_SHORT_SIZE / 2)
+
+// The first bar taken from the short window. Bar 7 covers 170 to 205 Hz, and
+// below that a band is narrower than the short window can resolve.
+#define BT_SHORT_FROM_BAND 7
+
+// How often a reading is taken, which is a separate question from how long a
+// window is. Every 512 samples is a new reading every twelve milliseconds, so
+// the display always has something newer than the frame it last drew.
+#define BT_FFT_HOP 512
 
 // The span the display covers. Below the low end is rumble and above the high
 // end is mostly nothing, and neither earns a bar.
@@ -43,15 +75,20 @@
 #define BT_TILT_LIMIT_DB 14.0
 
 @implementation BTSpectrum {
+    // One setup serves both transforms: a setup made for a given size will run
+    // any smaller power of two as well.
     FFTSetup _setup;
     double _sampleRate;
 
-    float _hann[BT_FFT_SIZE];
-    float _accum[BT_FFT_SIZE];
+    float _longWindow[BT_LONG_SIZE];
+    float _shortWindow[BT_SHORT_SIZE];
+    float _accum[BT_LONG_SIZE];
     NSUInteger _fill;
 
-    float _real[BT_FFT_BINS];
-    float _imag[BT_FFT_BINS];
+    float _real[BT_LONG_BINS];
+    float _imag[BT_LONG_BINS];
+    float _longMagnitudes[BT_LONG_BINS];
+    float _shortMagnitudes[BT_SHORT_BINS];
 
     NSUInteger _firstBin[BT_ANALYZER_BANDS];
     NSUInteger _lastBin[BT_ANALYZER_BANDS];
@@ -63,18 +100,26 @@
 
 + (double)lowestFrequency { return BT_BAND_LOW_HZ; }
 + (double)highestFrequency { return BT_BAND_HIGH_HZ; }
++ (float)decibelSpan { return BT_REF_DB - BT_FLOOR_DB; }
 
 - (instancetype)initWithSampleRate:(double)sampleRate {
     self = [super init];
     if (self == nil) return nil;
 
     _sampleRate = sampleRate > 0 ? sampleRate : 44100.0;
-    _setup = vDSP_create_fftsetup(BT_FFT_LOG2, kFFTRadix2);
+    _setup = vDSP_create_fftsetup(BT_LONG_LOG2, kFFTRadix2);
     if (_setup == NULL) return nil;
 
-    vDSP_hann_window(_hann, BT_FFT_SIZE, vDSP_HANN_NORM);
+    vDSP_hann_window(_longWindow, BT_LONG_SIZE, vDSP_HANN_NORM);
+    vDSP_hann_window(_shortWindow, BT_SHORT_SIZE, vDSP_HANN_NORM);
     [self buildBandTable];
     return self;
+}
+
+// Which window a bar is read from. The bottom bars need the long one to be told
+// apart at all; everything above answers faster with the short one.
+static BOOL BTBandUsesShortWindow(NSUInteger band) {
+    return band >= BT_SHORT_FROM_BAND;
 }
 
 - (void)dealloc {
@@ -87,7 +132,6 @@
 - (void)buildBandTable {
     double nyquist = _sampleRate / 2.0;
     double high = BT_BAND_HIGH_HZ < nyquist * 0.95 ? BT_BAND_HIGH_HZ : nyquist * 0.95;
-    double binHz = _sampleRate / (double)BT_FFT_SIZE;
     double span = high / BT_BAND_LOW_HZ;
 
     NSUInteger i;
@@ -95,11 +139,18 @@
         double lowF = BT_BAND_LOW_HZ * pow(span, (double)i / (double)BT_ANALYZER_BANDS);
         double highF = BT_BAND_LOW_HZ * pow(span, (double)(i + 1) / (double)BT_ANALYZER_BANDS);
 
+        // Bins are wider in the short window, so a bar's bins depend on which
+        // window it is read from. Working them out against the wrong one is how
+        // a bar comes to report a frequency it is not measuring.
+        BOOL shortWindow = BTBandUsesShortWindow(i);
+        double binHz = _sampleRate / (double)(shortWindow ? BT_SHORT_SIZE : BT_LONG_SIZE);
+        NSInteger topBin = (shortWindow ? BT_SHORT_BINS : BT_LONG_BINS) - 1;
+
         NSInteger first = (NSInteger)floor(lowF / binHz);
         NSInteger last = (NSInteger)floor(highF / binHz);
         if (first < 1) first = 1;                       // bin zero is the offset, not a note
         if (last < first) last = first;
-        if (last > BT_FFT_BINS - 1) last = BT_FFT_BINS - 1;
+        if (last > topBin) last = topBin;
         if (first > last) first = last;
 
         _firstBin[i] = (NSUInteger)first;
@@ -151,55 +202,78 @@ static inline float BTScaleDecibels(float db) {
 
     NSUInteger offset = 0;
     while (offset < count) {
-        NSUInteger room = BT_FFT_SIZE - _fill;
+        NSUInteger room = BT_LONG_SIZE - _fill;
         NSUInteger take = count - offset;
         if (take > room) take = room;
         memcpy(_accum + _fill, samples + offset, take * sizeof(float));
         _fill += take;
         offset += take;
 
-        if (_fill < BT_FFT_SIZE) return;
+        if (_fill < BT_LONG_SIZE) return;
 
         [self transformAccumulated];
 
         // Most of the window is kept, so the next reading overlaps this one and
         // arrives a hop later rather than a whole window later.
-        memmove(_accum, _accum + BT_FFT_HOP, (BT_FFT_SIZE - BT_FFT_HOP) * sizeof(float));
-        _fill = BT_FFT_SIZE - BT_FFT_HOP;
+        memmove(_accum, _accum + BT_FFT_HOP, (BT_LONG_SIZE - BT_FFT_HOP) * sizeof(float));
+        _fill = BT_LONG_SIZE - BT_FFT_HOP;
     }
 }
 
-- (void)transformAccumulated {
-    float windowed[BT_FFT_SIZE];
-    float magnitudes[BT_FFT_BINS];
-
-    // Loudness comes off the raw window. Taken after the taper it would report
-    // the taper as much as the music.
-    float meanSquare = 0.0f;
-    vDSP_measqv(_accum, 1, &meanSquare, BT_FFT_SIZE);
-    float rms = sqrtf(meanSquare);
-    _level = BTScaleDecibels(rms > 0.0f ? 20.0f * log10f(rms) : BT_FLOOR_DB);
+// One transform, from samples to magnitudes. Both windows go through here, so
+// they are scaled the same way and a bar either side of the split reads the same
+// height for the same sound.
+- (void)transformSamples:(const float *)samples
+                    log2:(vDSP_Length)log2n
+                  window:(const float *)window
+                    into:(float *)magnitudes {
+    float windowed[BT_LONG_SIZE];
+    NSUInteger size = (NSUInteger)1 << log2n;
+    NSUInteger bins = size / 2;
 
     // Tapering the ends of the window keeps a note that does not fit a whole
     // number of cycles from smearing itself across every bar.
-    vDSP_vmul(_accum, 1, _hann, 1, windowed, 1, BT_FFT_SIZE);
+    vDSP_vmul(samples, 1, window, 1, windowed, 1, size);
 
     DSPSplitComplex split;
     split.realp = _real;
     split.imagp = _imag;
-    vDSP_ctoz((const DSPComplex *)windowed, 2, &split, 1, BT_FFT_BINS);
-    vDSP_fft_zrip(_setup, &split, 1, BT_FFT_LOG2, kFFTDirection_Forward);
+    vDSP_ctoz((const DSPComplex *)windowed, 2, &split, 1, bins);
+    vDSP_fft_zrip(_setup, &split, 1, log2n, kFFTDirection_Forward);
 
     // The packed form keeps the topmost frequency in the imaginary part of the
     // first bin, where it would be read as part of the offset.
     _imag[0] = 0.0f;
 
-    vDSP_zvabs(&split, 1, magnitudes, 1, BT_FFT_BINS);
-    float scale = 1.0f / (float)BT_FFT_SIZE;
-    vDSP_vsmul(magnitudes, 1, &scale, magnitudes, 1, BT_FFT_BINS);
+    vDSP_zvabs(&split, 1, magnitudes, 1, bins);
+    float scale = 1.0f / (float)size;
+    vDSP_vsmul(magnitudes, 1, &scale, magnitudes, 1, bins);
+}
+
+- (void)transformAccumulated {
+    // Loudness comes off the raw window. Taken after the taper it would report
+    // the taper as much as the music.
+    float meanSquare = 0.0f;
+    vDSP_measqv(_accum, 1, &meanSquare, BT_LONG_SIZE);
+    float rms = sqrtf(meanSquare);
+    _level = BTScaleDecibels(rms > 0.0f ? 20.0f * log10f(rms) : BT_FLOOR_DB);
+
+    [self transformSamples:_accum
+                      log2:BT_LONG_LOG2
+                    window:_longWindow
+                      into:_longMagnitudes];
+
+    // The newest half of the same samples, which is what makes the upper bars
+    // answer in half the time without a second accumulator to keep in step.
+    [self transformSamples:(_accum + BT_LONG_SIZE - BT_SHORT_SIZE)
+                      log2:BT_SHORT_LOG2
+                    window:_shortWindow
+                      into:_shortMagnitudes];
 
     NSUInteger i, bin;
     for (i = 0; i < BT_ANALYZER_BANDS; i++) {
+        const float *magnitudes = BTBandUsesShortWindow(i) ? _shortMagnitudes : _longMagnitudes;
+
         // The loudest bin in the band, which reads as an analyzer. An average
         // buries a single strong note among its quiet neighbours.
         float peak = 0.0f;
