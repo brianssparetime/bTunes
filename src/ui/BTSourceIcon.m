@@ -112,7 +112,11 @@ static NSBezierPath *BTPagePath(void) {
 
 // A little white slab with a wheel on it.
 + (void)drawIPod {
-    NSBezierPath *body = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(4.0, 0.5, 8, 15)
+    // Nine by fifteen rather than eight: the device is about three fifths as
+    // wide as it is tall, and a point narrower than that reads as a remote
+    // control. The screen and the wheel keep the size they had and stay on the
+    // middle, so the extra point becomes margin either side of them.
+    NSBezierPath *body = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(3.5, 0.5, 9, 15)
                                                          xRadius:1.7
                                                          yRadius:1.7];
     [[NSColor colorWithCalibratedWhite:0.97 alpha:1.0] set];
