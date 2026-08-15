@@ -2,13 +2,15 @@
 
 @class BTSourceList, BTPlaylist, BTIPod, BTAudioDisc;
 
-// The two rows that are not objects: the whole library, and the same songs in
-// the order iTunes recorded them being added.
+// The three rows that are not objects: the whole library, the same songs in
+// the order iTunes recorded them being added, and the place music comes over
+// from iTunes.
 //
 // Compared by pointer rather than by their words, so these are the constants to
 // test against and not equal strings written out again somewhere else.
 extern NSString *const BTLibrarySource;
 extern NSString *const BTRecentlyAddedSource;
+extern NSString *const BTITunesSyncSource;
 
 // The list holds three kinds of row: the library and its by-date view, a device,
 // and playlists. Anything reaching for a playlist's own members has to ask
@@ -22,11 +24,6 @@ BTPlaylist *BTPlaylistFromSource(id item);
 // window's business, which is the whole reason the chosen row is asked for here
 // rather than kept here.
 - (void)sourceListSelectionDidChange:(BTSourceList *)list;
-
-// A click that landed on the row already chosen, so no selection change
-// followed it. The window uses it to leave a pane standing in front of the
-// songs, which would otherwise sit there looking as though it had been answered.
-- (void)sourceListWasClicked:(BTSourceList *)list;
 
 // The delete key, in the list.
 - (void)sourceListDeletePressed:(BTSourceList *)list;

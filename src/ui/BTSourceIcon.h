@@ -13,7 +13,8 @@ typedef NS_ENUM(NSInteger, BTSourceIconKind) {
     BTSourceIconSmartPlaylist,
     BTSourceIconFolder,
     BTSourceIconIPod,
-    BTSourceIconDisc
+    BTSourceIconDisc,
+    BTSourceIconITunes
 };
 
 // Drawn at the size a row shows it rather than scaled down from something

@@ -154,6 +154,83 @@ static NSBezierPath *BTPagePath(void) {
     [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(7.1, 7.1, 1.8, 1.8)] fill];
 }
 
+// The green quaver pair from the iTunes 4 icon, standing on the disc it was
+// drawn over. Two heads joined by a beam rather than the one flagged note the
+// library and the playlists wear, because that pair is the shape being quoted
+// and it is what tells this row from those at a glance.
+//
+// The disc is a plain circle rather than the tilted, rainbowed one in the
+// original. An ellipse seen at an angle loses its roundness at sixteen points
+// and reads as a smudge under the note; a circle still reads as a disc.
++ (void)drawITunes {
+    NSColor *green = [NSColor colorWithCalibratedRed:0.408 green:0.690 blue:0.314 alpha:1.0];
+    NSColor *deep  = [NSColor colorWithCalibratedRed:0.180 green:0.360 blue:0.140 alpha:1.0];
+    NSColor *lit   = [NSColor colorWithCalibratedRed:0.549 green:0.831 blue:0.416 alpha:1.0];
+
+    NSBezierPath *disc = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.8, 12.0, 12.0)];
+    [[NSColor colorWithCalibratedWhite:0.86 alpha:1.0] set];
+    [disc fill];
+    [[NSColor colorWithCalibratedWhite:0.45 alpha:1.0] set];
+    [disc stroke];
+
+    [[NSColor colorWithCalibratedWhite:1.0 alpha:0.9] set];
+    NSBezierPath *sheen = [NSBezierPath bezierPath];
+    [sheen moveToPoint:NSMakePoint(2.6, 10.4)];
+    [sheen lineToPoint:NSMakePoint(5.6, 11.7)];
+    [sheen lineToPoint:NSMakePoint(8.0, 5.2)];
+    [sheen lineToPoint:NSMakePoint(5.6, 3.9)];
+    [sheen closePath];
+    [sheen fill];
+
+    [[NSColor colorWithCalibratedWhite:0.62 alpha:1.0] set];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(4.6, 4.9, 3.8, 3.8)] fill];
+    [[NSColor whiteColor] set];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5.9, 6.2, 1.2, 1.2)] fill];
+
+    // Each head is tilted about its own middle, the way a notehead is written.
+    NSRect headRects[2] = { NSMakeRect(3.6, 2.4, 4.7, 3.5), NSMakeRect(8.4, 3.8, 4.7, 3.5) };
+    NSBezierPath *heads[2];
+    NSUInteger i;
+    for (i = 0; i < 2; i++) {
+        NSRect r = headRects[i];
+        NSAffineTransform *tilt = [NSAffineTransform transform];
+        [tilt translateXBy:NSMidX(r) yBy:NSMidY(r)];
+        [tilt rotateByDegrees:-20.0];
+        [tilt translateXBy:-NSMidX(r) yBy:-NSMidY(r)];
+        heads[i] = [tilt transformBezierPath:[NSBezierPath bezierPathWithOvalInRect:r]];
+    }
+
+    NSBezierPath *stemA = [NSBezierPath bezierPathWithRect:NSMakeRect(7.0, 4.1, 1.3, 7.2)];
+    NSBezierPath *stemB = [NSBezierPath bezierPathWithRect:NSMakeRect(11.8, 5.5, 1.3, 7.2)];
+
+    NSBezierPath *beam = [NSBezierPath bezierPath];
+    [beam moveToPoint:NSMakePoint(7.0, 10.4)];
+    [beam lineToPoint:NSMakePoint(13.1, 12.2)];
+    [beam lineToPoint:NSMakePoint(13.1, 14.2)];
+    [beam lineToPoint:NSMakePoint(7.0, 12.4)];
+    [beam closePath];
+
+    // Filled one at a time. Overlapping subpaths inside a single path cancel
+    // where they cross, depending on which way round each was built.
+    NSBezierPath *parts[5] = { heads[0], heads[1], stemA, stemB, beam };
+    for (i = 0; i < 5; i++) {
+        [green set];
+        [parts[i] fill];
+        [deep set];
+        [parts[i] setLineWidth:0.6];
+        [parts[i] stroke];
+    }
+
+    // A lit edge along the top of the beam, which is where the light falls in
+    // the icon this quotes.
+    [lit set];
+    NSBezierPath *shine = [NSBezierPath bezierPath];
+    [shine moveToPoint:NSMakePoint(7.4, 12.5)];
+    [shine lineToPoint:NSMakePoint(12.8, 14.1)];
+    [shine setLineWidth:0.7];
+    [shine stroke];
+}
+
 // A clock face, since the list is about when rather than what.
 + (void)drawRecentlyAdded {
     NSBezierPath *face = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 15, 15)];
@@ -251,6 +328,7 @@ static NSBezierPath *BTPagePath(void) {
     switch (kind) {
         case BTSourceIconIPod:           [self drawIPod];             break;
         case BTSourceIconDisc:           [self drawDisc];             break;
+        case BTSourceIconITunes:         [self drawITunes];           break;
         case BTSourceIconRecentlyAdded:  [self drawRecentlyAdded];    break;
         case BTSourceIconLibrary:        [self drawLibrary];          break;
         case BTSourceIconFolder:         [self drawFolder];           break;

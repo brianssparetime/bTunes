@@ -14,7 +14,6 @@ void BTDrawGlyph(BTGlyph glyph, NSRect rect, NSColor *color) {
         case BTGlyphRepeatOne:   [BTStyle drawRepeatGlyphInRect:rect one:YES color:color]; break;
         case BTGlyphShrink:      [BTStyle drawShrinkGlyphInRect:rect color:color]; break;
         case BTGlyphEject:       [BTStyle drawEjectGlyphInRect:rect color:color]; break;
-        case BTGlyphSync:        [BTStyle drawSyncGlyphInRect:rect color:color]; break;
         case BTGlyphBurn:        [BTStyle drawBurnGlyphInRect:rect color:color]; break;
         case BTGlyphImport:      [BTStyle drawImportGlyphInRect:rect color:color]; break;
         case BTGlyphStop: {

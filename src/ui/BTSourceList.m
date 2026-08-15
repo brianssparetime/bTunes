@@ -14,6 +14,10 @@ NSString *const BTLibrarySource = @"Library";
 // added. Deliberately not the order BTunes learned of them, which for anything
 // a sync brings is one moment for thousands of songs and says nothing at all.
 NSString *const BTRecentlyAddedSource = @"Recently Added";
+// Where music comes over from iTunes. A row rather than a button, so it opens
+// and closes the way every other pane in the left bar does: it is put away by
+// picking something else, and by nothing else.
+NSString *const BTITunesSyncSource = @"iTunes Sync";
 
 BTPlaylist *BTPlaylistFromSource(id item) {
     return [item isKindOfClass:[BTPlaylist class]] ? (BTPlaylist *)item : nil;
@@ -81,7 +85,6 @@ BTPlaylist *BTPlaylistFromSource(id item) {
     [_outline setAllowsMultipleSelection:NO];
     [_outline setAllowsColumnSelection:NO];
     [_outline setTarget:self];
-    [_outline setAction:@selector(rowClicked:)];
     [_outline setDoubleAction:@selector(renameClickedPlaylist:)];
     [_outline registerForDraggedTypes:@[BTTrackPasteboardType, BTPlaylistPasteboardType]];
 
@@ -166,6 +169,8 @@ static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
         NSMutableArray *roots = [NSMutableArray arrayWithObject:BTLibrarySource];
         if (self.disc) [roots addObject:self.disc];
         [roots addObject:BTRecentlyAddedSource];
+        // Where songs come in from, under the two views of what is already here.
+        [roots addObject:BTITunesSyncSource];
         // The iPod sits under the library views, above the playlists.
         if (self.iPod) [roots addObject:self.iPod];
         [roots addObjectsFromArray:[self arranged:[BTLibrary sharedLibrary].playlists]];
@@ -309,6 +314,7 @@ static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
                        byItem:(id)item {
     if (item == BTLibrarySource) return @"Library";
     if (item == BTRecentlyAddedSource) return @"Recently Added";
+    if (item == BTITunesSyncSource) return @"iTunes Sync";
     if ([item isKindOfClass:[BTIPod class]]) return [(BTIPod *)item name];
     if ([item isKindOfClass:[BTAudioDisc class]]) return [(BTAudioDisc *)item name];
     return [(BTPlaylist *)item name];
@@ -326,13 +332,14 @@ static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
     [_delegate sourceList:self renamePlaylist:playlist to:object];
 }
 
-// Which of the seven marks a row wears. The only place that has to know what a
+// Which of the eight marks a row wears. The only place that has to know what a
 // source is; the drawing itself is told the kind.
 - (BTSourceIconKind)iconKindFor:(id)item {
     if ([item isKindOfClass:[BTIPod class]]) return BTSourceIconIPod;
     if ([item isKindOfClass:[BTAudioDisc class]]) return BTSourceIconDisc;
     if (item == BTRecentlyAddedSource) return BTSourceIconRecentlyAdded;
     if (item == BTLibrarySource) return BTSourceIconLibrary;
+    if (item == BTITunesSyncSource) return BTSourceIconITunes;
 
     BTPlaylist *playlist = BTPlaylistFromSource(item);
     if (playlist.kind == BTPlaylistKindFolder) return BTSourceIconFolder;
@@ -367,13 +374,6 @@ shouldEditTableColumn:(NSTableColumn *)tableColumn
 
 - (void)outlineViewSelectionDidChange:(NSNotification *)note {
     [_delegate sourceListSelectionDidChange:self];
-}
-
-// A click that lands on the row already selected sends no selection change, so
-// anything standing in front of the songs would sit there looking as though it
-// had been answered.
-- (void)rowClicked:(id)sender {
-    [_delegate sourceListWasClicked:self];
 }
 
 - (void)tableViewDeletePressed:(NSTableView *)tableView {

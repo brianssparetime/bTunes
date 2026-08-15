@@ -111,9 +111,7 @@ static CGFloat BTTitleBarHeight(void) {
     BTToggleButton *_shuffleButton;
     BTToggleButton *_repeatButton;
     BTToggleButton *_ejectButton;
-    BTToggleButton *_syncButton;
     BTITunesSyncView *_iTunesSyncView;
-    BOOL _showingITunesSync;
 
     id _selectedSource;              // BTLibrarySource or a BTPlaylist
     NSArray *_visibleTracks;
@@ -475,9 +473,10 @@ static CGFloat BTTitleBarHeight(void) {
     [_bottomBar setAutoresizingMask:(NSViewWidthSizable | NSViewMaxYMargin)];
     [content addSubview:_bottomBar];
 
-    // New playlist, shuffle, and repeat sit together at the bottom left.
+    // Making a playlist is the one thing at the bottom left, where the list it
+    // adds to is.
     CGFloat buttonWidth = 22.0;
-    CGFloat gap = 3.0;
+    CGFloat pitch = 26.0;         // a button and the air beside it
     CGFloat left = 6.0;
 
     BTToggleButton *add = [BTToggleButton buttonWithFrame:NSMakeRect(left, 2, buttonWidth, 20)
@@ -487,33 +486,28 @@ static CGFloat BTTitleBarHeight(void) {
     [add setToolTip:@"New playlist"];
     [_bottomBar addSubview:add];
 
-    _shuffleButton = [BTToggleButton buttonWithFrame:NSMakeRect(left + buttonWidth + gap, 2, buttonWidth, 20)
-                                               glyph:BTGlyphShuffle
-                                              target:self
-                                              action:@selector(toggleShuffle:)];
-    [_shuffleButton setToolTip:@"Shuffle"];
-    [_bottomBar addSubview:_shuffleButton];
-
-    _repeatButton = [BTToggleButton buttonWithFrame:NSMakeRect(left + (buttonWidth + gap) * 2, 2, buttonWidth, 20)
+    // Shuffle and repeat sit at the bottom right, which is where iTunes 4 keeps
+    // them. They are always there, so the pair never shifts about; the eject
+    // button appears to their left, where a gap costs nothing.
+    _repeatButton = [BTToggleButton buttonWithFrame:NSMakeRect(NSWidth(bounds) - 30, 2, buttonWidth, 20)
                                               glyph:BTGlyphRepeat
                                              target:self
                                              action:@selector(cycleRepeat:)];
     [_repeatButton setToolTip:@"Repeat"];
+    [_repeatButton setAutoresizingMask:NSViewMinXMargin];
     [_bottomBar addSubview:_repeatButton];
 
-    // Bringing music over from iTunes. Furthest right and always there, so it
-    // does not shift about as a device comes and goes.
-    _syncButton = [BTToggleButton buttonWithFrame:NSMakeRect(NSWidth(bounds) - 30, 2, buttonWidth, 20)
-                                            glyph:BTGlyphSync
-                                           target:self
-                                           action:@selector(showITunesSync:)];
-    [_syncButton setToolTip:@"Bring music over from iTunes"];
-    [_syncButton setAutoresizingMask:NSViewMinXMargin];
-    [_bottomBar addSubview:_syncButton];
+    _shuffleButton = [BTToggleButton buttonWithFrame:NSMakeRect(NSWidth(bounds) - 30 - pitch, 2,
+                                                                buttonWidth, 20)
+                                               glyph:BTGlyphShuffle
+                                              target:self
+                                              action:@selector(toggleShuffle:)];
+    [_shuffleButton setToolTip:@"Shuffle"];
+    [_shuffleButton setAutoresizingMask:NSViewMinXMargin];
+    [_bottomBar addSubview:_shuffleButton];
 
-    // The eject button sits beside it, and only appears while a device is
-    // attached.
-    _ejectButton = [BTToggleButton buttonWithFrame:NSMakeRect(NSWidth(bounds) - 56, 2, 22, 20)
+    // Only there while a device is attached.
+    _ejectButton = [BTToggleButton buttonWithFrame:NSMakeRect(NSWidth(bounds) - 30 - pitch * 2, 2, 22, 20)
                                              glyph:BTGlyphEject
                                             target:self
                                             action:@selector(ejectIPod:)];
@@ -680,20 +674,24 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     [[self window] setInitialFirstResponder:_trackTable];
 }
 
-// Selecting the iPod puts the sync pane where the browser and track list are.
-// Three things can occupy the right half: the songs, the iPod, or the iTunes
-// sync. Only one of them is put there at a time.
+// Both panes belong to a row in the left bar, so what the right half shows is
+// read off the selection rather than kept alongside it. Three things can occupy
+// it: the songs, the iPod, or the iTunes sync. Only one at a time.
+- (BOOL)showingITunesSync {
+    return _selectedSource == BTITunesSyncSource;
+}
+
 - (void)updateRightPane {
     NSArray *subviews = [_outerSplit subviews];
     if ([subviews count] != 2) return;
     NSView *current = [subviews objectAtIndex:1];
 
     NSView *wanted = _innerSplit;
-    if (_showingITunesSync) {
+    if ([self showingITunesSync]) {
         if (_iTunesSyncView == nil) {
             _iTunesSyncView = [[BTITunesSyncView alloc] initWithFrame:[current frame]];
             __weak BTMainWindowController *weakSelf = self;
-            _iTunesSyncView.didFinish = ^{ [weakSelf closeITunesSync]; };
+            _iTunesSyncView.didFinish = ^{ [weakSelf leaveITunesSync]; };
         }
         wanted = _iTunesSyncView;
     } else if ([_selectedSource isKindOfClass:[BTIPod class]]) {
@@ -709,27 +707,22 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     [_outerSplit adjustSubviews];
 }
 
-// The sync only ever occupies the right half, so picking anything on the left
-// leaves it by putting that source's songs back in its place.
+// The menu item picks the row, and everything that follows is what picking a
+// row does. There is one path in, so the pane cannot be shown with the left bar
+// pointing somewhere else.
 - (void)showITunesSync:(id)sender {
-    // The same button both ways: it opened the pane, so it puts it away and
-    // gives back whatever was being looked at before.
-    if (_showingITunesSync) {
-        [self closeITunesSync];
-        return;
-    }
-    _showingITunesSync = YES;
-    _syncButton.on = YES;
-    [self updateRightPane];
-    [_iTunesSyncView beginComparing];
+    [_sources selectSource:BTITunesSyncSource];
 }
 
-- (void)closeITunesSync {
-    if (!_showingITunesSync) return;
-    _showingITunesSync = NO;
-    _syncButton.on = NO;
-    [self updateRightPane];
-    [self reloadEverything];
+// The sync has run, so there is nothing left to look at. The library is what it
+// falls back to, chosen in the left bar rather than swapped in behind it: the
+// pane is the sync row's, and a pane put away while its row stayed lit would
+// leave the two disagreeing.
+- (void)leaveITunesSync {
+    if (![self showingITunesSync]) return;
+    // Picking the row is the whole of it: the selection change reloads the songs
+    // the sync just brought in, the same as any other row would.
+    [_sources selectSource:BTLibrarySource];
 }
 
 - (void)iPodChanged:(NSNotification *)note {
@@ -859,7 +852,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
         _actionIsImport = YES;
         _actionButton.glyph = BTGlyphImport;
         [_actionButton setToolTip:@"Import this CD"];
-    } else if ([BTBlankDisc present] && !_showingITunesSync) {
+    } else if ([BTBlankDisc present] && ![self showingITunesSync]) {
         // A blank disc is in, so a playlist that would actually fit can go on it.
         BTPlaylist *playlist = [_sources selectedPlaylist];
         if ([BTBurnPlan canBurnPlaylist:playlist] && ![BTBurnController isBusy]) {
@@ -1027,6 +1020,10 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     } else if (_selectedSource == BTRecentlyAddedSource) {
         source = BTRecentWasSelected;
     }
+    // The sync row is deliberately not among them, so it falls to the library.
+    // Coming back to it would read the whole iTunes library and compare it
+    // against this one before the window had finished opening, which is a
+    // minute of work nobody asked for by quitting with the pane up.
     [defaults setObject:source forKey:BTSelectedSourceKey];
 
     NSInteger row = [_trackTable selectedRow];
@@ -1222,8 +1219,6 @@ static void BTRedrawEverything(NSView *view) {
     id item = [list selectedSource];
     if (item == nil) item = BTLibrarySource;
     _selectedSource = item;
-    _showingITunesSync = NO;
-    _syncButton.on = NO;
 
     // Nothing is chosen in a list nobody has looked at yet. Left alone, the
     // selection stays on whatever row number it was and lands on an unrelated
@@ -1239,14 +1234,10 @@ static void BTRedrawEverything(NSView *view) {
     [_browser resetSelection];
     [self updateBrowserVisibility];
     [self updateRightPane];
+    // Reading the iTunes library is what the row is for, so picking it starts.
+    // Safe on a row picked twice: a comparison already running is left alone.
+    if ([self showingITunesSync]) [_iTunesSyncView beginComparing];
     [self reloadEverything];
-}
-
-// A click that landed on the row already chosen sends no selection change, so
-// the sync pane would sit there while the source list looked as though it had
-// been answered.
-- (void)sourceListWasClicked:(BTSourceList *)list {
-    if (_showingITunesSync) [self closeITunesSync];
 }
 
 - (void)sourceListDeletePressed:(BTSourceList *)list {
