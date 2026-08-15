@@ -53,6 +53,11 @@ static CGFloat BTLineHeightOf(NSFont *font) {
 + (CGFloat)listRowHeight    { return [self lineHeight] + 4.0; }
 + (CGFloat)sourceRowHeight  { return [self lineHeight] + 5.0; }
 
+// The heading strip over a list. In iTunes 4 the source pane's heading and the
+// track list's were one band running across the window, so both panes take this
+// number rather than whichever height the system happens to give a header.
++ (CGFloat)listHeaderHeight { return [self lineHeight] + 3.0; }
+
 + (CGFloat)labelHeight      { return [self lineHeight] + 5.0; }
 + (CGFloat)smallLabelHeight { return [self smallLineHeight] + 3.0; }
 // A field is its line plus the bezel drawn round it, which is why it is so much
@@ -87,6 +92,14 @@ static CGFloat BTLineHeightOf(NSFont *font) {
 // cut through the window rather than as the edge of the bar.
 + (NSColor *)chromeEdge      { return [NSColor colorWithCalibratedWhite:0.588 alpha:1.0]; }
 + (NSColor *)listBackground  { return [NSColor whiteColor]; }
+
+// The hairline standing between one column heading and the next, and the darker
+// rule closing the strip off from the rows under it.
++ (NSColor *)headerDivider   { return [NSColor colorWithCalibratedWhite:0.729 alpha:1.0]; }
++ (NSColor *)headerRule      { return [NSColor colorWithCalibratedWhite:0.400 alpha:1.0]; }
+// One word over the source pane, dimmed the way iTunes 4 dimmed it: the heading
+// names the pane rather than labelling anything in it.
++ (NSColor *)paneHeaderText  { return [NSColor colorWithCalibratedWhite:0.36 alpha:1.0]; }
 
 // Locked, not downloaded, holding one of those, or smart: one gray for all of
 // them for now. The same gray the track list already uses for a song that
@@ -166,6 +179,66 @@ static NSColor *BTSourcePurple(void) {
 + (void)drawVerticalGradientInRect:(NSRect)rect from:(NSColor *)top to:(NSColor *)bottom {
     NSGradient *g = [[NSGradient alloc] initWithStartingColor:bottom endingColor:top];
     [g drawInRect:rect angle:90.0];
+}
+
+// A gradient given in the order it is read, topmost band first. Written this way
+// because both headings below were measured off a screenshot a row at a time
+// from the top, and a list that has to be reversed to be used is a list that
+// will be reversed wrongly one day.
+//
+// Which angle puts the first band on top depends on which way up the context is,
+// so the context is asked. A header view is flipped and an image is not, and a
+// heading built for one comes out lit from underneath in the other.
+static void BTDrawBandsDownRect(NSRect rect, const CGFloat *whites,
+                                const CGFloat *stops, NSUInteger count) {
+    NSMutableArray *colors = [NSMutableArray arrayWithCapacity:count];
+    CGFloat *locations = malloc(sizeof(CGFloat) * count);
+    NSUInteger i;
+    for (i = 0; i < count; i++) {
+        [colors addObject:[NSColor colorWithCalibratedWhite:(whites[i] / 255.0) alpha:1.0]];
+        locations[i] = stops[i];
+    }
+    NSGradient *g = [[NSGradient alloc] initWithColors:colors
+                                           atLocations:locations
+                                            colorSpace:[NSColorSpace genericRGBColorSpace]];
+    free(locations);
+    [g drawInRect:rect angle:([[NSGraphicsContext currentContext] isFlipped] ? 90.0 : 270.0)];
+}
+
+// The rule closing a heading off from the rows under it, on whichever edge is
+// the lower one here.
+static void BTDrawHeaderRule(NSRect rect, NSColor *color) {
+    CGFloat y = [[NSGraphicsContext currentContext] isFlipped] ? NSMaxY(rect) - 1.0
+                                                               : NSMinY(rect);
+    [color set];
+    NSRectFill(NSMakeRect(NSMinX(rect), y, NSWidth(rect), 1.0));
+}
+
+// The heading over the track list, and over the browser's three columns.
+//
+// Not a gradient in one direction: it is bright at the top and bright again at
+// the bottom, dipping to a light gray across the middle, which is what makes it
+// read as a slightly dished strip rather than a flat band. Measured off the
+// iTunes 3 screenshot, which is a PNG and therefore says what the pixels were
+// rather than what a JPEG made of them.
++ (void)drawListHeaderInRect:(NSRect)rect {
+    static const CGFloat whites[] = {255, 249, 242, 240, 232, 236, 247, 254, 255};
+    static const CGFloat stops[]  = {0.00, 0.07, 0.21, 0.43, 0.50, 0.57, 0.79, 0.93, 1.00};
+    BTDrawBandsDownRect(rect, whites, stops, sizeof(stops) / sizeof(stops[0]));
+    BTDrawHeaderRule(rect, [self headerRule]);
+}
+
+// The heading over the source pane, which is a different thing and was drawn as
+// one: a plain gradient falling from light gray to dark, with no dish in it. Its
+// job is to cap the pane, where the track list's is to head columns.
++ (void)drawPaneHeaderInRect:(NSRect)rect {
+    // The dark end lands just above the bottom rather than on it. Put at the
+    // very bottom it is drawn and then covered by the rule, so the gradient
+    // stops several shades short of where it was measured to finish.
+    static const CGFloat whites[] = {229, 227, 132, 132};
+    static const CGFloat stops[]  = {0.00, 0.08, 0.94, 1.00};
+    BTDrawBandsDownRect(rect, whites, stops, sizeof(stops) / sizeof(stops[0]));
+    BTDrawHeaderRule(rect, [NSColor colorWithCalibratedWhite:0.424 alpha:1.0]);
 }
 
 // A faint brushed grain, built once and tiled. Horizontal runs of the same

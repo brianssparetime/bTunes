@@ -412,7 +412,110 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list) {
 // lives; what cannot be shared is the hooking up. The two must stay in step,
 // and they are kept side by side so that is easy to see.
 
+@implementation BTHeaderCell
+
+// The strip, then the division, then the words. The system's own bezel is
+// skipped entirely; what is kept is its placing of the title, which is what
+// drawInteriorWithFrame: does and is the one part worth inheriting.
+- (void)drawWithFrame:(NSRect)frame inView:(NSView *)view {
+    [BTStyle drawListHeaderInRect:frame];
+
+    // Standing between this heading and the next, so it is drawn on the trailing
+    // edge and the leading edge is left to whatever is on the other side. It
+    // stops short of the rule closing the strip, which is the darker line and
+    // should not have a lighter pixel punched through it once per column.
+    BOOL flipped = [view isFlipped];
+    [[BTStyle headerDivider] set];
+    NSRectFill(NSMakeRect(NSMaxX(frame) - 1.0, NSMinY(frame) + (flipped ? 0.0 : 1.0),
+                          1.0, NSHeight(frame) - 1.0));
+
+    // Held off the division rather than pressed against it. The full height is
+    // handed over on purpose: a cell centres its line in the rect it is given,
+    // and placing the line by hand fights the centring already there.
+    [self drawInteriorWithFrame:NSInsetRect(frame, 4.0, 0.0) inView:view];
+}
+
+@end
+
+@implementation BTHeaderView
+
+// Drawn here rather than left to the system, because the system fills the space
+// past the last column itself and would fill it flat.
+- (void)drawRect:(NSRect)dirtyRect {
+    [BTStyle drawListHeaderInRect:[self bounds]];
+
+    NSTableView *table = [self tableView];
+    NSArray *columns = [table tableColumns];
+    NSInteger i;
+    for (i = 0; i < (NSInteger)[columns count]; i++) {
+        NSRect frame = [self headerRectOfColumn:i];
+        if (NSIsEmptyRect(frame) || !NSIntersectsRect(frame, dirtyRect)) continue;
+        [[[columns objectAtIndex:i] headerCell] drawWithFrame:frame inView:self];
+    }
+}
+
+@end
+
+@implementation BTPaneHeaderView
+
+- (void)drawRect:(NSRect)dirtyRect {
+    NSRect bounds = [self bounds];
+    [BTStyle drawPaneHeaderInRect:bounds];
+    if ([self.title length] == 0) return;
+
+    NSMutableParagraphStyle *centred = [[NSMutableParagraphStyle alloc] init];
+    [centred setAlignment:NSCenterTextAlignment];
+    [centred setLineBreakMode:NSLineBreakByTruncatingTail];
+    NSDictionary *attrs = @{NSFontAttributeName: [BTStyle uiFont],
+                            NSForegroundColorAttributeName: [BTStyle paneHeaderText],
+                            NSParagraphStyleAttributeName: centred};
+
+    // A band exactly one line tall, centred in the strip. Handed the whole
+    // height instead, the word rides high by the slack between the two.
+    CGFloat line = [BTStyle lineHeight];
+    NSRect band = NSMakeRect(NSMinX(bounds) + 4.0, NSMidY(bounds) - line / 2.0,
+                             NSWidth(bounds) - 8.0, line);
+    [self.title drawInRect:band withAttributes:attrs];
+}
+
+// Nothing here is a column heading, so nothing here is draggable, resizable, or
+// worth a sort.
+- (void)mouseDown:(NSEvent *)event { (void)event; }
+- (NSMenu *)menuForEvent:(NSEvent *)event { (void)event; return nil; }
+
+@end
+
+// Every column arrives with a plain heading cell carrying its title. The title,
+// the face and the alignment are what the caller decided; the shading is not, so
+// the cell is replaced and those three are carried across. Shared by the two
+// list classes, which cannot inherit from one another.
+static void BTGiveColumnItsHeading(NSTableColumn *column) {
+    NSCell *old = [column headerCell];
+    NSString *title = [old stringValue] ? [old stringValue] : @"";
+    BTHeaderCell *cell = [[BTHeaderCell alloc] initTextCell:title];
+    [cell setFont:[old font] ? [old font] : [BTStyle uiFont]];
+    [cell setAlignment:[old alignment]];
+    [column setHeaderCell:cell];
+}
+
+// The strip, at the one height both panes of the main window use.
+static NSTableHeaderView *BTNewListHeaderView(void) {
+    return [[BTHeaderView alloc] initWithFrame:
+        NSMakeRect(0, 0, 100, [BTStyle listHeaderHeight])];
+}
+
 @implementation BTListTableView
+
+- (id)initWithFrame:(NSRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) [self setHeaderView:BTNewListHeaderView()];
+    return self;
+}
+
+- (void)addTableColumn:(NSTableColumn *)column {
+    BTGiveColumnItsHeading(column);
+    [super addTableColumn:column];
+}
 
 - (void)highlightSelectionInClipRect:(NSRect)clipRect {
     BTDrawListSelection(self, clipRect);
@@ -442,6 +545,17 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list) {
 @end
 
 @implementation BTListOutlineView
+
+- (id)initWithFrame:(NSRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) [self setHeaderView:BTNewListHeaderView()];
+    return self;
+}
+
+- (void)addTableColumn:(NSTableColumn *)column {
+    BTGiveColumnItsHeading(column);
+    [super addTableColumn:column];
+}
 
 - (void)highlightSelectionInClipRect:(NSRect)clipRect {
     BTDrawListSelection(self, clipRect);

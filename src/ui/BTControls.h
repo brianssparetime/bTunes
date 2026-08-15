@@ -96,8 +96,30 @@ void BTNoteListFocusChanged(void);
 // YES when the key was claimed.
 BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list);
 
+// One column's heading. The system draws a flat strip; this one is dished the
+// way iTunes 4's was, with a hairline standing between it and the next column.
+@interface BTHeaderCell : NSTableHeaderCell
+@end
+
+// The strip the headings sit on, so the space past the last column is shaded
+// with them rather than left to the system. Without it the heading stops
+// wherever the columns happen to end and flat gray runs on to the window edge.
+@interface BTHeaderView : NSTableHeaderView
+@end
+
+// The source pane's heading, which names the pane instead of heading columns:
+// one dimmed word centred on a darker gradient, and nothing to click.
+@interface BTPaneHeaderView : NSTableHeaderView
+@property (nonatomic, copy) NSString *title;
+@end
+
 // A list that draws its own selection, so every pane highlights the same colour
 // instead of the focused one being blue and the rest gray.
+//
+// Every column added to one of these gets the heading above, and the list gets
+// the strip to put them on. Done here rather than at each of the four places a
+// column is made, so a column added later cannot come out in the system's
+// shading beside the others.
 @interface BTListTableView : NSTableView
 @end
 

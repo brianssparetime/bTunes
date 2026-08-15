@@ -15,11 +15,6 @@ NSString *const BTLibrarySource = @"Library";
 // a sync brings is one moment for thousands of songs and says nothing at all.
 NSString *const BTRecentlyAddedSource = @"Recently Added";
 
-// Air above the first row, taken inside the list rather than between the panels.
-// A gap between them exposes the window's own background as a band of flat gray
-// running across the window.
-#define BT_SOURCE_TOP_INSET 6.0
-
 BTPlaylist *BTPlaylistFromSource(id item) {
     return [item isKindOfClass:[BTPlaylist class]] ? (BTPlaylist *)item : nil;
 }
@@ -52,8 +47,10 @@ BTPlaylist *BTPlaylistFromSource(id item) {
     [_scroll setDrawsBackground:YES];
     [_scroll setBackgroundColor:[BTStyle listBackground]];
     [_scroll setFocusRingType:NSFocusRingTypeNone];
+    // No inset above the first row. The air there used to stand in for the
+    // heading this pane did not have; a content inset moves the heading down
+    // with everything else, which left it two points below the one beside it.
     [_scroll setAutomaticallyAdjustsContentInsets:NO];
-    [_scroll setContentInsets:NSEdgeInsetsMake(BT_SOURCE_TOP_INSET, 0, 0, 0)];
 
     _outline = [[BTKeyOutlineView alloc] initWithFrame:[[_scroll contentView] bounds]];
     [_outline setFocusRingType:NSFocusRingTypeNone];
@@ -68,7 +65,12 @@ BTPlaylist *BTPlaylistFromSource(id item) {
     [column setDataCell:cell];
     [_outline addTableColumn:column];
     [_outline setOutlineTableColumn:column];
-    [_outline setHeaderView:nil];
+    // The pane is capped by its own name, at the height the track list's
+    // headings take, so the two read as one band across the window.
+    BTPaneHeaderView *header = [[BTPaneHeaderView alloc]
+        initWithFrame:NSMakeRect(0, 0, 170, [BTStyle listHeaderHeight])];
+    header.title = @"Source";
+    [_outline setHeaderView:header];
     [_outline setRowHeight:[BTStyle sourceRowHeight]];
     // Half a mark, not a whole one. A step the width of the icon puts a
     // playlist's mark clear of the folder's, and the pair stop reading as one

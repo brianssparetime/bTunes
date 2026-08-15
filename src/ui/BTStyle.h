@@ -49,6 +49,11 @@ static inline BOOL BTSameString(NSString *a, NSString *b) {
 
 // The frame a caption needs, and the frame a control needs. A control is taller
 // than its words because it draws a border and a background around them.
+// The heading strip over a list. Both panes take this rather than the system's
+// own header height, because in iTunes 4 the source pane's heading and the track
+// list's were one band running across the window.
++ (CGFloat)listHeaderHeight;
+
 + (CGFloat)labelHeight;
 + (CGFloat)smallLabelHeight;
 + (CGFloat)fieldHeight;         // text field, popup button
@@ -91,6 +96,12 @@ static inline BOOL BTSameString(NSString *a, NSString *b) {
 + (NSColor *)listBackground;
 + (NSColor *)selection;
 
+// The hairline between one column heading and the next, the darker rule closing
+// a heading off from its rows, and the dimmed word over the source pane.
++ (NSColor *)headerDivider;
++ (NSColor *)headerRule;
++ (NSColor *)paneHeaderText;
+
 // The small gray note: what a field means, what a length is, what is checked.
 // Secondary to whatever it sits under, and the same gray wherever it appears,
 // which it was not: three files wrote it out and one of them had drifted.
@@ -108,6 +119,15 @@ static inline BOOL BTSameString(NSString *a, NSString *b) {
 + (NSColor *)displayText;
 
 + (void)drawVerticalGradientInRect:(NSRect)rect from:(NSColor *)top to:(NSColor *)bottom;
+
+// The two headings, which are not the same shading and were not in 2003. Over
+// columns it is a near-white strip dished across the middle, bright along both
+// edges; over the source pane it is a plain fall from light gray to dark. Both
+// close with a rule along their lower edge, whichever edge that is in the
+// context they are handed.
++ (void)drawListHeaderInRect:(NSRect)rect;
++ (void)drawPaneHeaderInRect:(NSRect)rect;
+
 + (void)drawChromeInRect:(NSRect)rect;
 + (void)drawSunkenBezelInRect:(NSRect)rect radius:(CGFloat)radius fill:(NSColor *)fill;
 // The recessed channel the volume knob rides in. Left unfilled on purpose: the

@@ -21,6 +21,7 @@ tools/local/
 # Private notes and specifications. These name machines and describe the
 # household setup, so they stay out.
 design_docs/
+btunes-todo.txt
 *.plan.md
 handoff*.md
 
