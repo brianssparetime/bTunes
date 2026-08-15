@@ -189,14 +189,27 @@ static CGFloat BTBandDecay(NSInteger index) {
             NSRectFill(NSMakeRect(x, 1 + (CGFloat)b * (blockHeight + blockGap), barWidth, blockHeight));
         }
 
-        // The cap floats a block clear of the bar so it reads as a marker
-        // rather than as the top of the bar itself.
-        NSInteger peakBlock = (NSInteger)(_peaks[i] * (CGFloat)blocks + 0.5f) - 1;
-        if (peakBlock > lit - 1) peakBlock = lit;
-        if (peakBlock > 0 && peakBlock < blocks) {
-            [[NSColor colorWithCalibratedWhite:0.90 alpha:1.0] set];
-            NSRectFill(NSMakeRect(x, 1 + (CGFloat)peakBlock * (blockHeight + blockGap),
-                                  barWidth, blockHeight));
+        // The cap floats clear of the bar and comes down in its own time, which
+        // is the whole of what a peak marker is for: the bar answers the music
+        // and the cap remembers where it got to.
+        //
+        // Clear of it in one direction only. Pushed up out of the bar when the
+        // two are level, and left alone when it is already above, since above is
+        // where it spends its time and dragging it back down to the bar is
+        // exactly what a peak marker must not do. Written the other way round it
+        // did both: the cap was pinned one block over the bar however far the
+        // bar had fallen, and while the bar was rising the cap painted its top
+        // block white, which is why the bars wore white tips instead of showing
+        // the red they had climbed to.
+        if (_peaks[i] > 0.0f) {
+            NSInteger peakBlock = (NSInteger)(_peaks[i] * (CGFloat)blocks + 0.5f) - 1;
+            if (peakBlock < lit) peakBlock = lit;
+            if (peakBlock > blocks - 1) peakBlock = blocks - 1;
+            if (peakBlock >= 0) {
+                [[NSColor colorWithCalibratedWhite:0.90 alpha:1.0] set];
+                NSRectFill(NSMakeRect(x, 1 + (CGFloat)peakBlock * (blockHeight + blockGap),
+                                      barWidth, blockHeight));
+            }
         }
     }
 }

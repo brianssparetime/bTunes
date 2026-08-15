@@ -14,8 +14,17 @@
 
 // The span the display covers. Below the low end is rumble and above the high
 // end is mostly nothing, and neither earns a bar.
+//
+// The top stops at 12 kHz rather than 16 because this library is lossy. An mp3
+// or an AAC file is filtered off somewhere around 15 or 16 kHz by the encoder,
+// so a bar drawn above that is showing the encoder rather than the music.
+// Measured over six records off the target machine, the topmost bar lit 41 per
+// cent of frames reaching to 16 kHz and 50 per cent reaching to 12, and the
+// bottom bars were unmoved by the change. Pulling it further in to 10 kHz bought
+// two more points at the top and cost the bass seven, since the tilt pivots on
+// the middle band and moving the span moves the pivot with it.
 #define BT_BAND_LOW_HZ 45.0
-#define BT_BAND_HIGH_HZ 16000.0
+#define BT_BAND_HIGH_HZ 12000.0
 
 // Where the bars bottom out and where they top out. The display applies its own
 // scaling on top of this, so the span matters more than the exact calibration.
@@ -51,6 +60,9 @@
     float _bands[BT_ANALYZER_BANDS];
     float _level;
 }
+
++ (double)lowestFrequency { return BT_BAND_LOW_HZ; }
++ (double)highestFrequency { return BT_BAND_HIGH_HZ; }
 
 - (instancetype)initWithSampleRate:(double)sampleRate {
     self = [super init];

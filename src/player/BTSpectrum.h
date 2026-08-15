@@ -13,6 +13,14 @@
 // a great deal more than that to fix it.
 @interface BTSpectrum : NSObject
 
+// The span the bars cover, lowest bar first. Asked rather than written down
+// again, because anything working out which bar a frequency belongs on needs
+// exactly these two numbers and a copy of them goes stale the moment the span
+// moves. The top is the span's nominal end; a recording sampled too slowly to
+// reach it is measured to its own limit instead.
++ (double)lowestFrequency;
++ (double)highestFrequency;
+
 - (instancetype)initWithSampleRate:(double)sampleRate;
 
 // Mono samples, in whatever lengths the render thread supplies them. Cheap

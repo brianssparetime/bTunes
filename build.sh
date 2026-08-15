@@ -91,7 +91,14 @@ if [ "$BUILD_TOOLS" -eq 1 ]; then
 
     # These live in tools/local, which belongs to the machine rather than to the
     # project. Building them is optional and quietly skipped when they are absent.
-    for tool in bt-import smoke_test spectrum_check detune_check; do
+    #
+    # The standing suite is not among them. It reaches into the burn and the disc
+    # as well as the model, so it needs include paths this loop does not carry,
+    # and tools/local/smoke_test.sh builds it with them. Naming it here stopped
+    # the loop on its first failure and left every tool after it unbuilt, which
+    # is worse than not building it: the tools that did exist were stale and said
+    # nothing about it.
+    for tool in bt-import spectrum_check detune_check band_usage; do
         if [ ! -f "$SCRIPT_DIR/tools/local/$tool.m" ]; then
             echo "    skipping $tool, not present"
             continue
