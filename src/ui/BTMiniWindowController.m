@@ -57,6 +57,12 @@ static NSColor *BTMiniLamp(void)        { return [NSColor colorWithCalibratedRed
 #define BT_BUTTON_GAP        2.0
 #define BT_BUTTON_COUNT      4       // back, play, stop, forward
 #define BT_TOGGLE_RIGHT      255.0    // the position bar ends level with this
+
+// The purple rule that runs round the empty band the controls leave at the
+// edges: four points in from the sides and the bottom, which is the middle of
+// that band, and level with the middle of the gap under the title bar.
+#define BT_RULE_INSET        4.0
+#define BT_RULE_TOP          19.0
 // Small enough that its top edge clears the volume row above it.
 #define BT_LOGO_SIDE         34.0
 
@@ -418,6 +424,16 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
     BTDrawRibbon(NSMakeRect(24, NSMidY(title) - 3, nameX - 30, 6));
     BTDrawRibbon(NSMakeRect(nameX + nameSize.width + 6, NSMidY(title) - 3,
                             NSWidth(bounds) - (nameX + nameSize.width) - 44, 6));
+
+    // A rule round the border the controls leave empty, in the purple the
+    // ribbons beside the name are stacked from. One line, drawn on whole
+    // pixels: the ribbon is that purple six points deep, and the border wants
+    // the thinnest mark the same colour can make.
+    NSRect rule = NSMakeRect(BT_RULE_INSET, BT_RULE_INSET,
+                             NSWidth(bounds) - BT_RULE_INSET * 2,
+                             BT_MINI_HEIGHT - BT_RULE_TOP - BT_RULE_INSET);
+    [BTMiniPurple() set];
+    NSFrameRect(rule);
 
     // A groove down either side of the transport cluster and along under it,
     // open at the top where the position bar already draws an edge of its own.
