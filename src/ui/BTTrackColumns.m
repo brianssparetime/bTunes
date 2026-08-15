@@ -168,8 +168,14 @@ void BTAddTrackColumns(NSTableView *table) {
         if ([spec->identifier isEqualToString:@"playing"]) mask = 0;
         [column setResizingMask:mask];
 
-        NSTextFieldCell *cell = spec->isPosition ? [[BTTrackNumberCell alloc] init]
-                                                 : [[NSTextFieldCell alloc] init];
+        NSTextFieldCell *cell;
+        if (spec->isPosition) {
+            cell = [[BTTrackNumberCell alloc] init];
+        } else if (spec->counts) {
+            cell = [[BTNumberCell alloc] init];
+        } else {
+            cell = [[NSTextFieldCell alloc] init];
+        }
         [cell setFont:[BTStyle uiFont]];
         // Truncated with an ellipsis rather than clipped: a clipped cell cuts
         // mid-word and reads as though the tag itself is broken.

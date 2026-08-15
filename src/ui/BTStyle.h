@@ -131,6 +131,10 @@
                      enabled:(BOOL)enabled
                    isDefault:(BOOL)isDefault;
 
+// The triangle beside a folder: pointing right while it is shut, down while it
+// is open.
++ (void)drawDisclosureInRect:(NSRect)rect open:(BOOL)open color:(NSColor *)color;
+
 // Glyphs, drawn as paths so they stay crisp at any size and need no image files.
 + (void)drawPlayGlyphInRect:(NSRect)rect color:(NSColor *)color;
 + (void)drawPauseGlyphInRect:(NSRect)rect color:(NSColor *)color;

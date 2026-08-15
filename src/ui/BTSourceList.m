@@ -70,7 +70,10 @@ BTPlaylist *BTPlaylistFromSource(id item) {
     [_outline setOutlineTableColumn:column];
     [_outline setHeaderView:nil];
     [_outline setRowHeight:[BTStyle sourceRowHeight]];
-    [_outline setIndentationPerLevel:14.0];
+    // Half a mark, not a whole one. A step the width of the icon puts a
+    // playlist's mark clear of the folder's, and the pair stop reading as one
+    // thing inside another; overlapping them by half says held by at a glance.
+    [_outline setIndentationPerLevel:8.0];
     [_outline setDataSource:self];
     [_outline setDelegate:self];
     [_outline setAllowsMultipleSelection:NO];

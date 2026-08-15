@@ -1,31 +1,134 @@
 #import "BTSourceIcon.h"
 #import "BTStyle.h"
 
-// A row's mark is fourteen points square, and every coordinate below is written
+// A row's mark is sixteen points square, and every coordinate below is written
 // inside that square.
-#define BT_SOURCE_ICON_SIDE 14.0
+#define BT_SOURCE_ICON_SIDE 16.0
+
+// A colour washed out until it can sit behind ink, and the same colour taken
+// down until it can be ink. One mark is built from all three weights, so a
+// playlist and a smart playlist differ in hue and in nothing else.
+static NSColor *BTPaleTint(NSColor *colour) {
+    return [colour blendedColorWithFraction:0.82 ofColor:[NSColor whiteColor]];
+}
+
+static NSColor *BTDeepTint(NSColor *colour) {
+    return [colour blendedColorWithFraction:0.40 ofColor:[NSColor blackColor]];
+}
+
+// A quaver, written in a nine by twelve box and fitted to whatever rect it is
+// given: head at the bottom left, stem up the right of it, flag off the top.
+//
+// Filled as three shapes rather than one. A head, a stem and a flag that
+// overlap can cancel one another out inside a single path, since which way
+// round each subpath was built decides whether the overlap counts twice or not
+// at all.
+static void BTDrawNoteInRect(NSRect box) {
+    CGFloat scale = MIN(NSWidth(box) / 9.0, NSHeight(box) / 12.0);
+    NSAffineTransform *place = [NSAffineTransform transform];
+    [place translateXBy:NSMinX(box) + (NSWidth(box) - 9.0 * scale) / 2.0
+                    yBy:NSMinY(box) + (NSHeight(box) - 12.0 * scale) / 2.0];
+    [place scaleBy:scale];
+
+    // Tilted, the way a notehead is written. Upright it reads as a full stop
+    // with a line beside it.
+    NSAffineTransform *tilt = [NSAffineTransform transform];
+    [tilt translateXBy:2.9 yBy:2.0];
+    [tilt rotateByDegrees:-20.0];
+    [tilt translateXBy:-2.9 yBy:-2.0];
+    NSBezierPath *head = [tilt transformBezierPath:
+        [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.0, 0.0, 5.8, 4.0)]];
+
+    NSBezierPath *stem = [NSBezierPath bezierPathWithRect:NSMakeRect(4.4, 2.4, 1.4, 9.6)];
+
+    NSBezierPath *flag = [NSBezierPath bezierPath];
+    [flag moveToPoint:NSMakePoint(5.8, 12.0)];
+    [flag curveToPoint:NSMakePoint(8.8, 6.4)
+         controlPoint1:NSMakePoint(8.6, 11.3)
+         controlPoint2:NSMakePoint(9.2, 8.6)];
+    [flag curveToPoint:NSMakePoint(5.8, 9.2)
+         controlPoint1:NSMakePoint(8.2, 8.8)
+         controlPoint2:NSMakePoint(7.2, 9.2)];
+    [flag closePath];
+
+    [[place transformBezierPath:head] fill];
+    [[place transformBezierPath:stem] fill];
+    [[place transformBezierPath:flag] fill];
+}
+
+static NSPoint BTPolar(NSPoint centre, CGFloat radius, CGFloat angle) {
+    return NSMakePoint(centre.x + radius * cos(angle), centre.y + radius * sin(angle));
+}
+
+// A cogwheel: eight square teeth and a hole through the middle. The hole is cut
+// by the even-odd rule rather than by drawing the hub the other way round, so it
+// is a hole whichever way the oval happens to be built.
+static NSBezierPath *BTGearPath(NSPoint centre, CGFloat radius) {
+    const NSInteger teeth = 8;
+    CGFloat step = 2.0 * M_PI / teeth;
+    CGFloat root = radius * 0.68;
+
+    NSBezierPath *gear = [NSBezierPath bezierPath];
+    NSInteger i;
+    for (i = 0; i < teeth; i++) {
+        CGFloat a = i * step;
+        NSPoint tipStart  = BTPolar(centre, radius, a - 0.30 * step);
+        NSPoint tipEnd    = BTPolar(centre, radius, a + 0.30 * step);
+        NSPoint rootStart = BTPolar(centre, root,   a + 0.42 * step);
+        NSPoint rootEnd   = BTPolar(centre, root,   a + 0.58 * step);
+        if (i == 0) {
+            [gear moveToPoint:tipStart];
+        } else {
+            [gear lineToPoint:tipStart];
+        }
+        [gear lineToPoint:tipEnd];
+        [gear lineToPoint:rootStart];
+        [gear lineToPoint:rootEnd];
+    }
+    [gear closePath];
+
+    CGFloat hub = radius * 0.32;
+    [gear appendBezierPathWithOvalInRect:NSMakeRect(centre.x - hub, centre.y - hub, hub * 2, hub * 2)];
+    [gear setWindingRule:NSEvenOddWindingRule];
+    return gear;
+}
+
+// A sheet with its top right corner cut away, which is what says page at a size
+// too small for a fold.
+static NSBezierPath *BTPagePath(void) {
+    NSBezierPath *page = [NSBezierPath bezierPath];
+    [page moveToPoint:NSMakePoint(1.5, 0.5)];
+    [page lineToPoint:NSMakePoint(14.5, 0.5)];
+    [page lineToPoint:NSMakePoint(14.5, 12.0)];
+    [page lineToPoint:NSMakePoint(11.0, 15.5)];
+    [page lineToPoint:NSMakePoint(1.5, 15.5)];
+    [page closePath];
+    return page;
+}
 
 @implementation BTSourceIcon
 
++ (CGFloat)side { return BT_SOURCE_ICON_SIDE; }
+
 // A little white slab with a wheel on it.
 + (void)drawIPod {
-    NSBezierPath *body = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(3.5, 0.5, 7, 13)
-                                                         xRadius:1.5
-                                                         yRadius:1.5];
+    NSBezierPath *body = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(4.0, 0.5, 8, 15)
+                                                         xRadius:1.7
+                                                         yRadius:1.7];
     [[NSColor colorWithCalibratedWhite:0.97 alpha:1.0] set];
     [body fill];
     [[NSColor colorWithCalibratedWhite:0.40 alpha:1.0] set];
     [body stroke];
 
     [[NSColor colorWithCalibratedWhite:0.65 alpha:1.0] set];
-    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5, 2, 4, 4)] fill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5.7, 2.2, 4.6, 4.6)] fill];
     [[NSColor colorWithCalibratedRed:0.62 green:0.76 blue:0.93 alpha:1.0] set];
-    NSRectFill(NSMakeRect(5, 7.5, 4, 4));
+    NSRectFill(NSMakeRect(5.7, 8.6, 4.6, 4.6));
 }
 
 // A disc seen face on: the silver ring, the clear centre, and the hole.
 + (void)drawDisc {
-    NSBezierPath *edge = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 13, 13)];
+    NSBezierPath *edge = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 15, 15)];
     [[NSColor colorWithCalibratedWhite:0.86 alpha:1.0] set];
     [edge fill];
     [[NSColor colorWithCalibratedWhite:0.45 alpha:1.0] set];
@@ -34,68 +137,107 @@
     // A sheen across it, which is what says silver rather than white.
     [[NSColor colorWithCalibratedWhite:1.0 alpha:0.9] set];
     NSBezierPath *sheen = [NSBezierPath bezierPath];
-    [sheen moveToPoint:NSMakePoint(3.0, 11.6)];
-    [sheen lineToPoint:NSMakePoint(6.4, 12.9)];
-    [sheen lineToPoint:NSMakePoint(10.4, 6.0)];
-    [sheen lineToPoint:NSMakePoint(8.0, 4.4)];
+    [sheen moveToPoint:NSMakePoint(3.4, 13.3)];
+    [sheen lineToPoint:NSMakePoint(7.3, 14.8)];
+    [sheen lineToPoint:NSMakePoint(11.9, 6.9)];
+    [sheen lineToPoint:NSMakePoint(9.2, 4.9)];
     [sheen closePath];
     [sheen fill];
 
     [[BTStyle sourceIcon] set];
-    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5.0, 5.0, 4, 4)] fill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5.7, 5.7, 4.6, 4.6)] fill];
     [[NSColor whiteColor] set];
-    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(6.2, 6.2, 1.6, 1.6)] fill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(7.1, 7.1, 1.8, 1.8)] fill];
 }
 
 // A clock face, since the list is about when rather than what.
 + (void)drawRecentlyAdded {
-    NSBezierPath *face = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 13, 13)];
+    NSBezierPath *face = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 15, 15)];
     [[BTStyle sourceIcon] set];
     [face fill];
     [[NSColor whiteColor] set];
     NSBezierPath *hands = [NSBezierPath bezierPath];
-    [hands setLineWidth:1.4];
-    [hands moveToPoint:NSMakePoint(7, 7)];
-    [hands lineToPoint:NSMakePoint(7, 10.5)];      // to the hour
-    [hands moveToPoint:NSMakePoint(7, 7)];
-    [hands lineToPoint:NSMakePoint(9.8, 7)];       // and past it
+    [hands setLineWidth:1.6];
+    [hands moveToPoint:NSMakePoint(8, 8)];
+    [hands lineToPoint:NSMakePoint(8, 12.0)];      // to the hour
+    [hands moveToPoint:NSMakePoint(8, 8)];
+    [hands lineToPoint:NSMakePoint(11.2, 8)];      // and past it
     [hands stroke];
 }
 
-// A note on a filled circle: the whole library.
+// A stack of ruled cards with a note on the front one: every song there is,
+// rather than a page of them. Gold whatever else the window is doing, because
+// this is the row the list is read down from and it should look like itself in
+// either palette.
 + (void)drawLibrary {
-    NSBezierPath *circle = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 13, 13)];
-    [[BTStyle sourceIcon] set];
-    [circle fill];
-    [[NSColor whiteColor] set];
-    NSRectFill(NSMakeRect(8, 5, 1.6, 6));
-    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5.4, 3.4, 4, 3.2)] fill];
+    NSColor *edge = [NSColor colorWithCalibratedRed:0.42 green:0.31 blue:0.08 alpha:1.0];
+    NSColor *behind = [NSColor colorWithCalibratedRed:0.72 green:0.60 blue:0.24 alpha:1.0];
+
+    NSRect back = NSMakeRect(0.5, 4.5, 11, 11);
+    NSRect middle = NSMakeRect(2.5, 2.5, 11, 11);
+    NSRect front = NSMakeRect(4.5, 0.5, 11, 11);
+
+    NSUInteger i;
+    NSRect behindRects[2] = { back, middle };
+    for (i = 0; i < 2; i++) {
+        NSBezierPath *card = [NSBezierPath bezierPathWithRect:behindRects[i]];
+        [behind set];
+        [card fill];
+        [edge set];
+        [card stroke];
+    }
+
+    NSBezierPath *card = [NSBezierPath bezierPathWithRect:front];
+    [[NSColor colorWithCalibratedRed:0.94 green:0.86 blue:0.59 alpha:1.0] set];
+    [card fill];
+
+    // Ruled the way a sheet of music is ruled. Clipped to the card, so the lines
+    // stop at its edge rather than being cut to length by hand.
+    [NSGraphicsContext saveGraphicsState];
+    [card addClip];
+    [[NSColor colorWithCalibratedRed:0.78 green:0.65 blue:0.30 alpha:1.0] set];
+    CGFloat y;
+    for (y = NSMinY(front) + 1.5; y < NSMaxY(front); y += 2.0) {
+        NSRectFill(NSMakeRect(NSMinX(front), y, NSWidth(front), 1.0));
+    }
+    [NSGraphicsContext restoreGraphicsState];
+
+    [edge set];
+    [card stroke];
+
+    [[NSColor colorWithCalibratedRed:0.16 green:0.10 blue:0.02 alpha:1.0] set];
+    BTDrawNoteInRect(NSMakeRect(5.6, 1.3, 9.4, 9.4));
 }
 
 + (void)drawFolder {
-    NSBezierPath *folder = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(0.5, 2.5, 13, 9)
-                                                           xRadius:1.5
-                                                           yRadius:1.5];
+    NSBezierPath *folder = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(0.5, 2.0, 15, 11)
+                                                           xRadius:1.7
+                                                           yRadius:1.7];
     [[NSColor colorWithCalibratedRed:0.63 green:0.70 blue:0.80 alpha:1.0] set];
     [folder fill];
     [[NSColor colorWithCalibratedWhite:0.35 alpha:1.0] set];
     [folder stroke];
-    NSRectFill(NSMakeRect(1.5, 11, 5, 1.5));
+    NSRectFill(NSMakeRect(1.5, 12.5, 6, 1.5));
 }
 
-// A note on a page. One built from rules carries a mark in its corner and is
-// drawn in its own colour, so the two are told apart twice over.
+// A page with a mark on it. A list built by hand carries a note, one built from
+// rules carries a cogwheel, and the two are drawn in different hues as well, so
+// which is which survives being read at a glance and being read in either
+// palette.
 + (void)drawPlaylistSmart:(BOOL)smart {
-    NSBezierPath *page = [NSBezierPath bezierPathWithRect:NSMakeRect(1.5, 1.5, 11, 11)];
-    [[NSColor whiteColor] set];
+    NSColor *colour = smart ? [BTStyle smartPlaylistIcon] : [BTStyle sourceIcon];
+    NSBezierPath *page = BTPagePath();
+    [BTPaleTint(colour) set];
     [page fill];
-    [[NSColor colorWithCalibratedWhite:0.45 alpha:1.0] set];
+    [colour set];
     [page stroke];
 
-    [(smart ? [BTStyle smartPlaylistIcon] : [BTStyle sourceIcon]) set];
-    NSRectFill(NSMakeRect(8, 5, 1.4, 5));
-    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(5.6, 3.6, 3.6, 2.8)] fill];
-    if (smart) NSRectFill(NSMakeRect(3, 10, 2, 2));
+    [BTDeepTint(colour) set];
+    if (smart) {
+        [BTGearPath(NSMakePoint(8.0, 7.6), 4.9) fill];
+    } else {
+        BTDrawNoteInRect(NSMakeRect(3.0, 2.0, 10.0, 11.5));
+    }
 }
 
 + (NSImage *)iconOfKind:(BTSourceIconKind)kind {

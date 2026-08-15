@@ -1,4 +1,5 @@
 #import "BTMainWindowViews.h"
+#import "BTSourceIcon.h"
 #import "BTStyle.h"
 
 @implementation BTChromeView
@@ -56,24 +57,43 @@
     // A few points of air on the left, so the icon does not sit against the
     // disclosure triangle on rows that have one.
     NSRect content = frame;
-    content.origin.x += 5.0;
-    content.size.width -= 5.0;
+    content.origin.x += 4.0;
+    content.size.width -= 4.0;
 
     NSRect textFrame = content;
     if (self.showsEject) textFrame.size.width -= 20;
     if (self.icon) {
-        NSRect iconFrame = NSMakeRect(NSMinX(content), NSMidY(content) - 7, 14, 14);
+        CGFloat side = [BTSourceIcon side];
+        NSRect iconFrame = NSMakeRect(NSMinX(content), NSMidY(content) - side / 2.0, side, side);
         [self.icon drawInRect:iconFrame
                      fromRect:NSZeroRect
                     operation:NSCompositeSourceOver
                      fraction:1.0
                respectFlipped:YES
                         hints:nil];
-        textFrame.origin.x += 18;
-        textFrame.size.width -= 18;
+        // The gap between mark and name, which stays what it was as the mark
+        // grows: the words are where the eye runs down the list, so they are the
+        // thing that should not move.
+        CGFloat gap = side + 4.0;
+        textFrame.origin.x += gap;
+        textFrame.size.width -= gap;
     }
     textFrame.origin.y += 1;
     [super drawInteriorWithFrame:textFrame inView:view];
+}
+
+@end
+
+// How far a right-set figure stands off the trailing edge of its column. Enough
+// to read as a margin, and not so much that the numbers stop lining up under
+// their heading.
+#define BT_NUMBER_RIGHT_INSET 5.0
+
+@implementation BTNumberCell
+
+- (void)drawInteriorWithFrame:(NSRect)frame inView:(NSView *)view {
+    frame.size.width -= BT_NUMBER_RIGHT_INSET;
+    [super drawInteriorWithFrame:frame inView:view];
 }
 
 @end
@@ -216,6 +236,41 @@
 @end
 
 @implementation BTKeyOutlineView
+
+// A smaller triangle beside a folder than the system draws, painted over the
+// one the system drew.
+//
+// Its size is not a question an outline view answers. Handing a smaller rect to
+// frameOfOutlineCellAtRow: moves the mark and does not size it: the list was
+// rendered with that rect inset and the pixels compared against the same list
+// without, and not one of them differed. Painting over is what is left.
+//
+// The click still lands on the rect the system chose, which is larger than the
+// mark now drawn in it. A folder that opens from slightly outside its triangle
+// is the forgiving way round.
+- (void)drawRow:(NSInteger)row clipRect:(NSRect)clipRect {
+    [super drawRow:row clipRect:clipRect];
+
+    NSRect knob = [self frameOfOutlineCellAtRow:row];
+    if (NSIsEmptyRect(knob)) return;
+
+    BOOL selected = [self isRowSelected:row];
+    BOOL strong = selected && BTListHasFocus(self);
+    NSColor *behind = selected ? (strong ? [BTStyle selection] : [BTStyle inactiveSelection])
+                               : [BTStyle listBackground];
+    [behind set];
+    NSRectFill(NSInsetRect(knob, -1.0, -1.0));
+
+    // Squat rather than square, which is the shape the system's own mark has;
+    // a point or so smaller than it in each direction is the whole change.
+    CGFloat width = 8.0, height = 6.0;
+    NSRect mark = NSMakeRect(round(NSMidX(knob) - width / 2.0),
+                             round(NSMidY(knob) - height / 2.0), width, height);
+    [BTStyle drawDisclosureInRect:mark
+                             open:[self isItemExpanded:[self itemAtRow:row]]
+                            color:(strong ? [NSColor whiteColor]
+                                          : [NSColor colorWithCalibratedWhite:0.35 alpha:1.0])];
+}
 
 // A click on the eject mark ejects rather than selecting the row.
 - (void)mouseDown:(NSEvent *)event {

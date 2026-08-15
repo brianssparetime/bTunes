@@ -125,14 +125,24 @@ static CGFloat BTLineHeightOf(NSFont *font) {
     return [self tinted:[NSColor colorWithCalibratedRed:0.36 green:0.55 blue:0.86 alpha:1.0]];
 }
 
-+ (NSColor *)sourceIcon {
-    return [self tinted:[NSColor colorWithCalibratedRed:0.24 green:0.44 blue:0.78 alpha:1.0]];
+static NSColor *BTSourceBlue(void) {
+    return [NSColor colorWithCalibratedRed:0.24 green:0.44 blue:0.78 alpha:1.0];
 }
 
-// Already a purple, and it stays one either way. Kept darker and quieter than
-// the plain source mark so the two do not become the same thing in purple mode.
+static NSColor *BTSourcePurple(void) {
+    return [NSColor colorWithCalibratedRed:0.45 green:0.30 blue:0.70 alpha:1.0];
+}
+
++ (NSColor *)sourceIcon { return [self tinted:BTSourceBlue()]; }
+
+// The two marks trade places rather than both turning. Blue and purple is what
+// tells a playlist from a smart one, and running the pair through the same
+// tinting would leave two purples a row apart that nobody could tell apart. So
+// the plain mark takes the window's hue and this one takes the hue the plain
+// mark gave up.
 + (NSColor *)smartPlaylistIcon {
-    return [self tinted:[NSColor colorWithCalibratedRed:0.45 green:0.30 blue:0.70 alpha:1.0]];
+    if (![[BTPreferences sharedPreferences] purpleMode]) return BTSourcePurple();
+    return BTSourceBlue();
 }
 
 + (NSColor *)defaultButtonTop {
@@ -467,6 +477,30 @@ static CGFloat BTUpFraction(NSRect rect, CGFloat fraction) {
         [p lineToPoint:NSMakePoint(NSMinX(rect), NSMidY(rect))];
         [p lineToPoint:NSMakePoint(NSMaxX(rect), NSMaxY(rect))];
     }
+    [p closePath];
+    [color set];
+    [p fill];
+}
+
++ (void)drawDisclosureInRect:(NSRect)rect open:(BOOL)open color:(NSColor *)color {
+    if (!open) {
+        [self drawTriangleInRect:rect pointingRight:YES color:color];
+        return;
+    }
+
+    // Pointing the way the context calls down, so the mark is right side up in
+    // a list, which is flipped, and in anything that is not.
+    //
+    // Nudged toward the point by the same sixth every other triangle here is
+    // nudged by, since where the ink sits does not depend on which way it faces.
+    CGFloat nudge = NSHeight(rect) / 6.0;
+    CGFloat base = BTUpPoints(rect, NSHeight(rect) - nudge);
+    CGFloat apex = BTUpPoints(rect, -nudge);
+
+    NSBezierPath *p = [NSBezierPath bezierPath];
+    [p moveToPoint:NSMakePoint(NSMinX(rect), base)];
+    [p lineToPoint:NSMakePoint(NSMaxX(rect), base)];
+    [p lineToPoint:NSMakePoint(NSMidX(rect), apex)];
     [p closePath];
     [color set];
     [p fill];

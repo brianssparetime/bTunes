@@ -17,9 +17,13 @@ typedef NS_ENUM(NSInteger, BTSourceIconKind) {
 };
 
 // Drawn at the size a row shows it rather than scaled down from something
-// larger: at fourteen points every one of these is a handful of pixels, and a
+// larger: at sixteen points every one of these is a handful of pixels, and a
 // shape that survives being drawn small is not the same shape as one shrunk.
 @interface BTSourceIcon : NSObject
+
+// How wide and tall every one of them comes out, so a row can lay itself out
+// without repeating the number.
++ (CGFloat)side;
 
 + (NSImage *)iconOfKind:(BTSourceIconKind)kind;
 

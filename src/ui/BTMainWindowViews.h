@@ -30,9 +30,15 @@
 + (NSRect)ejectRectInFrame:(NSRect)frame;
 @end
 
+// A column of figures, set to the right and held off the column's trailing edge
+// rather than pressed against it. The last column in the table ends at the
+// window, where a number with nothing after it reads as having fallen off.
+@interface BTNumberCell : NSTextFieldCell
+@end
+
 // A track number that shows the speaker instead of the number while its row is
 // the one playing, so the indicator needs no column of its own.
-@interface BTTrackNumberCell : NSTextFieldCell
+@interface BTTrackNumberCell : BTNumberCell
 @property (nonatomic, strong) NSImage *indicator;
 // A play mark in place of the number, while the pointer is over the row. The
 // same spot the speaker will occupy a moment later, so starting a song and
