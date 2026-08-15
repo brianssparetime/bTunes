@@ -136,47 +136,55 @@ static NSFont *BTMiniReadoutFont(void) { return BTMiniFixedFont(BT_MINI_FONT_SIZ
 
 static NSColor *BTGray(CGFloat white) { return [NSColor colorWithCalibratedWhite:white alpha:1.0]; }
 
-// The transport buttons are moulded rather than chiselled: a rounded face that
-// falls from light at the top to shadow at the bottom, its lit and shaded edges
-// laid inside the outline so the curve takes their ends away.
+// The transport buttons are square blocks with a dark outline and a two-point
+// bevel: lit along the top and left, shadowed along the bottom and right, the
+// two trading places when the button is pressed.
 //
-// The bevel this replaces was four straight bands two points wide, and it is
-// worth saying why that could not be made to work. Bands drawn to full length
-// overrun each other where they meet, so the light running down the left side
-// carried on across the shaded bottom and left a bright block in the corner,
-// and the light along the top did the same over the shadow on the right. A
-// bevel of that kind only holds together if its corners are mitred, which means
-// placing the corner pixels by hand rather than filling four rectangles. The
-// skins this imitates did not compute their buttons at all; they copied a
-// picture an artist had drawn pixel by pixel, corners included.
-//
-// A curve has no corner to get wrong, so this draws one instead.
-static void BTDrawMiniFace(NSRect rect, BOOL pressed) {
-    // Half a point in, so the one-point outline lands on a row of pixels rather
-    // than straddling two and coming out grey and two wide.
-    NSRect body = NSInsetRect(rect, 0.5, 0.5);
-    NSBezierPath *shape = [NSBezierPath bezierPathWithRoundedRect:body xRadius:3.0 yRadius:3.0];
+// The lit and the shadowed sides are each one shape with mitred ends, not four
+// separate bands, and that is the whole of what makes the corners work. Bands
+// filled as rectangles run their full length and overrun each other where they
+// meet, so the light coming down the left carries on across the shaded bottom
+// and leaves a bright block sitting in the corner. Cut on the diagonal instead,
+// each side ends where the next begins. The skins this imitates were drawn by
+// hand a pixel at a time and mitred for the same reason.
+static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
+    [BTGray(0.10) set];
+    NSFrameRect(rect);
 
-    NSGradient *face = [[NSGradient alloc] initWithStartingColor:BTGray(pressed ? 0.50 : 0.84)
-                                                     endingColor:BTGray(pressed ? 0.66 : 0.60)];
-    [face drawInBezierPath:shape angle:270.0];   // the lighter end at the top
+    NSRect body = NSInsetRect(rect, 1, 1);
+    NSGradient *face = [[NSGradient alloc] initWithStartingColor:BTGray(pressed ? 0.52 : 0.82)
+                                                     endingColor:BTGray(pressed ? 0.66 : 0.62)];
+    [face drawInRect:body angle:270.0];   // the lighter end at the top
 
-    // Part transparent, so an edge shades into the face rather than stepping
-    // onto it, and clipped to the face so both fade out at the corners.
-    [NSGraphicsContext saveGraphicsState];
-    [shape addClip];
-    [[NSColor colorWithCalibratedWhite:1.0 alpha:(pressed ? 0.10 : 0.60)] set];
-    NSRectFillUsingOperation(NSMakeRect(NSMinX(body), NSMaxY(body) - 1.5, NSWidth(body), 1.0),
-                             NSCompositeSourceOver);
-    [[NSColor colorWithCalibratedWhite:0.0 alpha:(pressed ? 0.08 : 0.28)] set];
-    NSRectFillUsingOperation(NSMakeRect(NSMinX(body), NSMinY(body) + 0.5, NSWidth(body), 1.0),
-                             NSCompositeSourceOver);
-    [NSGraphicsContext restoreGraphicsState];
+    CGFloat w = 2.0;
+    CGFloat x0 = NSMinX(body), x1 = NSMaxX(body);
+    CGFloat y0 = NSMinY(body), y1 = NSMaxY(body);
 
-    // Darker than the panel, which is what sits the button on it.
-    [BTGray(0.12) set];
-    [shape setLineWidth:1.0];
-    [shape stroke];
+    // Top and left as one L, mitred where it meets the other at the two corners
+    // it shares with it.
+    NSBezierPath *lit = [NSBezierPath bezierPath];
+    [lit moveToPoint:NSMakePoint(x0, y0)];
+    [lit lineToPoint:NSMakePoint(x0, y1)];
+    [lit lineToPoint:NSMakePoint(x1, y1)];
+    [lit lineToPoint:NSMakePoint(x1 - w, y1 - w)];
+    [lit lineToPoint:NSMakePoint(x0 + w, y1 - w)];
+    [lit lineToPoint:NSMakePoint(x0 + w, y0 + w)];
+    [lit closePath];
+
+    // Bottom and right, the same L turned about the middle.
+    NSBezierPath *shade = [NSBezierPath bezierPath];
+    [shade moveToPoint:NSMakePoint(x1, y1)];
+    [shade lineToPoint:NSMakePoint(x1, y0)];
+    [shade lineToPoint:NSMakePoint(x0, y0)];
+    [shade lineToPoint:NSMakePoint(x0 + w, y0 + w)];
+    [shade lineToPoint:NSMakePoint(x1 - w, y0 + w)];
+    [shade lineToPoint:NSMakePoint(x1 - w, y1 - w)];
+    [shade closePath];
+
+    [BTGray(pressed ? 0.42 : 0.93) set];
+    [lit fill];
+    [BTGray(pressed ? 0.93 : 0.42) set];
+    [shade fill];
 }
 
 @interface BTMiniButton : NSButton
@@ -198,7 +206,7 @@ static void BTDrawMiniFace(NSRect rect, BOOL pressed) {
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = [self bounds];
     BOOL pressed = [self isHighlighted];
-    BTDrawMiniFace(bounds, pressed);
+    BTDrawMiniBevel(bounds, pressed);
 
     NSColor *ink = BTGray(0.11);
 
@@ -213,9 +221,9 @@ static void BTDrawMiniFace(NSRect rect, BOOL pressed) {
         // A small lamp in the top left corner, the way the original marked its
         // toggles. Lit in the analyzer's hot orange: a purple lamp disappeared
         // against the purple chrome, and amber sat too close to it as well.
-        NSRect lamp = NSMakeRect(NSMinX(bounds) + 4.5, NSMaxY(bounds) - 9.5, 6, 5);
+        NSRect lamp = NSMakeRect(NSMinX(bounds) + 4, NSMaxY(bounds) - 9, 6, 5);
         [self.on ? BTMiniLamp() : BTGray(0.42) set];
-        [[NSBezierPath bezierPathWithRoundedRect:lamp xRadius:1.0 yRadius:1.0] fill];
+        NSRectFill(lamp);
         // The loop and shuffle marks are wider than they are tall and would
         // otherwise run into the chisel, so they keep clear of it and give up a
         // little size to do it. The lamp takes its room off the left.
@@ -346,20 +354,20 @@ static void BTDrawMiniFace(NSRect rect, BOOL pressed) {
     BTDrawRibbon(NSMakeRect(nameX + nameSize.width + 6, NSMidY(title) - 3,
                             NSWidth(bounds) - (nameX + nameSize.width) - 44, 6));
 
-    // A gray lip down either side of the transport cluster and along under it,
-    // the way the original ran one around its buttons. Open at the top, where
-    // the position bar already draws an edge of its own. Held two points off
-    // the buttons: against their outline it read as part of them, and as a
-    // second line where they had one already.
+    // A groove down either side of the transport cluster and along under it,
+    // open at the top where the position bar already draws an edge of its own.
+    // Cut into the panel rather than raised off it: a line lighter than the
+    // body reads as a white box drawn round the buttons, which is a thing on
+    // the panel rather than a shape the panel has.
     NSRect cluster = NSInsetRect(BTTransportClusterRect(), -2.5, -2.5);
-    NSBezierPath *lip = [NSBezierPath bezierPath];
-    [lip moveToPoint:NSMakePoint(NSMinX(cluster), NSMaxY(cluster))];
-    [lip lineToPoint:NSMakePoint(NSMinX(cluster), NSMinY(cluster))];
-    [lip lineToPoint:NSMakePoint(NSMaxX(cluster), NSMinY(cluster))];
-    [lip lineToPoint:NSMakePoint(NSMaxX(cluster), NSMaxY(cluster))];
-    [lip setLineWidth:1.0];
-    [BTGray(0.38) set];
-    [lip stroke];
+    NSBezierPath *groove = [NSBezierPath bezierPath];
+    [groove moveToPoint:NSMakePoint(NSMinX(cluster), NSMaxY(cluster))];
+    [groove lineToPoint:NSMakePoint(NSMinX(cluster), NSMinY(cluster))];
+    [groove lineToPoint:NSMakePoint(NSMaxX(cluster), NSMinY(cluster))];
+    [groove lineToPoint:NSMakePoint(NSMaxX(cluster), NSMaxY(cluster))];
+    [groove setLineWidth:1.0];
+    [BTGray(0.09) set];
+    [groove stroke];
 
     // Readout panel on the left: elapsed time above, analyzer below.
     NSRect lcd = NSMakeRect(BT_LCD_X, BT_TOP(BT_LCD_Y, BT_LCD_H), BT_LCD_W, BT_LCD_H);
