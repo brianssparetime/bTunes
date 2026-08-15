@@ -425,14 +425,22 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
     BTDrawRibbon(NSMakeRect(nameX + nameSize.width + 6, NSMidY(title) - 3,
                             NSWidth(bounds) - (nameX + nameSize.width) - 44, 6));
 
-    // A rule round the border the controls leave empty, in the purple the
+    // A rule round the border the controls leave empty, in the lit purple the
     // ribbons beside the name are stacked from. One line, drawn on whole
     // pixels: the ribbon is that purple six points deep, and the border wants
     // the thinnest mark the same colour can make.
+    //
+    // The lit purple rather than the deep one, because the panel is watched on
+    // a television. A set samples colour at half the width it samples
+    // brightness, so a one-pixel upright line is averaged with the pixel beside
+    // it and keeps only what brightness it had. The deep purple has barely more
+    // of that than the body behind it, and came out clear down whichever side
+    // fell on a sampled column and invisible down the other. The lit purple is
+    // bright enough to stand on its own.
     NSRect rule = NSMakeRect(BT_RULE_INSET, BT_RULE_INSET,
                              NSWidth(bounds) - BT_RULE_INSET * 2,
                              BT_MINI_HEIGHT - BT_RULE_TOP - BT_RULE_INSET);
-    [BTMiniPurple() set];
+    [BTMiniPurpleLight() set];
     NSFrameRect(rule);
 
     // A groove down either side of the transport cluster and along under it,
