@@ -19,7 +19,14 @@
 - (BOOL)isOpaque { return YES; }
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = [self bounds];
-    [BTStyle drawVerticalGradientInRect:bounds from:[BTStyle chromeTop] to:[BTStyle chromeBottom]];
+    // The same brushed chrome the top of the window is drawn on, so the window
+    // is one piece of metal with the lists let into it.
+    [BTStyle drawChromeInRect:bounds];
+
+    // The chrome draws no line at its own edges, where the step from the
+    // gradient to the content is separation enough. Here it is not: the bar is
+    // short, so its top is the light end of the ramp and sits against the list
+    // above with nothing between them.
     [[BTStyle chromeEdge] set];
     NSRectFill(NSMakeRect(0, NSMaxY(bounds) - 1, NSWidth(bounds), 1));
 
