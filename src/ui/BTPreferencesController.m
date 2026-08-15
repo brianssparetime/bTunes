@@ -40,7 +40,14 @@
 // under Music at 400 points: the string says two lines and the field takes
 // three.
 static CGFloat BTNoteHeight(NSTextField *note, CGFloat width) {
+    if ([[note stringValue] length] == 0) return 0.0;
     return ceil([[note cell] cellSizeForBounds:NSMakeRect(0, 0, width, 10000.0)].height);
+}
+
+// The air above a note, which a setting that carries no note does not want
+// either.
+static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
+    return (noteHeight > 0.0) ? gap : 0.0;
 }
 
 // A clip view holds what it is given by the bottom, so a pane taller than the
@@ -90,35 +97,27 @@ static CGFloat BTNoteHeight(NSTextField *note, CGFloat width) {
 }
 
 // The five paths, in the order they are shown: what each is called, and the
-// note under it.
+// note under it. A note is a line, and a second line only where there is a
+// second thing to know; a setting its own name explains carries none.
 + (NSArray *)settingRows {
     return @[
-        @[@"Music:", @"The folder the music sits in. Songs are recorded as their place below it, so pointing this at the same music on another machine opens the same library there."],
-        @[@"Library:", @"Where BTunes keeps its own database: ratings, play counts, and playlists. Songs are not moved."],
-        @[@"iTunes:", @"The iTunes library file a sync reads. It is only ever read, never written. Point it at a copy while trying something out."],
-        @[@"Detune:", @"The folder of free recordings standing in for locked purchases. Leave it empty until there is one: locked songs then simply stay locked. Choose the folder holding detune-mapping.json."],
-        @[@"BTunes:", @"Where BTunes puts music it makes itself, which today means songs taken off a CD. Laid out the way iTunes lays one out, artist then album, and kept apart from the iTunes folder because that folder belongs to iTunes."],
+        @[@"Music:", @"Folder of music files (e.g. iTunes library)\nNothing there modified"],
+        @[@"Library:", @"Where BTunes stores its data"],
+        @[@"iTunes:", (@"iTunes XML library from which to import playlists and songs\n"
+                       @"Make sure \"Share iTunes library XML\" is checked in iTunes")],
+        @[@"Detune:", @"Free recordings of iTunes protected music"],
+        @[@"BTunes:", @"Music BTunes records or imports (other than via iTunes)"],
     ];
 }
 
 // The tick boxes, in the order they are shown: what each says, and the note
-// under it.
+// under it. Three of the four say the whole of it themselves.
 + (NSArray *)boxRows {
     return @[
-        @[@"Look up CDs that do not name themselves",
-          (@"Most CDs do not say what their songs are called. This asks MusicBrainz, "
-           @"which is the only thing BTunes sends anywhere: the disc's table of contents "
-           @"boiled down to a number, and nothing about your library.")],
-        @[@"Take CDs in as Apple Lossless",
-          (@"A CD is about six hundred megabytes as it stands, half that as Apple Lossless, "
-           @"and a tenth as AAC. Lossless is exact; AAC is what iTunes used and what fits.")],
-        @[@"Sound Check",
-          (@"Plays songs at the same loudness as each other, so the volume does not have to be "
-           @"reached for between a quiet recording and a loud one. It uses the measurement iTunes "
-           @"already wrote into each file; the songs iTunes never measured play as they are. "
-           @"Nothing is written back to any file.")],
-        @[@"Purple mode",
-          @"Draws the main window in purple instead of blue. The mini player is purple either way."],
+        @[@"Look up CDs that do not provide track names", @""],
+        @[@"Import CDs as Apple Lossless (ALAC) instead of AAC", @""],
+        @[@"Soundcheck", @"Plays songs at the same loudness as each other"],
+        @[@"Purple mode", @""],
     ];
 }
 
@@ -134,14 +133,13 @@ static CGFloat BTNoteHeight(NSTextField *note, CGFloat width) {
     CGFloat total = 52.0;
     NSUInteger i;
     for (i = 0; i < [_pathNotes count]; i++) {
-        total += BT_FIELD + BT_TO_NOTE +
-                 BTNoteHeight([_pathNotes objectAtIndex:i], BT_NOTE_WIDTH(width)) +
-                 BT_AFTER_NOTE;
+        CGFloat note = BTNoteHeight([_pathNotes objectAtIndex:i], BT_NOTE_WIDTH(width));
+        total += BT_FIELD + BTGapAbove(note, BT_TO_NOTE) + note + BT_AFTER_NOTE;
     }
 
     for (i = 0; i < [_boxNotes count]; i++) {
-        total += BT_BOX_TO_NOTE +
-                 BTNoteHeight([_boxNotes objectAtIndex:i], BT_BOX_NOTE_WIDTH(width));
+        CGFloat note = BTNoteHeight([_boxNotes objectAtIndex:i], BT_BOX_NOTE_WIDTH(width));
+        total += BTGapAbove(note, BT_BOX_TO_NOTE) + note;
         if (i + 1 < [_boxNotes count]) total += BT_AFTER_NOTE + BT_BOX;
     }
     return total + 38.0;
@@ -320,9 +318,10 @@ static CGFloat BTNoteHeight(NSTextField *note, CGFloat width) {
 
         NSTextField *note = [_pathNotes objectAtIndex:i];
         CGFloat noteHeight = BTNoteHeight(note, noteWidth);
-        [note setFrame:NSMakeRect(84, y - BT_TO_NOTE - noteHeight, noteWidth, noteHeight)];
+        CGFloat gap = BTGapAbove(noteHeight, BT_TO_NOTE);
+        [note setFrame:NSMakeRect(84, y - gap - noteHeight, noteWidth, noteHeight)];
 
-        y -= BT_TO_NOTE + noteHeight + BT_AFTER_NOTE + BT_FIELD;
+        y -= gap + noteHeight + BT_AFTER_NOTE + BT_FIELD;
     }
 
     for (i = 0; i < [_boxes count]; i++) {
@@ -330,11 +329,12 @@ static CGFloat BTNoteHeight(NSTextField *note, CGFloat width) {
 
         NSTextField *note = [_boxNotes objectAtIndex:i];
         CGFloat noteHeight = BTNoteHeight(note, boxNoteWidth);
-        [note setFrame:NSMakeRect(38, y - BT_BOX_TO_NOTE - noteHeight, boxNoteWidth, noteHeight)];
+        CGFloat gap = BTGapAbove(noteHeight, BT_BOX_TO_NOTE);
+        [note setFrame:NSMakeRect(38, y - gap - noteHeight, boxNoteWidth, noteHeight)];
 
         // The next box sits at its own origin and extends upward, so its height
         // comes off here too. Without it the note above runs straight into it.
-        y -= BT_BOX_TO_NOTE + noteHeight + BT_AFTER_NOTE + BT_BOX;
+        y -= gap + noteHeight + BT_AFTER_NOTE + BT_BOX;
     }
 }
 
