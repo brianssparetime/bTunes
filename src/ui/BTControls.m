@@ -412,6 +412,26 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list) {
 // lives; what cannot be shared is the hooking up. The two must stay in step,
 // and they are kept side by side so that is easy to see.
 
+// The strip along the top of a heading, and the list's own background in
+// whatever is left underneath it.
+//
+// Everything that stands in a heading's row draws through here: the heading
+// itself, the square where its scroller cuts in, and the pane heading that
+// carries air under the strip. A scroll view makes that square as tall as the
+// heading beside it, so a square that shaded its whole height put the rule three
+// points low and stepped the line across the window.
+static void BTDrawHeaderBackground(NSView *view, NSRect bounds) {
+    CGFloat tall = [BTStyle listHeaderHeight];
+    if (NSHeight(bounds) > tall) {
+        [[BTStyle listBackground] set];
+        NSRectFill(bounds);
+    }
+    NSRect strip = NSMakeRect(NSMinX(bounds),
+                              ([view isFlipped] ? NSMinY(bounds) : NSMaxY(bounds) - tall),
+                              NSWidth(bounds), tall);
+    [BTStyle drawListHeaderInRect:strip];
+}
+
 @implementation BTHeaderCell
 
 // The strip, then the division, then the words. The system's own bezel is
@@ -442,7 +462,7 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list) {
 // Drawn here rather than left to the system, because the system fills the space
 // past the last column itself and would fill it flat.
 - (void)drawRect:(NSRect)dirtyRect {
-    [BTStyle drawListHeaderInRect:[self bounds]];
+    BTDrawHeaderBackground(self, [self bounds]);
 
     NSTableView *table = [self tableView];
     NSArray *columns = [table tableColumns];
@@ -458,11 +478,11 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list) {
 
 @implementation BTHeaderCornerView
 
-// The square where a heading meets its scroller. The system fills it flat,
-// which puts a pale block on the end of the strip and stops the band a
-// scroller's width short of the pane it heads.
+// The square where a heading meets its scroller. The system fills it flat, which
+// puts a pale block on the end of the strip and stops the band a scroller's
+// width short of the pane it heads.
 - (void)drawRect:(NSRect)dirtyRect {
-    [BTStyle drawListHeaderInRect:[self bounds]];
+    BTDrawHeaderBackground(self, [self bounds]);
 }
 
 @end
@@ -502,18 +522,15 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list) {
 
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = [self bounds];
+    BTDrawHeaderBackground(self, bounds);
+    if ([self.title length] == 0) return;
 
-    // A header view is flipped, so the strip is the top of it and the air is
-    // what is left underneath.
+    // A header view is flipped, so the strip is the top of it and the air the
+    // pane carries is what is left underneath.
     CGFloat tall = [BTStyle listHeaderHeight];
     NSRect strip = NSMakeRect(NSMinX(bounds),
                               ([self isFlipped] ? NSMinY(bounds) : NSMaxY(bounds) - tall),
                               NSWidth(bounds), tall);
-
-    [[BTStyle listBackground] set];
-    NSRectFill(bounds);
-    [BTStyle drawListHeaderInRect:strip];
-    if ([self.title length] == 0) return;
 
     // Centred on the pane, not on this view. A scroller takes its square out of
     // the heading's right end, so a word centred here sits left of the middle of
