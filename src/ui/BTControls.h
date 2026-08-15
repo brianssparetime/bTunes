@@ -109,9 +109,11 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list);
 
 // The source pane's heading, which names the pane instead of heading columns:
 // the same strip, carrying one dimmed word centred on the pane, and nothing to
-// click.
+// click. Taller than the strip by the air it holds under it, so ask it for its
+// height rather than working one out.
 @interface BTPaneHeaderView : NSTableHeaderView
 @property (nonatomic, copy) NSString *title;
++ (CGFloat)height;
 @end
 
 // The square where a heading meets a scroller, shaded with the heading so the

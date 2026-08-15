@@ -68,7 +68,7 @@ BTPlaylist *BTPlaylistFromSource(id item) {
     // The pane is capped by its own name, at the height the track list's
     // headings take, so the two read as one band across the window.
     BTPaneHeaderView *header = [[BTPaneHeaderView alloc]
-        initWithFrame:NSMakeRect(0, 0, 170, [BTStyle listHeaderHeight])];
+        initWithFrame:NSMakeRect(0, 0, 170, [BTPaneHeaderView height])];
     header.title = @"Source";
     [_outline setHeaderView:header];
     [_outline setRowHeight:[BTStyle sourceRowHeight]];

@@ -468,12 +468,25 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list) {
 @end
 
 
-@implementation BTPaneHeaderView
+// A few points of air under the heading, so the first row of the pane does not
+// sit against it. Carried by the heading rather than by the scroll view's
+// content inset: an inset moves the heading down along with the rows, which put
+// this pane's heading below the one beside it.
+#define BT_PANE_HEADER_AIR 3.0
 
-- (void)drawRect:(NSRect)dirtyRect {
-    NSRect bounds = [self bounds];
-    [BTStyle drawListHeaderInRect:bounds];
-    if ([self.title length] == 0) return;
+@implementation BTPaneHeaderView {
+    NSTableHeaderCell *_cell;
+}
+
++ (CGFloat)height { return [BTStyle listHeaderHeight] + BT_PANE_HEADER_AIR; }
+
+// The word is placed by the same cell that places a column heading, rather than
+// drawn straight into a band worked out here. A line drawn into a rect is laid
+// along its top and a cell centres it, so the two disagree by the font's leading
+// and the pane heading rode three points low beside the ones next to it. Sharing
+// the cell is what keeps them from disagreeing again.
+- (NSTableHeaderCell *)cell {
+    if (_cell == nil) _cell = [[NSTableHeaderCell alloc] initTextCell:@""];
 
     NSMutableParagraphStyle *centred = [[NSMutableParagraphStyle alloc] init];
     [centred setAlignment:NSCenterTextAlignment];
@@ -481,6 +494,26 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list) {
     NSDictionary *attrs = @{NSFontAttributeName: [BTStyle uiFont],
                             NSForegroundColorAttributeName: [BTStyle paneHeaderText],
                             NSParagraphStyleAttributeName: centred};
+    [_cell setAttributedStringValue:
+        [[NSAttributedString alloc] initWithString:(self.title ? self.title : @"")
+                                        attributes:attrs]];
+    return _cell;
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    NSRect bounds = [self bounds];
+
+    // A header view is flipped, so the strip is the top of it and the air is
+    // what is left underneath.
+    CGFloat tall = [BTStyle listHeaderHeight];
+    NSRect strip = NSMakeRect(NSMinX(bounds),
+                              ([self isFlipped] ? NSMinY(bounds) : NSMaxY(bounds) - tall),
+                              NSWidth(bounds), tall);
+
+    [[BTStyle listBackground] set];
+    NSRectFill(bounds);
+    [BTStyle drawListHeaderInRect:strip];
+    if ([self.title length] == 0) return;
 
     // Centred on the pane, not on this view. A scroller takes its square out of
     // the heading's right end, so a word centred here sits left of the middle of
@@ -489,12 +522,9 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list) {
     NSScrollView *scroll = [self enclosingScrollView];
     CGFloat pane = scroll ? NSWidth([scroll bounds]) : NSWidth(bounds);
 
-    // A band exactly one line tall, centred in the strip. Handed the whole
-    // height instead, the word rides high by the slack between the two.
-    CGFloat line = [BTStyle lineHeight];
-    NSRect band = NSMakeRect(NSMinX(bounds) + 4.0, NSMidY(bounds) - line / 2.0,
-                             pane - 8.0, line);
-    [self.title drawInRect:band withAttributes:attrs];
+    NSRect band = NSMakeRect(NSMinX(strip) + 4.0, NSMinY(strip),
+                             pane - 8.0, NSHeight(strip));
+    [[self cell] drawInteriorWithFrame:band inView:self];
 }
 
 // Nothing here is a column heading, so nothing here is draggable, resizable, or
