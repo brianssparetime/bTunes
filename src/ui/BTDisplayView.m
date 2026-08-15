@@ -41,6 +41,22 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     NSString *_syncTitle;
     NSDate *_lineShownAt;
     NSString *_lineTrackID;
+
+    // What the readout last put on screen. Everything on it is a song, a clock
+    // counting in whole seconds, or a knob that moves a point at a time, so
+    // comparing against these answers whether the tick has brought anything
+    // worth drawing.
+    NSString *_drawnTrackID;
+    NSString *_drawnLeading;
+    NSString *_drawnTrailing;
+    CGFloat _drawnKnob;
+
+    // Whether either line is too long for the panel, measured when the words or
+    // the panel change rather than twenty times a second.
+    NSString *_measuredTitle;
+    NSString *_measuredSecond;
+    CGFloat _measuredWidth;
+    BOOL _linesTravel;
 }
 
 - (id)initWithFrame:(NSRect)frame {
@@ -63,8 +79,73 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
+// The player's tick calls this twenty times a second and the readout has
+// something new about once, so it asks before repainting. Redrawing regardless
+// meant laying out four lines of type, two rounded paths and a gradient knob
+// twenty times over to put the same picture back.
 - (void)refresh {
-    [self setNeedsDisplay:YES];
+    if ([self hasSomethingNewToDraw]) [self setNeedsDisplay:YES];
+}
+
+// A line too long for the panel travels on every tick, and that is the one case
+// where each frame really is a new picture.
+- (BOOL)linesTravel {
+    BTTrack *track = [[BTPlayer sharedPlayer] currentTrack];
+    if (track == nil) return NO;
+
+    NSString *title = [track displayTitle];
+    NSString *second = [NSString stringWithFormat:@"%@ - %@",
+                        [track displayArtist], [track displayAlbum]];
+    CGFloat room = NSWidth([self bounds]) - 12;
+    if (room == _measuredWidth && BTSameString(title, _measuredTitle)
+        && BTSameString(second, _measuredSecond)) {
+        return _linesTravel;
+    }
+
+    _measuredTitle = title;
+    _measuredSecond = second;
+    _measuredWidth = room;
+    _linesTravel =
+        [title sizeWithAttributes:@{NSFontAttributeName: [BTStyle displayBoldFont]}].width > room
+        || [second sizeWithAttributes:@{NSFontAttributeName: [BTStyle displayFont]}].width > room;
+    return _linesTravel;
+}
+
+// Where the elapsed part of the groove ends, to the point. The knob rides on
+// the same number, so one comparison covers both.
+//
+// The clock is asked for once and handed down. Asking the player the time is
+// not free, and a check meant to save work should not cost four of them.
+- (CGFloat)knobFor:(NSTimeInterval)elapsed of:(NSTimeInterval)duration {
+    if (duration <= 0) return 0.0;
+    CGFloat fraction = (CGFloat)(elapsed / duration);
+    if (fraction < 0) fraction = 0;
+    if (fraction > 1) fraction = 1;
+    return floor(NSWidth([self progressRect]) * fraction);
+}
+
+- (NSString *)trailingFor:(NSTimeInterval)elapsed of:(NSTimeInterval)duration {
+    if (!_showRemaining) return [BTStyle timeStringFromInterval:duration];
+    return [NSString stringWithFormat:@"-%@",
+            [BTStyle timeStringFromInterval:(duration - elapsed)]];
+}
+
+- (BOOL)hasSomethingNewToDraw {
+    // The sync bar and a notice are put up and taken down by their own
+    // handlers, which mark the view themselves. The tick has nothing to add.
+    if (_syncing || [_notice length] > 0) return NO;
+
+    BTPlayer *player = [BTPlayer sharedPlayer];
+    BTTrack *track = [player currentTrack];
+    if (track == nil) return _drawnTrackID != nil;
+    if (!BTSameString(track.trackID, _drawnTrackID)) return YES;
+    if ([self linesTravel]) return YES;
+
+    NSTimeInterval elapsed = [player currentTime];
+    NSTimeInterval duration = [player duration];
+    return !BTSameString([BTStyle timeStringFromInterval:elapsed], _drawnLeading)
+        || !BTSameString([self trailingFor:elapsed of:duration], _drawnTrailing)
+        || [self knobFor:elapsed of:duration] != _drawnKnob;
 }
 
 - (void)couldNotPlay:(NSNotification *)note {
@@ -262,6 +343,9 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
                                 NSForegroundColorAttributeName: [BTStyle displayText],
                                 NSParagraphStyleAttributeName: centered};
 
+    // Kept so refresh can tell a new picture from the one already up.
+    _drawnTrackID = track.trackID;
+
     if (track == nil) {
         CGFloat h = BT_DISPLAY_LINE + 2.0;
         NSRect r = NSMakeRect(NSMinX(bounds), NSMidY(bounds) - h / 2.0, NSWidth(bounds), h);
@@ -313,9 +397,10 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     // fixed rect leaves the glyphs wherever the font's metrics put them.
     NSRect groove = [self progressRect];
     NSString *leading = [BTStyle timeStringFromInterval:elapsed];
-    NSString *trailing = _showRemaining
-        ? [NSString stringWithFormat:@"-%@", [BTStyle timeStringFromInterval:(duration - elapsed)]]
-        : [BTStyle timeStringFromInterval:duration];
+    NSString *trailing = [self trailingFor:elapsed of:duration];
+    _drawnLeading = leading;
+    _drawnTrailing = trailing;
+    _drawnKnob = [self knobFor:elapsed of:duration];
 
     CGFloat textHeight = [leading sizeWithAttributes:timeLeftAttrs].height;
     CGFloat textY = NSMidY(groove) - textHeight / 2.0;

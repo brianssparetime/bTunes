@@ -1,5 +1,13 @@
 #import <Cocoa/Cocoa.h>
 
+// Two lines of type that read the same, either of which may be missing. The
+// readouts hold on to the words they last drew so the player's tick does not
+// repaint what is already on screen, and a song without an album gives a nil
+// where the comparison expects a string.
+static inline BOOL BTSameString(NSString *a, NSString *b) {
+    return (a == b) || (a != nil && [a isEqualToString:b]);
+}
+
 // Colors, fonts, and drawing helpers for the 2003 look. Everything the
 // interface draws goes through here so the palette stays in one place.
 @interface BTStyle : NSObject

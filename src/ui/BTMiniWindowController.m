@@ -350,7 +350,7 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
     // What the panel last put on screen. Everything it shows is a song, a play
     // state, or a clock counting in whole seconds, so comparing against these
     // answers whether there is anything new to draw.
-    __weak BTTrack *_drawnTrack;
+    NSString *_drawnTrackID;
     NSString *_drawnTime;
     BOOL _drawnPlaying;
 
@@ -392,7 +392,7 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
     BTPlayer *player = [BTPlayer sharedPlayer];
     BTTrack *track = [player currentTrack];
     NSString *time = track ? [BTStyle timeStringFromInterval:[player currentTime]] : @"--:--";
-    if (track == _drawnTrack && [player isPlaying] == _drawnPlaying
+    if (BTSameString(track.trackID, _drawnTrackID) && [player isPlaying] == _drawnPlaying
         && [time isEqualToString:_drawnTime]) return;
     [self setNeedsDisplay:YES];
 }
@@ -443,7 +443,7 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
 
     NSString *time = track ? [BTStyle timeStringFromInterval:[player currentTime]] : @"--:--";
     // Kept so refreshIfChanged can tell a new frame from the one already up.
-    _drawnTrack = track;
+    _drawnTrackID = track.trackID;
     _drawnTime = time;
     _drawnPlaying = [player isPlaying];
 
