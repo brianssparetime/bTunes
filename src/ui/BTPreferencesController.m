@@ -5,6 +5,9 @@
 #import "BTControls.h"
 
 #define BT_PREFS_WIDTH  520.0
+// Narrower than this and the path field is shorter than the button beside it.
+#define BT_PREFS_MIN_WIDTH 420.0
+#define BT_PREFS_MIN_HEIGHT 240.0
 
 // The parts that follow the type. At the size this was drawn for they come to
 // the numbers that used to be written out: 17, 22, 18, 28, 32, and the steps 24
@@ -24,17 +27,50 @@
 // A tick box does not fill its frame the way a field does, so its note sits
 // closer to it or the two read as unrelated.
 #define BT_BOX_TO_NOTE 4.0
-#define BT_NOTE_WIDTH (BT_PREFS_WIDTH - 104.0)
+// A note under a path starts out beside the field and stops twenty points short
+// of the right edge. One under a tick box starts at the box's own words, so it
+// runs wider.
+#define BT_NOTE_WIDTH(w) ((w) - 104.0)
+#define BT_BOX_NOTE_WIDTH(w) ((w) - 58.0)
 
-// How tall a note is: asked of its own words rather than counted in lines. The
-// measuring belongs to the palette, since the burn dialog wants the same answer
-// about its own wrapping lines; a note is always in the small face, which is the
-// whole of what this adds.
-static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
-    return [BTStyle heightForText:text font:[BTStyle smallFont] width:width];
+// How tall a note is: asked of the field that draws it rather than of the words
+// it holds. A field wraps a few points narrower than the frame it is given, so
+// the same sentence measured as a string comes out a line short, and comes out
+// a line short only at the widths where it matters. Verified against the words
+// under Music at 400 points: the string says two lines and the field takes
+// three.
+static CGFloat BTNoteHeight(NSTextField *note, CGFloat width) {
+    return ceil([[note cell] cellSizeForBounds:NSMakeRect(0, 0, width, 10000.0)].height);
 }
 
+// A clip view holds what it is given by the bottom, so a pane taller than the
+// window opens showing its last setting, and shrinking the window walks the
+// first ones out of sight. Flipped, it holds the pane by the top instead, which
+// is where the settings start and where they stay through a resize.
+@interface BTTopClipView : NSClipView
+@end
+
+@implementation BTTopClipView
+- (BOOL)isFlipped { return YES; }
+@end
+
 @implementation BTPreferencesController {
+    // What the window shows through, and the pane it shows. The pane is as tall
+    // as the settings need, which at any narrow width is taller than a small
+    // screen, so the window is a window onto it rather than the whole of it.
+    NSScrollView *_scroll;
+    NSView *_pane;
+
+    // Every view the layout has to place, in the order it places them. Held
+    // because the layout is redone whenever the window changes width: a note
+    // wraps to a different number of lines and everything under it moves.
+    NSMutableArray *_names;
+    NSMutableArray *_paths;
+    NSMutableArray *_choosers;
+    NSMutableArray *_pathNotes;
+    NSMutableArray *_boxes;
+    NSMutableArray *_boxNotes;
+
     NSTextField *_musicField;
     NSTextField *_databaseField;
     NSTextField *_iTunesField;
@@ -53,9 +89,8 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
     return shared;
 }
 
-// The four paths, in the order they are shown. Held together so the window can
-// be measured before it is built: how tall it has to be is the sum of what goes
-// in it, and what goes in it includes four notes of different lengths.
+// The five paths, in the order they are shown: what each is called, and the
+// note under it.
 + (NSArray *)settingRows {
     return @[
         @[@"Music:", @"The folder the music sits in. Songs are recorded as their place below it, so pointing this at the same music on another machine opens the same library there."],
@@ -67,9 +102,7 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
 }
 
 // The tick boxes, in the order they are shown: what each says, and the note
-// under it. Held together for the same reason the paths above are, since the
-// window is measured before it is built and four notes of different lengths are
-// what decides how tall it has to be.
+// under it.
 + (NSArray *)boxRows {
     return @[
         @[@"Look up CDs that do not name themselves",
@@ -89,53 +122,96 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
     ];
 }
 
-// One setting down to the next: the field, the air under it, its note however
-// many lines that turns out to be, and the air under that.
-+ (CGFloat)stepForNote:(NSString *)note {
-    return BT_FIELD + BT_TO_NOTE + BTNoteHeight(note, BT_NOTE_WIDTH) + BT_AFTER_NOTE;
-}
-
-// How wide a note under a tick box may run. Wider than one under a path, since
-// it starts at the window's left margin rather than out beside a field.
-#define BT_BOX_NOTE_WIDTH (BT_PREFS_WIDTH - 58.0)
-
-// The window is the sum of what goes in it: the paths, whose notes run to
-// different lengths, then the tick boxes, whose notes do too, over a top and
-// bottom margin.
+// The pane is the sum of what goes in it: the paths, each a field, the air
+// under it, its note however many lines that turns out to be, and the air under
+// that; then the tick boxes, whose notes run to different lengths too. It
+// shortens as the window widens, since a wider note takes fewer lines to say
+// the same thing.
 //
 // The last box carries no step after it, because a step is the room made for
 // whatever comes next and nothing does. The bottom margin is that room.
-+ (CGFloat)windowHeight {
+- (CGFloat)heightForWidth:(CGFloat)width {
     CGFloat total = 52.0;
-    NSArray *rows = [self settingRows];
     NSUInteger i;
-    for (i = 0; i < [rows count]; i++) {
-        total += [self stepForNote:[[rows objectAtIndex:i] objectAtIndex:1]];
+    for (i = 0; i < [_pathNotes count]; i++) {
+        total += BT_FIELD + BT_TO_NOTE +
+                 BTNoteHeight([_pathNotes objectAtIndex:i], BT_NOTE_WIDTH(width)) +
+                 BT_AFTER_NOTE;
     }
 
-    NSArray *boxes = [self boxRows];
-    for (i = 0; i < [boxes count]; i++) {
-        NSString *note = [[boxes objectAtIndex:i] objectAtIndex:1];
-        total += BT_BOX_TO_NOTE + BTNoteHeight(note, BT_BOX_NOTE_WIDTH);
-        if (i + 1 < [boxes count]) total += BT_AFTER_NOTE + BT_BOX;
+    for (i = 0; i < [_boxNotes count]; i++) {
+        total += BT_BOX_TO_NOTE +
+                 BTNoteHeight([_boxNotes objectAtIndex:i], BT_BOX_NOTE_WIDTH(width));
+        if (i + 1 < [_boxNotes count]) total += BT_AFTER_NOTE + BT_BOX;
     }
     return total + 38.0;
 }
 
 - (instancetype)initPreferences {
-    NSRect frame = NSMakeRect(0, 0, BT_PREFS_WIDTH, [BTPreferencesController windowHeight]);
+    // Opened at the width it was drawn for and at whatever height that width
+    // turns out to need, which cannot be known until the notes exist to be
+    // asked. The window is made at a nominal height and sized once they do.
+    NSRect frame = NSMakeRect(0, 0, BT_PREFS_WIDTH, 400.0);
     NSWindow *window = [[NSWindow alloc] initWithContentRect:frame
-                                                   styleMask:(NSTitledWindowMask | NSClosableWindowMask)
+                                                   styleMask:(NSTitledWindowMask |
+                                                              NSClosableWindowMask |
+                                                              NSResizableWindowMask)
                                                      backing:NSBackingStoreBuffered
                                                        defer:NO];
     [window setTitle:@"Preferences"];
-    [window center];
+    [window setContentMinSize:NSMakeSize(BT_PREFS_MIN_WIDTH, BT_PREFS_MIN_HEIGHT)];
 
     self = [super initWithWindow:window];
     if (self == nil) return nil;
 
-    NSView *content = [window contentView];
-    CGFloat y = [BTPreferencesController windowHeight] - 52.0;
+    _pane = [[NSView alloc] initWithFrame:frame];
+    [self buildSettings];
+
+    _scroll = [[NSScrollView alloc] initWithFrame:[[window contentView] bounds]];
+    [_scroll setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
+    [_scroll setBorderType:NSNoBorder];
+    [_scroll setHasVerticalScroller:YES];
+    [_scroll setHasHorizontalScroller:NO];
+    [_scroll setAutohidesScrollers:YES];
+    [_scroll setDrawsBackground:YES];
+    [_scroll setBackgroundColor:[NSColor windowBackgroundColor]];
+    [_scroll setContentView:[[BTTopClipView alloc] initWithFrame:[[_scroll contentView] frame]]];
+    [_scroll setDocumentView:_pane];
+    [[window contentView] addSubview:_scroll];
+
+    // The room to lay out in is what the clip view has, not what the window
+    // has: a scroller showing takes fifteen points off it, and the notes wrap
+    // to that width rather than to the window's.
+    NSClipView *clip = [_scroll contentView];
+    [clip setPostsFrameChangedNotifications:YES];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(roomChanged:)
+                                                 name:NSViewFrameDidChangeNotification
+                                               object:clip];
+
+    [window setContentSize:NSMakeSize(BT_PREFS_WIDTH, [self heightForWidth:BT_PREFS_WIDTH])];
+    [self openNoTallerThanTheScreen];
+    [window center];
+    [self layoutPane];
+    [self showTopOfPane];
+    [self refresh];
+    return self;
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+// The settings are made once and placed again on every resize, so nothing here
+// decides where anything goes. Sizes that never change, such as the height a
+// push button chooses for itself, are settled here and read back at layout.
+- (void)buildSettings {
+    _names = [NSMutableArray array];
+    _paths = [NSMutableArray array];
+    _choosers = [NSMutableArray array];
+    _pathNotes = [NSMutableArray array];
+    _boxes = [NSMutableArray array];
+    _boxNotes = [NSMutableArray array];
 
     NSArray *rows = [BTPreferencesController settingRows];
     SEL actions[] = { @selector(chooseMusicFolder:), @selector(chooseDatabaseFolder:),
@@ -145,11 +221,9 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
                                         &_detuneField, &_btunesField };
     NSUInteger row;
     for (row = 0; row < [rows count]; row++) {
-        *fields[row] = [self addRowAtY:&y
-                                 label:[[rows objectAtIndex:row] objectAtIndex:0]
-                                  note:[[rows objectAtIndex:row] objectAtIndex:1]
-                                action:actions[row]
-                                inView:content];
+        *fields[row] = [self addRowWithLabel:[[rows objectAtIndex:row] objectAtIndex:0]
+                                        note:[[rows objectAtIndex:row] objectAtIndex:1]
+                                      action:actions[row]];
     }
 
     // The boxes, in the order boxRows names them. Each is a choice about how
@@ -165,26 +239,21 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
         NSString *title = [[boxes objectAtIndex:box] objectAtIndex:0];
         NSString *note = [[boxes objectAtIndex:box] objectAtIndex:1];
 
-        NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(20, y, 400, BT_BOX)];
+        NSButton *button = [[NSButton alloc] initWithFrame:NSZeroRect];
         [button setButtonType:NSSwitchButton];
         [button setFont:[BTStyle uiFont]];
         [button setTitle:title];
         [button setTarget:self];
         [button setAction:boxActions[box]];
-        [content addSubview:button];
+        [_pane addSubview:button];
+        [_boxes addObject:button];
         *boxFields[box] = button;
 
         // The note sits under the box at the same left edge as the words beside
         // it, the way the notes under the paths do.
-        CGFloat noteHeight = BTNoteHeight(note, BT_BOX_NOTE_WIDTH);
-        [content addSubview:[self labelWithText:note
-                                          frame:NSMakeRect(38, y - BT_BOX_TO_NOTE - noteHeight,
-                                                           BT_BOX_NOTE_WIDTH, noteHeight)
-                                          small:YES]];
-
-        // The next box sits at its own origin and extends upward, so its height
-        // comes off here too. Without it the note above runs straight into it.
-        y -= BT_BOX_TO_NOTE + noteHeight + BT_AFTER_NOTE + BT_BOX;
+        NSTextField *label = [self labelWithText:note small:YES];
+        [_pane addSubview:label];
+        [_boxNotes addObject:label];
     }
 
     // Named in the colour it turns things, which says more than the words do.
@@ -192,9 +261,81 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
         [[NSAttributedString alloc] initWithString:[[boxes lastObject] objectAtIndex:0]
                                        attributes:@{NSFontAttributeName: [BTStyle uiFont],
                                                     NSForegroundColorAttributeName: [BTStyle accent]}]];
+}
 
-    [self refresh];
-    return self;
+// A window is pulled back onto the display as it is ordered front, so one built
+// taller than the screen opens with its lower settings cut off and no way to
+// reach them. Open no taller than there is room for; the rest is scrolled to.
+- (void)openNoTallerThanTheScreen {
+    NSWindow *window = [self window];
+    NSScreen *screen = [window screen];
+    if (screen == nil) screen = [NSScreen mainScreen];
+    if (screen == nil) return;
+
+    NSRect content = [window contentRectForFrameRect:[window frame]];
+    CGFloat chrome = NSHeight([window frame]) - NSHeight(content);
+    CGFloat most = NSHeight([screen visibleFrame]) - chrome;
+    if (NSHeight(content) > most) {
+        [window setContentSize:NSMakeSize(NSWidth(content), MAX(most, BT_PREFS_MIN_HEIGHT))];
+    }
+}
+
+- (void)roomChanged:(NSNotification *)note {
+    [self layoutPane];
+}
+
+- (void)layoutPane {
+    NSSize room = [[_scroll contentView] bounds].size;
+    if (room.width <= 0.0) return;
+
+    // The pane is at least as tall as the window, so settings that take less
+    // than a windowful fill it rather than leaving the scroller a stub of
+    // travel to nowhere.
+    CGFloat height = MAX([self heightForWidth:room.width], room.height);
+    NSSize size = NSMakeSize(room.width, height);
+    if (!NSEqualSizes(size, [_pane frame].size)) [_pane setFrameSize:size];
+    [self placeSettingsInWidth:room.width fromTop:height];
+}
+
+// Said once at the start, since the clip view is flipped and holds its position
+// from the top of the pane thereafter.
+- (void)showTopOfPane {
+    NSClipView *clip = [_scroll contentView];
+    [clip scrollToPoint:NSZeroPoint];
+    [_scroll reflectScrolledClipView:clip];
+}
+
+- (void)placeSettingsInWidth:(CGFloat)width fromTop:(CGFloat)top {
+    CGFloat noteWidth = BT_NOTE_WIDTH(width);
+    CGFloat boxNoteWidth = BT_BOX_NOTE_WIDTH(width);
+    CGFloat y = top - 52.0;
+    NSUInteger i;
+
+    for (i = 0; i < [_paths count]; i++) {
+        [[_names objectAtIndex:i] setFrame:NSMakeRect(20, y, 60, BT_NAME)];
+        [[_paths objectAtIndex:i] setFrame:NSMakeRect(84, y - 3, width - 84 - 120, BT_FIELD)];
+
+        NSButton *choose = [_choosers objectAtIndex:i];
+        [choose setFrame:NSMakeRect(width - 112, y - 3, 92, NSHeight([choose frame]))];
+
+        NSTextField *note = [_pathNotes objectAtIndex:i];
+        CGFloat noteHeight = BTNoteHeight(note, noteWidth);
+        [note setFrame:NSMakeRect(84, y - BT_TO_NOTE - noteHeight, noteWidth, noteHeight)];
+
+        y -= BT_TO_NOTE + noteHeight + BT_AFTER_NOTE + BT_FIELD;
+    }
+
+    for (i = 0; i < [_boxes count]; i++) {
+        [[_boxes objectAtIndex:i] setFrame:NSMakeRect(20, y, width - 40, BT_BOX)];
+
+        NSTextField *note = [_boxNotes objectAtIndex:i];
+        CGFloat noteHeight = BTNoteHeight(note, boxNoteWidth);
+        [note setFrame:NSMakeRect(38, y - BT_BOX_TO_NOTE - noteHeight, boxNoteWidth, noteHeight)];
+
+        // The next box sits at its own origin and extends upward, so its height
+        // comes off here too. Without it the note above runs straight into it.
+        y -= BT_BOX_TO_NOTE + noteHeight + BT_AFTER_NOTE + BT_BOX;
+    }
 }
 
 - (void)lookupChanged:(id)sender {
@@ -214,40 +355,38 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
 }
 
 // The note under each row is the small gray one; the row's own name is not.
-- (NSTextField *)labelWithText:(NSString *)text frame:(NSRect)frame small:(BOOL)small {
+- (NSTextField *)labelWithText:(NSString *)text small:(BOOL)small {
     NSTextField *label = BTLabelWithText(text, (small ? [BTStyle smallFont] : [BTStyle uiFont]));
-    [label setFrame:frame];
     if (small) [label setTextColor:[BTStyle secondaryText]];
     [[label cell] setLineBreakMode:NSLineBreakByWordWrapping];
     return label;
 }
 
-- (NSTextField *)addRowAtY:(CGFloat *)y
-                     label:(NSString *)labelText
-                      note:(NSString *)noteText
-                    action:(SEL)action
-                    inView:(NSView *)content {
-    [content addSubview:[self labelWithText:labelText
-                                      frame:NSMakeRect(20, *y, 60, BT_NAME)
-                                      small:NO]];
+- (NSTextField *)addRowWithLabel:(NSString *)labelText
+                            note:(NSString *)noteText
+                          action:(SEL)action {
+    NSTextField *name = [self labelWithText:labelText small:NO];
+    [_pane addSubview:name];
+    [_names addObject:name];
 
-    NSTextField *path = [[NSTextField alloc] initWithFrame:NSMakeRect(84, *y - 3, BT_PREFS_WIDTH - 84 - 120, BT_FIELD)];
+    NSTextField *path = [[NSTextField alloc] initWithFrame:NSZeroRect];
     [path setEditable:NO];
     [path setSelectable:YES];
     [path setFont:[BTStyle uiFont]];
     [[path cell] setLineBreakMode:NSLineBreakByTruncatingHead];
-    [content addSubview:path];
+    [_pane addSubview:path];
+    [_paths addObject:path];
 
+    // Made at the height it asks for, which the layout then leaves alone: a
+    // rounded bezel draws at a height of its own choosing.
     BTPushButton *choose = [BTPushButton buttonWithTitle:@"Choose..." target:self action:action];
-    [choose setFrame:NSMakeRect(BT_PREFS_WIDTH - 112, *y - 3, 92, NSHeight([choose frame]))];
-    [content addSubview:choose];
+    [_pane addSubview:choose];
+    [_choosers addObject:choose];
 
-    CGFloat noteHeight = BTNoteHeight(noteText, BT_NOTE_WIDTH);
-    [content addSubview:[self labelWithText:noteText
-                                      frame:NSMakeRect(84, *y - BT_TO_NOTE - noteHeight,
-                                                       BT_NOTE_WIDTH, noteHeight)
-                                      small:YES]];
-    *y -= BT_TO_NOTE + noteHeight + BT_AFTER_NOTE + BT_FIELD;
+    NSTextField *note = [self labelWithText:noteText small:YES];
+    [_pane addSubview:note];
+    [_pathNotes addObject:note];
+
     return path;
 }
 
