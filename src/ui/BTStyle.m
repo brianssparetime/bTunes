@@ -864,52 +864,6 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
     [tick stroke];
 }
 
-+ (void)drawSyncGlyphInRect:(NSRect)rect color:(NSColor *)color {
-    // Two arcs on the same circle, half a turn apart, each ending in a head. A
-    // full ring with heads stuck on reads as a clock; leaving a gap at each end
-    // is what makes it read as two arrows going round.
-    CGFloat side = MIN(NSWidth(rect), NSHeight(rect));
-    CGFloat radius = side * 0.30;
-    NSPoint centre = NSMakePoint(NSMidX(rect), NSMidY(rect));
-    if (radius < 2.0) return;
-
-    [color set];
-    CGFloat headLength = radius * 0.85;
-    CGFloat headHalf = radius * 0.46;
-
-    NSInteger half;
-    for (half = 0; half < 2; half++) {
-        CGFloat turn = half * 180.0;
-
-        NSBezierPath *arc = [NSBezierPath bezierPath];
-        [arc setLineWidth:MAX(1.2, side * 0.10)];
-        [arc setLineCapStyle:NSRoundLineCapStyle];
-        [arc appendBezierPathWithArcWithCenter:centre
-                                        radius:radius
-                                    startAngle:(turn + 20.0)
-                                      endAngle:(turn + 150.0)];
-        [arc stroke];
-
-        // The head sits at the leading end of its arc, pointing the way round.
-        CGFloat radians = (turn + 150.0) * M_PI / 180.0;
-        NSPoint tip = NSMakePoint(centre.x + cos(radians) * radius,
-                                  centre.y + sin(radians) * radius);
-        NSPoint along = NSMakePoint(-sin(radians), cos(radians));   // the tangent
-        NSPoint across = NSMakePoint(cos(radians), sin(radians));
-
-        NSPoint point = NSMakePoint(tip.x + along.x * headLength * 0.5,
-                                    tip.y + along.y * headLength * 0.5);
-        NSPoint back = NSMakePoint(tip.x - along.x * headLength * 0.5,
-                                   tip.y - along.y * headLength * 0.5);
-
-        NSBezierPath *head = [NSBezierPath bezierPath];
-        [head moveToPoint:point];
-        [head lineToPoint:NSMakePoint(back.x + across.x * headHalf, back.y + across.y * headHalf)];
-        [head lineToPoint:NSMakePoint(back.x - across.x * headHalf, back.y - across.y * headHalf)];
-        [head closePath];
-        [head fill];
-    }
-}
 
 + (void)drawShrinkGlyphInRect:(NSRect)rect color:(NSColor *)color {
     // Two arrows meeting in the middle, each with a solid head. Four thin
@@ -1003,11 +957,19 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
 }
 
 + (void)drawRepeatGlyphInRect:(NSRect)rect one:(BOOL)one color:(NSColor *)color {
-    // A stadium-shaped loop with an arrowhead riding the top edge. Kept low so
-    // it sits at the same visual weight as the shuffle mark beside it.
+    // A stadium-shaped loop with an arrowhead hanging off one long edge.
+    //
+    // The loop is centred, not the ink. Centring the whole mark leaves the ring
+    // riding a point and a quarter high, because the arrowhead hangs below it
+    // and drags the bottom of the ink box down with it; the eye reads the ring
+    // as the mark and the arrow as something attached to it.
+    //
+    // Buttons draw top down, so the arrowhead placed along NSMaxY comes out
+    // beneath the loop rather than above it, and a nudge meant to lower the mark
+    // raises it. The one that used to sit here did exactly that.
     NSRect r = NSInsetRect(rect, 2.5, 0.0);
     CGFloat height = 7.0;
-    r = NSMakeRect(NSMinX(r), NSMidY(rect) - height / 2.0 - 1.0, NSWidth(r), height);
+    r = NSMakeRect(NSMinX(r), NSMidY(rect) - height / 2.0, NSWidth(r), height);
     if (NSWidth(r) < 8 || NSHeight(r) < 4) return;
 
     CGFloat radius = NSHeight(r) / 2.0;

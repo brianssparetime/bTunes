@@ -184,7 +184,6 @@ static inline BOOL BTSameString(NSString *a, NSString *b) {
 // State is NSOffState, NSOnState, or NSMixedState.
 + (void)drawCheckboxInRect:(NSRect)rect state:(NSInteger)state enabled:(BOOL)enabled;
 
-+ (void)drawSyncGlyphInRect:(NSRect)rect color:(NSColor *)color;
 + (void)drawShuffleGlyphInRect:(NSRect)rect color:(NSColor *)color;
 + (void)drawRepeatGlyphInRect:(NSRect)rect one:(BOOL)one color:(NSColor *)color;
 
