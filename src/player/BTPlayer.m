@@ -1,6 +1,9 @@
 #import "BTPlayer.h"
 #import "BTTrack.h"
 #import "BTLibrary.h"
+#import "BTPreferences.h"
+#import "BTSoundCheck.h"
+#import "BTEqualizer.h"
 #import <AVFoundation/AVFoundation.h>
 
 NSString *const BTPlayerDidChangeNotification = @"BTPlayerDidChange";
@@ -15,6 +18,11 @@ NSString *const BTPlayerCouldNotPlayNotification = @"BTPlayerCouldNotPlay";
 @interface BTPlayer ()
 @property (nonatomic, strong) AVAudioEngine *engine;
 @property (nonatomic, strong) AVAudioPlayerNode *node;
+// The equalizer sits between the song and the mixer, and stays in the graph
+// whether or not it is switched on: taking it out and putting it back would mean
+// rebuilding the graph every time somebody ticked the box, and a bypassed unit
+// costs nothing.
+@property (nonatomic, strong) AVAudioUnitEQ *equalizerUnit;
 @property (nonatomic, strong) AVAudioFile *file;
 @property (nonatomic, strong) BTSpectrum *spectrum;
 @property (nonatomic, strong) AVAudioFormat *connectedFormat;
@@ -107,6 +115,14 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(libraryChanged:)
                                                      name:BTLibraryDidChangeNotification
+                                                   object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(preferencesChanged:)
+                                                     name:BTPreferencesDidChangeNotification
+                                                   object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(equalizerChanged:)
+                                                     name:BTEqualizerDidChangeNotification
                                                    object:nil];
     }
     return self;
@@ -207,7 +223,9 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
     if (self.engine == nil) {
         self.engine = [[AVAudioEngine alloc] init];
         self.node = [[AVAudioPlayerNode alloc] init];
+        self.equalizerUnit = [[AVAudioUnitEQ alloc] initWithNumberOfBands:BT_EQ_BANDS];
         [self.engine attachNode:self.node];
+        [self.engine attachNode:self.equalizerUnit];
     }
 
     [self.node stop];
@@ -216,7 +234,8 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
     if (![format isEqual:self.connectedFormat]) {
         [self teardownTap];
         [self.engine stop];
-        [self.engine connect:self.node to:[self.engine mainMixerNode] format:format];
+        [self.engine connect:self.node to:self.equalizerUnit format:format];
+        [self.engine connect:self.equalizerUnit to:[self.engine mainMixerNode] format:format];
         self.connectedFormat = format;
         self.spectrum = [[BTSpectrum alloc] initWithSampleRate:[format sampleRate]];
         [self installTapWithFormat:format];
@@ -225,9 +244,10 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
         [self.spectrum reset];
     }
 
-    // Set again here because rewiring the node loses it, and it is the gain that
-    // goes in rather than the knob.
-    [self.node setVolume:[BTPlayer gainForVolume:self.volume]];
+    // Both set again here because rewiring loses them, and because a unit built
+    // a moment ago knows nothing about where the sliders are.
+    [self applyLevelToNode];
+    [[BTEqualizer sharedEqualizer] applyToUnit:self.equalizerUnit];
 
     if (![self.engine isRunning] && ![self.engine startAndReturnError:error]) return NO;
     return YES;
@@ -325,9 +345,26 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
         return NO;
     }
 
+    // How loud this recording is, asked of its file the first time it is played
+    // and never again. Songs that came in through the iTunes sync have never had
+    // their files opened, so for nearly the whole library this is where the
+    // number arrives. It costs a read of the tags rather than a decode.
+    if ([BTSoundCheck fillInTrack:track]) [[BTLibrary sharedLibrary] noteTrackChanged];
+
     NSError *error = nil;
     AVAudioFile *file = [[AVAudioFile alloc] initForReading:[track fileURL] error:&error];
-    if (file == nil || ![self prepareEngineForFile:file error:&error]) {
+    if (file == nil) {
+        NSLog(@"BTunes: cannot open %@ (%@)", [track resolvedPath], [error localizedDescription]);
+        return NO;
+    }
+
+    // Which song it is decides how loud it is played, so it is recorded before
+    // the graph is set up rather than after the sound has started. A song that
+    // then fails to open is replaced by whichever one does, or cleared by the
+    // stop that follows when none of them will.
+    self.currentTrack = track;
+
+    if (![self prepareEngineForFile:file error:&error]) {
         NSLog(@"BTunes: cannot open %@ (%@)", [track resolvedPath], [error localizedDescription]);
         return NO;
     }
@@ -343,7 +380,6 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
     [self.node play];
     self.playing = YES;
 
-    self.currentTrack = track;
     self.orderPosition = position;
     // Nothing has been listened to yet. The count goes up once this pass
     // reaches the mark, which the tick watches for.
@@ -617,12 +653,39 @@ NSInteger BTWalkForPlayable(NSInteger count, NSInteger from, NSInteger step,
     return knob;
 }
 
+// What the node is actually set to: where the knob sits, and then the song's own
+// correction on top of it when songs are being evened out.
+//
+// The two are multiplied rather than added because both are multipliers of the
+// sound. Kept in one place because they change at different times and for
+// different reasons: the knob moves while a song plays, the correction changes
+// as one song gives way to the next, and either arriving without the other is
+// how the knob comes to mean two different things.
+- (void)applyLevelToNode {
+    float gain = [BTPlayer gainForVolume:self.volume];
+    if ([[BTPreferences sharedPreferences] evensOutVolume] && self.currentTrack) {
+        gain *= [self.currentTrack soundCheckMultiplier];
+    }
+    [self.node setVolume:gain];
+}
+
+// The box in Preferences was ticked or unticked. Whatever is playing follows at
+// once rather than at the next song, since a setting that takes effect later is
+// indistinguishable from one that did nothing.
+- (void)preferencesChanged:(NSNotification *)note {
+    [self applyLevelToNode];
+}
+
+- (void)equalizerChanged:(NSNotification *)note {
+    [[BTEqualizer sharedEqualizer] applyToUnit:self.equalizerUnit];
+}
+
 - (void)setVolume:(float)volume {
     if (volume < 0.0f) volume = 0.0f;
     if (volume > 1.0f) volume = 1.0f;
 
     _volume = volume;
-    [self.node setVolume:[BTPlayer gainForVolume:volume]];
+    [self applyLevelToNode];
 
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setFloat:volume forKey:BTVolumeKnobKey];

@@ -2,6 +2,7 @@
 #import "BTTrack.h"
 #import "BTPlaylist.h"
 #import "BTPreferences.h"
+#import "BTSoundCheck.h"
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
 #import <AudioToolbox/AudioToolbox.h>
@@ -464,6 +465,11 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
             t.trackNumber = [value integerValue];
         }
     }
+
+    // How loud the recording is, while the file is open anyway. Songs that
+    // arrive through the iTunes sync never come past here, since that reads the
+    // XML rather than the files, and are asked as they are first played.
+    [BTSoundCheck fillInTrack:t fromAsset:asset];
 
     return t;
 }

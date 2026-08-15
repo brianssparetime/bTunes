@@ -1,6 +1,7 @@
 #import "BTTrack.h"
 #import "BTPreferences.h"
 #import "BTSavedValue.h"
+#import "BTSoundCheck.h"
 
 // The roots, asked of the settings each time rather than held, so pointing a
 // setting somewhere else takes effect without anything having to be told.
@@ -135,6 +136,18 @@ static NSString *BTMinuteCount(double minutes) {
     t.startTime = BTSavedDouble(dict, @"startTime");
     t.usesEndTime = [[dict objectForKey:@"usesEndTime"] boolValue];
     t.endTime = BTSavedDouble(dict, @"endTime");
+
+    // Read through the states rather than trusting the number on disk, the way
+    // the repeat mode is: a value from some later version would otherwise leave
+    // a song claiming a measurement that is not there.
+    NSInteger state = BTSavedInteger(dict, @"soundCheckState");
+    t.soundCheckState = (state == BTSoundCheckSaysNothing || state == BTSoundCheckKnown)
+        ? (BTSoundCheckState)state : BTSoundCheckNotAsked;
+    if (t.soundCheckState == BTSoundCheckKnown) {
+        t.soundCheckGain = BTSavedDouble(dict, @"soundCheckGain");
+        t.soundCheckPeak = BTSavedDouble(dict, @"soundCheckPeak");
+    }
+
     if (t.trackID == nil || t.path == nil) return nil;
     return t;
 }
@@ -175,7 +188,23 @@ static NSString *BTMinuteCount(double minutes) {
         [d setObject:@YES forKey:@"usesEndTime"];
         [d setObject:@(self.endTime) forKey:@"endTime"];
     }
+
+    // Nothing written for a song nothing has looked at, so a library made before
+    // any of this reads exactly as it did. The two numbers follow only the state
+    // that gives them meaning.
+    if (self.soundCheckState != BTSoundCheckNotAsked) {
+        [d setObject:@(self.soundCheckState) forKey:@"soundCheckState"];
+    }
+    if (self.soundCheckState == BTSoundCheckKnown) {
+        [d setObject:@(self.soundCheckGain) forKey:@"soundCheckGain"];
+        [d setObject:@(self.soundCheckPeak) forKey:@"soundCheckPeak"];
+    }
     return d;
+}
+
+- (float)soundCheckMultiplier {
+    if (self.soundCheckState != BTSoundCheckKnown) return 1.0f;
+    return [BTSoundCheck multiplierForGain:self.soundCheckGain peak:self.soundCheckPeak];
 }
 
 - (NSString *)resolvedPath {

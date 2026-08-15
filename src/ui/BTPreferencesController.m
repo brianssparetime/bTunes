@@ -42,6 +42,7 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
     NSTextField *_btunesField;
     NSButton *_losslessBox;
     NSButton *_lookupBox;
+    NSButton *_evenVolumeBox;
     NSButton *_purpleBox;
 }
 
@@ -65,19 +66,27 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
     ];
 }
 
-+ (NSString *)losslessNote {
-    return @"A CD is about six hundred megabytes as it stands, half that as Apple Lossless, "
-           @"and a tenth as AAC. Lossless is exact; AAC is what iTunes used and what fits.";
-}
-
-+ (NSString *)lookupNote {
-    return @"Most CDs do not say what their songs are called. This asks MusicBrainz, "
+// The tick boxes, in the order they are shown: what each says, and the note
+// under it. Held together for the same reason the paths above are, since the
+// window is measured before it is built and four notes of different lengths are
+// what decides how tall it has to be.
++ (NSArray *)boxRows {
+    return @[
+        @[@"Look up CDs that do not name themselves",
+          (@"Most CDs do not say what their songs are called. This asks MusicBrainz, "
            @"which is the only thing BTunes sends anywhere: the disc's table of contents "
-           @"boiled down to a number, and nothing about your library.";
-}
-
-+ (NSString *)purpleNote {
-    return @"Draws the main window in purple instead of blue. The mini player is purple either way.";
+           @"boiled down to a number, and nothing about your library.")],
+        @[@"Take CDs in as Apple Lossless",
+          (@"A CD is about six hundred megabytes as it stands, half that as Apple Lossless, "
+           @"and a tenth as AAC. Lossless is exact; AAC is what iTunes used and what fits.")],
+        @[@"Sound Check",
+          (@"Plays songs at the same loudness as each other, so the volume does not have to be "
+           @"reached for between a quiet recording and a loud one. It uses the measurement iTunes "
+           @"already wrote into each file; the songs iTunes never measured play as they are. "
+           @"Nothing is written back to any file.")],
+        @[@"Purple mode",
+          @"Draws the main window in purple instead of blue. The mini player is purple either way."],
+    ];
 }
 
 // One setting down to the next: the field, the air under it, its note however
@@ -86,9 +95,16 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
     return BT_FIELD + BT_TO_NOTE + BTNoteHeight(note, BT_NOTE_WIDTH) + BT_AFTER_NOTE;
 }
 
-// The window is the sum of what goes in it. Four settings whose notes run to
-// different lengths, then purple mode with its own, over a top and bottom
-// margin.
+// How wide a note under a tick box may run. Wider than one under a path, since
+// it starts at the window's left margin rather than out beside a field.
+#define BT_BOX_NOTE_WIDTH (BT_PREFS_WIDTH - 58.0)
+
+// The window is the sum of what goes in it: the paths, whose notes run to
+// different lengths, then the tick boxes, whose notes do too, over a top and
+// bottom margin.
+//
+// The last box carries no step after it, because a step is the room made for
+// whatever comes next and nothing does. The bottom margin is that room.
 + (CGFloat)windowHeight {
     CGFloat total = 52.0;
     NSArray *rows = [self settingRows];
@@ -96,11 +112,14 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
     for (i = 0; i < [rows count]; i++) {
         total += [self stepForNote:[[rows objectAtIndex:i] objectAtIndex:1]];
     }
-    total += BT_BOX_TO_NOTE + BTNoteHeight([self lookupNote], BT_PREFS_WIDTH - 58.0)
-           + BT_AFTER_NOTE + BT_BOX;
-    total += BT_BOX_TO_NOTE + BTNoteHeight([self losslessNote], BT_PREFS_WIDTH - 58.0)
-           + BT_AFTER_NOTE + BT_BOX;
-    return total + BT_BOX_TO_NOTE + BTNoteHeight([self purpleNote], BT_PREFS_WIDTH - 58.0) + 38.0;
+
+    NSArray *boxes = [self boxRows];
+    for (i = 0; i < [boxes count]; i++) {
+        NSString *note = [[boxes objectAtIndex:i] objectAtIndex:1];
+        total += BT_BOX_TO_NOTE + BTNoteHeight(note, BT_BOX_NOTE_WIDTH);
+        if (i + 1 < [boxes count]) total += BT_AFTER_NOTE + BT_BOX;
+    }
+    return total + 38.0;
 }
 
 - (instancetype)initPreferences {
@@ -133,62 +152,46 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
                                 inView:content];
     }
 
-    _lookupBox = [[NSButton alloc] initWithFrame:NSMakeRect(20, y, 400, BT_BOX)];
-    [_lookupBox setButtonType:NSSwitchButton];
-    [_lookupBox setFont:[BTStyle uiFont]];
-    [_lookupBox setTitle:@"Look up CDs that do not name themselves"];
-    [_lookupBox setTarget:self];
-    [_lookupBox setAction:@selector(lookupChanged:)];
-    [content addSubview:_lookupBox];
+    // The boxes, in the order boxRows names them. Each is a choice about how
+    // BTunes behaves rather than about where something lives, which is why none
+    // of them is a sixth path to choose.
+    NSArray *boxes = [BTPreferencesController boxRows];
+    SEL boxActions[] = { @selector(lookupChanged:), @selector(losslessChanged:),
+                         @selector(evenVolumeChanged:), @selector(purpleModeChanged:) };
+    NSButton *__strong *boxFields[] = { &_lookupBox, &_losslessBox,
+                                        &_evenVolumeBox, &_purpleBox };
+    NSUInteger box;
+    for (box = 0; box < [boxes count]; box++) {
+        NSString *title = [[boxes objectAtIndex:box] objectAtIndex:0];
+        NSString *note = [[boxes objectAtIndex:box] objectAtIndex:1];
 
-    NSString *lookupNote = [BTPreferencesController lookupNote];
-    CGFloat lookupHeight = BTNoteHeight(lookupNote, BT_PREFS_WIDTH - 58.0);
-    [content addSubview:[self labelWithText:lookupNote
-                                      frame:NSMakeRect(38, y - BT_BOX_TO_NOTE - lookupHeight,
-                                                       BT_PREFS_WIDTH - 58, lookupHeight)
-                                      small:YES]];
-    y -= BT_BOX_TO_NOTE + lookupHeight + BT_AFTER_NOTE + BT_BOX;
+        NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(20, y, 400, BT_BOX)];
+        [button setButtonType:NSSwitchButton];
+        [button setFont:[BTStyle uiFont]];
+        [button setTitle:title];
+        [button setTarget:self];
+        [button setAction:boxActions[box]];
+        [content addSubview:button];
+        *boxFields[box] = button;
 
-    _losslessBox = [[NSButton alloc] initWithFrame:NSMakeRect(20, y, 400, BT_BOX)];
-    [_losslessBox setButtonType:NSSwitchButton];
-    [_losslessBox setFont:[BTStyle uiFont]];
-    [_losslessBox setTitle:@"Take CDs in as Apple Lossless"];
-    [_losslessBox setTarget:self];
-    [_losslessBox setAction:@selector(losslessChanged:)];
-    [content addSubview:_losslessBox];
+        // The note sits under the box at the same left edge as the words beside
+        // it, the way the notes under the paths do.
+        CGFloat noteHeight = BTNoteHeight(note, BT_BOX_NOTE_WIDTH);
+        [content addSubview:[self labelWithText:note
+                                          frame:NSMakeRect(38, y - BT_BOX_TO_NOTE - noteHeight,
+                                                           BT_BOX_NOTE_WIDTH, noteHeight)
+                                          small:YES]];
 
-    NSString *losslessNote = [BTPreferencesController losslessNote];
-    CGFloat losslessHeight = BTNoteHeight(losslessNote, BT_PREFS_WIDTH - 58.0);
-    [content addSubview:[self labelWithText:losslessNote
-                                      frame:NSMakeRect(38, y - BT_BOX_TO_NOTE - losslessHeight,
-                                                       BT_PREFS_WIDTH - 58, losslessHeight)
-                                      small:YES]];
-    // The box below sits at its origin and extends upward, so its own height
-    // comes off too. Without it the note above runs straight into it.
-    y -= BT_BOX_TO_NOTE + losslessHeight + BT_AFTER_NOTE + BT_BOX;
+        // The next box sits at its own origin and extends upward, so its height
+        // comes off here too. Without it the note above runs straight into it.
+        y -= BT_BOX_TO_NOTE + noteHeight + BT_AFTER_NOTE + BT_BOX;
+    }
 
-    // Its own row rather than a sixth path to choose: this is a choice about
-    // how the window looks, not about where something lives. The note sits
-    // under it at the same left edge as the words beside the box, the way the
-    // notes under the three paths do.
-    _purpleBox = [[NSButton alloc] initWithFrame:NSMakeRect(20, y, 300, BT_BOX)];
-    [_purpleBox setButtonType:NSSwitchButton];
-    [_purpleBox setFont:[BTStyle uiFont]];
     // Named in the colour it turns things, which says more than the words do.
     [_purpleBox setAttributedTitle:
-        [[NSAttributedString alloc] initWithString:@"Purple mode"
+        [[NSAttributedString alloc] initWithString:[[boxes lastObject] objectAtIndex:0]
                                        attributes:@{NSFontAttributeName: [BTStyle uiFont],
                                                     NSForegroundColorAttributeName: [BTStyle accent]}]];
-    [_purpleBox setTarget:self];
-    [_purpleBox setAction:@selector(purpleModeChanged:)];
-    [content addSubview:_purpleBox];
-
-    NSString *purpleNote = [BTPreferencesController purpleNote];
-    CGFloat purpleHeight = BTNoteHeight(purpleNote, BT_PREFS_WIDTH - 58.0);
-    [content addSubview:[self labelWithText:purpleNote
-                                      frame:NSMakeRect(38, y - BT_BOX_TO_NOTE - purpleHeight,
-                                                       BT_PREFS_WIDTH - 58, purpleHeight)
-                                      small:YES]];
 
     [self refresh];
     return self;
@@ -200,6 +203,10 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
 
 - (void)losslessChanged:(id)sender {
     [[BTPreferences sharedPreferences] setImportsLossless:([_losslessBox state] == NSOnState)];
+}
+
+- (void)evenVolumeChanged:(id)sender {
+    [[BTPreferences sharedPreferences] setEvensOutVolume:([_evenVolumeBox state] == NSOnState)];
 }
 
 - (void)purpleModeChanged:(id)sender {
@@ -256,6 +263,7 @@ static CGFloat BTNoteHeight(NSString *text, CGFloat width) {
     [_btunesField setStringValue:[prefs btunesFolder]];
     [_losslessBox setState:([prefs importsLossless] ? NSOnState : NSOffState)];
     [_lookupBox setState:([prefs looksUpDiscs] ? NSOnState : NSOffState)];
+    [_evenVolumeBox setState:([prefs evensOutVolume] ? NSOnState : NSOffState)];
     [_purpleBox setState:([prefs purpleMode] ? NSOnState : NSOffState)];
 }
 

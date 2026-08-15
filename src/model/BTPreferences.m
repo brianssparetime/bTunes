@@ -11,6 +11,7 @@ static NSString *const BTDetuneFolderKey = @"BTDetuneFolder";
 static NSString *const BTBTunesFolderKey = @"BTBTunesFolder";
 static NSString *const BTImportsLosslessKey = @"BTImportsLossless";
 static NSString *const BTLooksUpDiscsKey = @"BTLooksUpDiscs";
+static NSString *const BTEvensOutVolumeKey = @"BTEvensOutVolume";
 
 @implementation BTPreferences
 
@@ -115,6 +116,16 @@ static NSString *const BTLooksUpDiscsKey = @"BTLooksUpDiscs";
 
 - (void)setDetuneFolder:(NSString *)detuneFolder {
     [[NSUserDefaults standardUserDefaults] setObject:(detuneFolder ?: @"") forKey:BTDetuneFolderKey];
+    [[NSNotificationCenter defaultCenter] postNotificationName:BTPreferencesDidChangeNotification
+                                                        object:self];
+}
+
+- (BOOL)evensOutVolume {
+    return [[NSUserDefaults standardUserDefaults] boolForKey:BTEvensOutVolumeKey];
+}
+
+- (void)setEvensOutVolume:(BOOL)evens {
+    [[NSUserDefaults standardUserDefaults] setBool:evens forKey:BTEvensOutVolumeKey];
     [[NSNotificationCenter defaultCenter] postNotificationName:BTPreferencesDidChangeNotification
                                                         object:self];
 }

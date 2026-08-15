@@ -9,6 +9,18 @@ typedef NS_ENUM(NSInteger, BTPathRoot) {
     BTPathRootBTunes        // music BTunes made itself, off a CD
 };
 
+// Whether this song's own loudness is known, and if not, whether that is because
+// nothing has looked yet.
+//
+// Three states rather than two, so a song whose file says nothing is asked once
+// and not again. Without the middle one, every play of an untagged song would
+// read its tags afresh to be told the same nothing.
+typedef NS_ENUM(NSInteger, BTSoundCheckState) {
+    BTSoundCheckNotAsked = 0,   // the file has not been looked at
+    BTSoundCheckSaysNothing,    // looked at, and it carries no measurement
+    BTSoundCheckKnown           // looked at, and the two numbers below hold what it said
+};
+
 // One audio file in the library. Values are cached from the file's tags at
 // import time; the file itself is never written to.
 @interface BTTrack : NSObject
@@ -60,6 +72,22 @@ typedef NS_ENUM(NSInteger, BTPathRoot) {
 // A DRM-locked purchase. It stays in the library so playlist membership
 // survives, but nothing on this system can decode it.
 @property (nonatomic, assign) BOOL isProtected;
+
+// How far this recording is from the level everything else is being brought to,
+// in decibels, and how loud its loudest sample is, from 0 to 1. Both are
+// meaningless unless the state above says they are known.
+//
+// Kept in the library rather than in settings because the numbers belong to the
+// recording, not to this machine. Carrying the library to another computer
+// carries them, and nothing has to look at six thousand files again.
+@property (nonatomic, assign) BTSoundCheckState soundCheckState;
+@property (nonatomic, assign) double soundCheckGain;
+@property (nonatomic, assign) double soundCheckPeak;
+
+// What to multiply this song by so it arrives at the same loudness as the rest,
+// held back where turning it up would clip. One when nothing is known about it,
+// so a song that has never been measured plays exactly as it always did.
+- (float)soundCheckMultiplier;
 
 // Where playback begins and ends within the file, for a song with a long silent
 // tail, a run-in that is not wanted, or two songs sharing one file. Each is only

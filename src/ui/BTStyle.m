@@ -253,6 +253,52 @@ static NSImage *BTSteelGrain(void) {
     [path stroke];
 }
 
++ (void)drawVerticalGrooveInRect:(NSRect)rect {
+    CGFloat radius = NSWidth(rect) / 2.0;
+    NSRect inner = NSInsetRect(rect, 0.5, 0.5);
+    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:inner xRadius:radius yRadius:radius];
+
+    [[NSColor colorWithCalibratedWhite:0.72 alpha:1.0] set];
+    [path fill];
+
+    [NSGraphicsContext saveGraphicsState];
+    [path addClip];
+    // Dark against the left wall and bright against the right, which is a
+    // channel cut into a surface lit from the upper left.
+    NSGradient *shade = [[NSGradient alloc]
+        initWithStartingColor:[NSColor colorWithCalibratedWhite:0.0 alpha:0.30]
+                  endingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:0.55]];
+    [shade drawInRect:inner angle:0.0];
+    [NSGraphicsContext restoreGraphicsState];
+
+    [[NSColor colorWithCalibratedWhite:0.48 alpha:1.0] set];
+    [path setLineWidth:1.0];
+    [path stroke];
+}
+
++ (void)drawSliderThumbInRect:(NSRect)rect pressed:(BOOL)pressed {
+    NSRect box = NSInsetRect(rect, 0.5, 0.5);
+    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:box xRadius:2.5 yRadius:2.5];
+
+    [NSGraphicsContext saveGraphicsState];
+    [path addClip];
+    [self drawVerticalGradientInRect:box
+                                from:[NSColor colorWithCalibratedWhite:(pressed ? 0.78 : 0.99) alpha:1.0]
+                                  to:[NSColor colorWithCalibratedWhite:(pressed ? 0.58 : 0.76) alpha:1.0]];
+    [NSGraphicsContext restoreGraphicsState];
+
+    // The line across the middle, which is what says the thumb has a grip on the
+    // channel underneath rather than sitting on top of it.
+    [[NSColor colorWithCalibratedWhite:0.45 alpha:0.8] set];
+    NSRectFillUsingOperation(NSMakeRect(NSMinX(box) + 2.0, NSMidY(box) - 0.5,
+                                        NSWidth(box) - 4.0, 1.0),
+                             NSCompositeSourceOver);
+
+    [[NSColor colorWithCalibratedWhite:0.42 alpha:1.0] set];
+    [path setLineWidth:1.0];
+    [path stroke];
+}
+
 + (void)drawAquaCircleInRect:(NSRect)rect pressed:(BOOL)pressed enabled:(BOOL)enabled {
     NSRect box = NSInsetRect(rect, 0.5, 0.5);
 

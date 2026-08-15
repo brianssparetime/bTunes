@@ -3,6 +3,7 @@
 #import "BTMiniWindowController.h"
 #import "BTSplashWindowController.h"
 #import "BTPreferencesController.h"
+#import "BTEqualizerController.h"
 #import "BTLibrary.h"
 #import "BTTrack.h"
 #import "BTPreferences.h"
@@ -236,6 +237,11 @@
     [[[BTPreferencesController sharedController] window] makeKeyAndOrderFront:nil];
 }
 
+- (void)showEqualizer:(id)sender {
+    [[BTEqualizerController sharedController] showWindow:nil];
+    [[[BTEqualizerController sharedController] window] makeKeyAndOrderFront:nil];
+}
+
 #pragma mark - Menus
 
 - (NSMenuItem *)itemWithTitle:(NSString *)title
@@ -349,6 +355,15 @@
     [controlsMenu addItem:[self itemWithTitle:@"Mute" action:@selector(toggleMute:) key:@"m" modifiers:0 target:nil]];
     [controlsMenu addItem:[self itemWithTitle:@"Volume Up" action:@selector(volumeUp:) key:@"" modifiers:NSCommandKeyMask target:nil]];
     [controlsMenu addItem:[self itemWithTitle:@"Volume Down" action:@selector(volumeDown:) key:@"" modifiers:NSCommandKeyMask target:nil]];
+    [controlsMenu addItem:[NSMenuItem separatorItem]];
+    // No key of its own. iTunes gave the equalizer Command-2 because Command-1
+    // was its main window, and one half of that pair on its own is a shortcut
+    // nobody would guess.
+    [controlsMenu addItem:[self itemWithTitle:@"Equalizer"
+                                       action:@selector(showEqualizer:)
+                                          key:@""
+                                    modifiers:0
+                                       target:self]];
     [controlsItem setSubmenu:controlsMenu];
     [mainMenu addItem:controlsItem];
 

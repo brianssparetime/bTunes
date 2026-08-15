@@ -107,6 +107,16 @@
 // toolkit.
 + (void)drawGrooveInRect:(NSRect)rect;
 
+// The same channel standing on end, for the equalizer's sliders. Not the
+// horizontal one turned on its side: the shading that makes a channel look cut
+// into a surface runs across the channel rather than along it, so a groove
+// rotated ninety degrees comes out looking lit from the wrong direction.
++ (void)drawVerticalGrooveInRect:(NSRect)rect;
+
+// The thumb that rides one. A capsule rather than the round knob the volume uses,
+// because eleven circles in a row read as a row of buttons.
++ (void)drawSliderThumbInRect:(NSRect)rect pressed:(BOOL)pressed;
+
 // The glossy round transport buttons and the small square toggles.
 + (void)drawAquaCircleInRect:(NSRect)rect pressed:(BOOL)pressed enabled:(BOOL)enabled;
 // The dent under a toggle while the mouse is down. A toggle that is on shows it

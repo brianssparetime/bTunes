@@ -60,6 +60,15 @@ extern NSString *const BTPreferencesDidChangeNotification;
 // library goes with it.
 @property (nonatomic, assign) BOOL looksUpDiscs;
 
+// Whether songs are brought to the same loudness as each other while they play.
+// Off unless asked for, since it is an alteration to what the recording says,
+// and remembered.
+//
+// A setting rather than a number kept per song: what to do about the difference
+// is a choice about this machine, while the difference itself belongs to the
+// recording and is kept in the library beside the ratings.
+@property (nonatomic, assign) BOOL evensOutVolume;
+
 // Whether the main window is drawn in purple rather than blue. Off unless asked
 // for, and remembered. The mini player is purple either way, so this does not
 // touch it.
