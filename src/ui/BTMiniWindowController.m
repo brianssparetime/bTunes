@@ -7,8 +7,11 @@
 
 // The classic small-player proportions, widened: the analyzer wanted more room
 // and the extra width buys more bars rather than fatter ones.
+// The height leaves the same ten points under the transport row as the margin
+// beside it, so the buttons sit in the middle of a border rather than against
+// the bottom edge. Everything else is measured from the top and does not move.
 #define BT_MINI_WIDTH  310.0
-#define BT_MINI_HEIGHT 116.0
+#define BT_MINI_HEIGHT 121.0
 
 // Positions are quoted from the top edge, the way the original skin measured
 // them, and flipped once here.
@@ -50,9 +53,21 @@ static NSColor *BTMiniLamp(void)        { return [NSColor colorWithCalibratedRed
 #define BT_POSITION_H        11.0
 #define BT_BUTTON_Y          93.0
 #define BT_BUTTON_H          18.0
+#define BT_BUTTON_W          23.0
+#define BT_BUTTON_GAP        2.0
+#define BT_BUTTON_COUNT      4       // back, play, stop, forward
 #define BT_TOGGLE_RIGHT      255.0    // the position bar ends level with this
 // Small enough that its top edge clears the volume row above it.
 #define BT_LOGO_SIDE         34.0
+
+// Where the four transport buttons sit. The panel draws a lip around them and
+// the controller places them inside it, so both take the row from here rather
+// than each working it out and drifting apart.
+static NSRect BTTransportClusterRect(void) {
+    return NSMakeRect(BT_MINI_MARGIN, BT_TOP(BT_BUTTON_Y, BT_BUTTON_H),
+                      BT_BUTTON_COUNT * (BT_BUTTON_W + BT_BUTTON_GAP) - BT_BUTTON_GAP,
+                      BT_BUTTON_H);
+}
 
 #pragma mark - Drawing helpers
 
@@ -119,6 +134,31 @@ static NSFont *BTMiniReadoutFont(void) { return BTMiniFixedFont(BT_MINI_FONT_SIZ
 
 #pragma mark - Blocky button
 
+static NSColor *BTGray(CGFloat white) { return [NSColor colorWithCalibratedWhite:white alpha:1.0]; }
+
+// The transport buttons are chiselled rather than flat: a dark outline around a
+// face that catches the light along its top and left. Pressed, the light and
+// the shadow trade places and the face darkens, which is the whole of the
+// press. Two rows of shading rather than one, since a single line at this size
+// reads as a hairline instead of an edge.
+static void BTDrawMiniChisel(NSRect rect, BOOL pressed) {
+    [BTGray(0.10) set];
+    NSFrameRect(rect);
+
+    NSRect body = NSInsetRect(rect, 1, 1);
+    NSGradient *face = [[NSGradient alloc] initWithStartingColor:BTGray(pressed ? 0.49 : 0.80)
+                                                     endingColor:BTGray(pressed ? 0.62 : 0.60)];
+    [face drawInRect:body angle:270.0];   // the lighter end at the top
+
+    // Shadow first, so the lit corner wins where the two meet.
+    [BTGray(pressed ? 0.93 : 0.34) set];
+    NSRectFill(NSMakeRect(NSMinX(body), NSMinY(body), NSWidth(body), 2));
+    NSRectFill(NSMakeRect(NSMaxX(body) - 2, NSMinY(body), 2, NSHeight(body)));
+    [BTGray(pressed ? 0.44 : 0.97) set];
+    NSRectFill(NSMakeRect(NSMinX(body), NSMaxY(body) - 2, NSWidth(body), 2));
+    NSRectFill(NSMakeRect(NSMinX(body), NSMinY(body), 2, NSHeight(body)));
+}
+
 @interface BTMiniButton : NSButton
 @property (nonatomic, assign) BTGlyph glyph;
 @property (nonatomic, assign) BOOL showsLamp;  // the shuffle and repeat toggles
@@ -130,32 +170,42 @@ static NSFont *BTMiniReadoutFont(void) { return BTMiniFixedFont(BT_MINI_FONT_SIZ
 - (void)setOn:(BOOL)on { _on = on; [self setNeedsDisplay:YES]; }
 - (void)setGlyph:(BTGlyph)glyph { _glyph = glyph; [self setNeedsDisplay:YES]; }
 
+// A button draws top down, unlike every other view in this panel. Said out loud
+// here, because a chiselled edge and a corner lamp both care which way is up,
+// and a button that disagreed with the panel around it lit its face from below.
+- (BOOL)isFlipped { return NO; }
+
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = [self bounds];
     BOOL pressed = [self isHighlighted];
+    BTDrawMiniChisel(bounds, pressed);
 
-    NSColor *face = [NSColor colorWithCalibratedWhite:(pressed ? 0.55 : 0.72) alpha:1.0];
-    if (pressed) {
-        BTDrawSunken(bounds, face, [NSColor colorWithCalibratedWhite:0.88 alpha:1.0],
-                     [NSColor colorWithCalibratedWhite:0.32 alpha:1.0]);
-    } else {
-        BTDrawRaised(bounds, face, [NSColor colorWithCalibratedWhite:0.93 alpha:1.0],
-                     [NSColor colorWithCalibratedWhite:0.30 alpha:1.0]);
-    }
+    NSColor *ink = BTGray(0.11);
 
-    NSColor *ink = [NSColor colorWithCalibratedWhite:0.13 alpha:1.0];
-    NSRect inner = NSInsetRect(bounds, 3, 3);
+    // The marks here are drawn larger than the ones on the round buttons in the
+    // full window, because the small player's original filled its buttons very
+    // nearly edge to edge. Each mark is a fixed fraction of the rect it is
+    // handed, so the size comes from handing it the whole button rather than an
+    // inset of it, and the same drawing serves both places.
+    NSRect inner = bounds;
 
     if (self.showsLamp) {
         // A small lamp in the top left corner, the way the original marked its
         // toggles. Lit in the analyzer's hot orange: a purple lamp disappeared
         // against the purple chrome, and amber sat too close to it as well.
-        NSRect lamp = NSMakeRect(NSMinX(bounds) + 3, NSMaxY(bounds) - 8, 6, 5);
-        [self.on ? BTMiniLamp() : [NSColor colorWithCalibratedWhite:0.42 alpha:1.0] set];
+        NSRect lamp = NSMakeRect(NSMinX(bounds) + 4, NSMaxY(bounds) - 9, 6, 5);
+        [self.on ? BTMiniLamp() : BTGray(0.42) set];
         NSRectFill(lamp);
-        inner = NSInsetRect(bounds, 4, 4);
-        inner.origin.x += 2;
-        inner.size.width -= 2;
+        // The loop and shuffle marks are wider than they are tall and would
+        // otherwise run into the chisel, so they keep clear of it and give up a
+        // little size to do it. The lamp takes its room off the left.
+        inner = NSInsetRect(bounds, 3, 3);
+        inner.origin.x += 5;
+        inner.size.width -= 5;
+        // The loop mark rides low in the rect it is handed, which suits the
+        // round buttons in the full window and leaves it sitting on the chisel
+        // here. Lifted back to the middle of its own button.
+        if (self.glyph == BTGlyphRepeat || self.glyph == BTGlyphRepeatOne) inner.origin.y += 1.5;
     }
 
     BTDrawGlyph(self.glyph, inner, ink);
@@ -275,6 +325,15 @@ static NSFont *BTMiniReadoutFont(void) { return BTMiniFixedFont(BT_MINI_FONT_SIZ
     BTDrawRibbon(NSMakeRect(24, NSMidY(title) - 3, nameX - 30, 6));
     BTDrawRibbon(NSMakeRect(nameX + nameSize.width + 6, NSMidY(title) - 3,
                             NSWidth(bounds) - (nameX + nameSize.width) - 44, 6));
+
+    // A gray lip down either side of the transport cluster and along under it,
+    // the way the original ran one around its buttons. Open at the top, where
+    // the position bar already draws an edge of its own.
+    NSRect cluster = NSInsetRect(BTTransportClusterRect(), -1.0, -1.0);
+    [BTGray(0.44) set];
+    NSRectFill(NSMakeRect(NSMinX(cluster), NSMinY(cluster), 1, NSHeight(cluster)));
+    NSRectFill(NSMakeRect(NSMaxX(cluster) - 1, NSMinY(cluster), 1, NSHeight(cluster)));
+    NSRectFill(NSMakeRect(NSMinX(cluster), NSMinY(cluster), NSWidth(cluster), 1));
 
     // Readout panel on the left: elapsed time above, analyzer below.
     NSRect lcd = NSMakeRect(BT_LCD_X, BT_TOP(BT_LCD_Y, BT_LCD_H), BT_LCD_W, BT_LCD_H);
@@ -521,20 +580,22 @@ static NSFont *BTMiniReadoutFont(void) { return BTMiniFixedFont(BT_MINI_FONT_SIZ
 
     // Transport row: one play and pause button rather than two, then stop,
     // then the two toggles.
-    // The buttons are a tenth smaller than the row they sit in, which is where
-    // the space between them comes from.
-    CGFloat height = BT_BUTTON_H - 2.0;
-    CGFloat buttonY = BT_TOP(BT_BUTTON_Y, BT_BUTTON_H) + 1.0;
-    CGFloat width = 22.0;
-    CGFloat step = width + 3.0;
+    // The buttons take the whole height of the row: a chiselled edge costs three
+    // points a side, and what is left over is what the mark has to live in.
+    NSRect cluster = BTTransportClusterRect();
+    CGFloat height = NSHeight(cluster);
+    CGFloat buttonY = NSMinY(cluster);
+    CGFloat width = BT_BUTTON_W;
+    CGFloat step = width + BT_BUTTON_GAP;
+    CGFloat left = NSMinX(cluster);
 
-    [self buttonWithFrame:NSMakeRect(BT_MINI_MARGIN, buttonY, width, height)
+    [self buttonWithFrame:NSMakeRect(left, buttonY, width, height)
                     glyph:BTGlyphPreviousBar action:@selector(previous:)];
-    _playButton = [self buttonWithFrame:NSMakeRect(BT_MINI_MARGIN + step, buttonY, width, height)
+    _playButton = [self buttonWithFrame:NSMakeRect(left + step, buttonY, width, height)
                                   glyph:BTGlyphPlay action:@selector(miniPlayPause:)];
-    [self buttonWithFrame:NSMakeRect(BT_MINI_MARGIN + step * 2, buttonY, width, height)
+    [self buttonWithFrame:NSMakeRect(left + step * 2, buttonY, width, height)
                     glyph:BTGlyphStop action:@selector(stop:)];
-    [self buttonWithFrame:NSMakeRect(BT_MINI_MARGIN + step * 3, buttonY, width, height)
+    [self buttonWithFrame:NSMakeRect(left + step * 3, buttonY, width, height)
                     glyph:BTGlyphNextBar action:@selector(next:)];
 
     CGFloat toggleWidth = 31.0;
