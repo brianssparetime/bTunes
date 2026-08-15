@@ -228,18 +228,6 @@ static void BTDrawHeaderRule(NSRect rect, NSColor *color) {
     BTDrawHeaderRule(rect, [self headerRule]);
 }
 
-// The heading over the source pane, which is a different thing and was drawn as
-// one: a plain gradient falling from light gray to dark, with no dish in it. Its
-// job is to cap the pane, where the track list's is to head columns.
-+ (void)drawPaneHeaderInRect:(NSRect)rect {
-    // The dark end lands just above the bottom rather than on it. Put at the
-    // very bottom it is drawn and then covered by the rule, so the gradient
-    // stops several shades short of where it was measured to finish.
-    static const CGFloat whites[] = {229, 227, 132, 132};
-    static const CGFloat stops[]  = {0.00, 0.08, 0.94, 1.00};
-    BTDrawBandsDownRect(rect, whites, stops, sizeof(stops) / sizeof(stops[0]));
-    BTDrawHeaderRule(rect, [NSColor colorWithCalibratedWhite:0.424 alpha:1.0]);
-}
 
 // A faint brushed grain, built once and tiled. Horizontal runs of the same
 // value rather than loose noise, so it reads as metal that has been polished

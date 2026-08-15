@@ -456,11 +456,23 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list) {
 
 @end
 
+@implementation BTHeaderCornerView
+
+// The square where a heading meets its scroller. The system fills it flat,
+// which puts a pale block on the end of the strip and stops the band a
+// scroller's width short of the pane it heads.
+- (void)drawRect:(NSRect)dirtyRect {
+    [BTStyle drawListHeaderInRect:[self bounds]];
+}
+
+@end
+
+
 @implementation BTPaneHeaderView
 
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = [self bounds];
-    [BTStyle drawPaneHeaderInRect:bounds];
+    [BTStyle drawListHeaderInRect:bounds];
     if ([self.title length] == 0) return;
 
     NSMutableParagraphStyle *centred = [[NSMutableParagraphStyle alloc] init];
@@ -470,11 +482,18 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list) {
                             NSForegroundColorAttributeName: [BTStyle paneHeaderText],
                             NSParagraphStyleAttributeName: centred};
 
+    // Centred on the pane, not on this view. A scroller takes its square out of
+    // the heading's right end, so a word centred here sits left of the middle of
+    // the pane it names, and shifts sideways the moment the scroller comes or
+    // goes. Measured against the pane, it does neither.
+    NSScrollView *scroll = [self enclosingScrollView];
+    CGFloat pane = scroll ? NSWidth([scroll bounds]) : NSWidth(bounds);
+
     // A band exactly one line tall, centred in the strip. Handed the whole
     // height instead, the word rides high by the slack between the two.
     CGFloat line = [BTStyle lineHeight];
     NSRect band = NSMakeRect(NSMinX(bounds) + 4.0, NSMidY(bounds) - line / 2.0,
-                             NSWidth(bounds) - 8.0, line);
+                             pane - 8.0, line);
     [self.title drawInRect:band withAttributes:attrs];
 }
 
@@ -498,17 +517,25 @@ static void BTGiveColumnItsHeading(NSTableColumn *column) {
     [column setHeaderCell:cell];
 }
 
-// The strip, at the one height both panes of the main window use.
+// The strip, at the one height both panes of the main window use, and the
+// square that closes it off where a scroller cuts into it.
 static NSTableHeaderView *BTNewListHeaderView(void) {
     return [[BTHeaderView alloc] initWithFrame:
         NSMakeRect(0, 0, 100, [BTStyle listHeaderHeight])];
+}
+
+static NSView *BTNewHeaderCornerView(void) {
+    return [[BTHeaderCornerView alloc] initWithFrame:NSZeroRect];
 }
 
 @implementation BTListTableView
 
 - (id)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
-    if (self) [self setHeaderView:BTNewListHeaderView()];
+    if (self) {
+        [self setHeaderView:BTNewListHeaderView()];
+        [self setCornerView:BTNewHeaderCornerView()];
+    }
     return self;
 }
 
@@ -548,7 +575,10 @@ static NSTableHeaderView *BTNewListHeaderView(void) {
 
 - (id)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
-    if (self) [self setHeaderView:BTNewListHeaderView()];
+    if (self) {
+        [self setHeaderView:BTNewListHeaderView()];
+        [self setCornerView:BTNewHeaderCornerView()];
+    }
     return self;
 }
 

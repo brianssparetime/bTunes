@@ -108,10 +108,17 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list);
 @end
 
 // The source pane's heading, which names the pane instead of heading columns:
-// one dimmed word centred on a darker gradient, and nothing to click.
+// the same strip, carrying one dimmed word centred on the pane, and nothing to
+// click.
 @interface BTPaneHeaderView : NSTableHeaderView
 @property (nonatomic, copy) NSString *title;
 @end
+
+// The square where a heading meets a scroller, shaded with the heading so the
+// strip runs the full width of the pane.
+@interface BTHeaderCornerView : NSView
+@end
+
 
 // A list that draws its own selection, so every pane highlights the same colour
 // instead of the focused one being blue and the rest gray.

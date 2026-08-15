@@ -47,13 +47,13 @@ static inline BOOL BTSameString(NSString *a, NSString *b) {
 + (CGFloat)listRowHeight;
 + (CGFloat)sourceRowHeight;
 
-// The frame a caption needs, and the frame a control needs. A control is taller
-// than its words because it draws a border and a background around them.
 // The heading strip over a list. Both panes take this rather than the system's
 // own header height, because in iTunes 4 the source pane's heading and the track
 // list's were one band running across the window.
 + (CGFloat)listHeaderHeight;
 
+// The frame a caption needs, and the frame a control needs. A control is taller
+// than its words because it draws a border and a background around them.
 + (CGFloat)labelHeight;
 + (CGFloat)smallLabelHeight;
 + (CGFloat)fieldHeight;         // text field, popup button
@@ -120,13 +120,11 @@ static inline BOOL BTSameString(NSString *a, NSString *b) {
 
 + (void)drawVerticalGradientInRect:(NSRect)rect from:(NSColor *)top to:(NSColor *)bottom;
 
-// The two headings, which are not the same shading and were not in 2003. Over
-// columns it is a near-white strip dished across the middle, bright along both
-// edges; over the source pane it is a plain fall from light gray to dark. Both
-// close with a rule along their lower edge, whichever edge that is in the
-// context they are handed.
+// The heading strip over any list: a near-white band dished across the middle,
+// bright along both edges, closed by a rule along its lower edge, whichever edge
+// that is in the context it is handed. The source pane takes the same one, so
+// the band runs unbroken across the window.
 + (void)drawListHeaderInRect:(NSRect)rect;
-+ (void)drawPaneHeaderInRect:(NSRect)rect;
 
 + (void)drawChromeInRect:(NSRect)rect;
 + (void)drawSunkenBezelInRect:(NSRect)rect radius:(CGFloat)radius fill:(NSColor *)fill;

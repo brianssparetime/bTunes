@@ -908,7 +908,11 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
             [_browser setFrame:frame];
         }
     }
-    [_innerSplit adjustSubviews];
+    // Through the delegate rather than adjustSubviews, which is the split view's
+    // own division and knows nothing about the browser going away. It always
+    // kept room for a bar between the panes, so putting the browser away left
+    // the track list a point lower than the sources beside it.
+    [_innerSplit resizeSubviewsWithOldSize:[_innerSplit bounds].size];
 }
 
 #pragma mark - Reloading
@@ -1844,16 +1848,30 @@ static NSUInteger BTPlaylistsInside(BTPlaylist *folder) {
         if (maximum > 60.0 && top > maximum) top = maximum;
     }
 
-    CGFloat bottom = size.height - top - divider;
+    // No browser means no bar between it and the track list either. Left in, it
+    // pushed the track list down by the thickness of a divider that was not
+    // being drawn, which put the heading over the songs a point below the
+    // heading over the sources and made a band that should run straight across
+    // the window step in the middle.
+    CGFloat gap = _browserHidden ? 0.0 : divider;
+    CGFloat bottom = size.height - top - gap;
     if (bottom < 0) bottom = 0;
 
     if ([splitView isFlipped]) {
         [first setFrame:NSMakeRect(0, 0, size.width, top)];
-        [second setFrame:NSMakeRect(0, top + divider, size.width, bottom)];
+        [second setFrame:NSMakeRect(0, top + gap, size.width, bottom)];
     } else {
-        [first setFrame:NSMakeRect(0, bottom + divider, size.width, top)];
+        [first setFrame:NSMakeRect(0, bottom + gap, size.width, top)];
         [second setFrame:NSMakeRect(0, 0, size.width, bottom)];
     }
+}
+
+// With no browser there is nothing to divide. Left in, the bar draws as a dark
+// line along the top of the songs and takes a point that the source pane beside
+// it does not, so the one band across the window steps down in the middle.
+- (BOOL)splitView:(NSSplitView *)splitView shouldHideDividerAtIndex:(NSInteger)dividerIndex {
+    (void)dividerIndex;
+    return (splitView == _innerSplit && _browserHidden);
 }
 
 - (CGFloat)splitView:(NSSplitView *)splitView
