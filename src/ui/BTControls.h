@@ -149,3 +149,10 @@ BOOL BTHandleDeleteKey(NSEvent *event, NSTableView *list);
 @property (nonatomic, weak) id target;
 @property (nonatomic, assign) SEL action;
 @end
+
+// The windows that are dismissed rather than worked in: the equalizer and the
+// preferences. Both hold settings that take effect as they are made, so there
+// is nothing to cancel and nothing to confirm, and both want the two ways out
+// of a window that carries no buttons along its foot.
+@interface BTPanelWindow : NSWindow
+@end

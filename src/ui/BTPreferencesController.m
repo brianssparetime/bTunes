@@ -61,34 +61,6 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
 - (BOOL)isFlipped { return YES; }
 @end
 
-// Escape closes the window. Every setting here takes effect as it is made, so
-// there is nothing to cancel and nothing to confirm, and the key is simply the
-// way out that a window with no buttons along its foot still ought to have.
-//
-// Answered twice, because Escape arrives by two roads. A field being typed in
-// turns it into cancelOperation:, which the field editor sends up the chain
-// after using the first press to put back what was in the field. A tick box
-// holding the keyboard, or nothing holding it at all, leaves it a plain key
-// press that reaches the window unanswered.
-@interface BTPreferencesWindow : NSWindow
-@end
-
-@implementation BTPreferencesWindow
-
-- (void)cancelOperation:(id)sender {
-    [self performClose:sender];
-}
-
-- (void)keyDown:(NSEvent *)event {
-    if ([[event charactersIgnoringModifiers] isEqualToString:@"\033"]) {
-        [self performClose:self];
-        return;
-    }
-    [super keyDown:event];
-}
-
-@end
-
 @implementation BTPreferencesController {
     // What the window shows through, and the pane it shows. The pane is as tall
     // as the settings need, which at any narrow width is taller than a small
@@ -178,7 +150,7 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
     // turns out to need, which cannot be known until the notes exist to be
     // asked. The window is made at a nominal height and sized once they do.
     NSRect frame = NSMakeRect(0, 0, BT_PREFS_WIDTH, 400.0);
-    NSWindow *window = [[BTPreferencesWindow alloc]
+    NSWindow *window = [[BTPanelWindow alloc]
         initWithContentRect:frame
                   styleMask:(NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask)
                     backing:NSBackingStoreBuffered

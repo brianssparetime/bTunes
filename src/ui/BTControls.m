@@ -777,3 +777,40 @@ static NSView *BTNewHeaderCornerView(void) {
 }
 
 @end
+
+#pragma mark - Panel window
+
+@implementation BTPanelWindow
+
+// Escape arrives by two roads. A field being typed in turns it into
+// cancelOperation:, which the field editor sends up the chain after the first
+// press has put back what was in the field. A tick box holding the keyboard, or
+// nothing holding it at all, leaves it a plain key press that reaches the
+// window unanswered.
+- (void)cancelOperation:(id)sender {
+    [self performClose:sender];
+}
+
+- (void)keyDown:(NSEvent *)event {
+    if ([[event charactersIgnoringModifiers] isEqualToString:@"\033"]) {
+        [self performClose:self];
+        return;
+    }
+    [super keyDown:event];
+}
+
+// Command-W, which no menu item claims, so it arrives here. Command alone: with
+// shift or option held this is a different key and closing on it would be
+// answering a question nobody asked.
+- (BOOL)performKeyEquivalent:(NSEvent *)event {
+    NSUInteger held = [event modifierFlags] & NSDeviceIndependentModifierFlagsMask;
+    NSUInteger keys = NSCommandKeyMask | NSAlternateKeyMask | NSControlKeyMask | NSShiftKeyMask;
+    if ((held & keys) == NSCommandKeyMask &&
+        [[event charactersIgnoringModifiers] isEqualToString:@"w"]) {
+        [self performClose:self];
+        return YES;
+    }
+    return [super performKeyEquivalent:event];
+}
+
+@end

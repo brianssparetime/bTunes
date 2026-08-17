@@ -250,10 +250,11 @@
     NSRect frame = NSMakeRect(0, 0,
                               panelWidth + BT_EQ_MARGIN * 2,
                               panelHeight + BT_EQ_TOP_ROW_GAP + topRow + BT_EQ_MARGIN * 2);
-    NSWindow *window = [[NSWindow alloc] initWithContentRect:frame
-                                                   styleMask:(NSTitledWindowMask | NSClosableWindowMask)
-                                                     backing:NSBackingStoreBuffered
-                                                       defer:NO];
+    NSWindow *window = [[BTPanelWindow alloc]
+        initWithContentRect:frame
+                  styleMask:(NSTitledWindowMask | NSClosableWindowMask)
+                    backing:NSBackingStoreBuffered
+                      defer:NO];
     [window setTitle:@"Equalizer"];
     [window center];
 
