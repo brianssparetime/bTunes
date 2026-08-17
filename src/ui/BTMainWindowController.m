@@ -1122,7 +1122,6 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
 
     [_sources reload];
     [self reloadTrackList];
-    [self updateTransport];
 }
 
 // What the track list shows is whatever survives the browser columns, in the
@@ -1132,6 +1131,10 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     _visibleTracks = BTSortTracks([_browser filteredTracks], _sortColumn, _sortAscending, _sourceOrder);
     [_trackTable reloadData];
     [self updateStatus];
+    // The transport button reads the list, so it is settled here rather than
+    // only where the source changes: the browser and the search field narrow
+    // the rows without either one of those touching the source.
+    [self updateTransport];
 }
 
 - (void)updateStatus {
@@ -1161,9 +1164,20 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     [_bottomBar setNeedsDisplay:YES];
 }
 
+// Whether the song in the player is one of the rows on screen. The transport
+// button belongs to the list being looked at, so a playlist that does not hold
+// the playing song offers to start itself rather than pausing a song listed
+// somewhere else. The speaker in the number column answers the same question,
+// which is why the two agree row for row.
+- (BOOL)playingTrackIsListed {
+    BTTrack *track = [[BTPlayer sharedPlayer] currentTrack];
+    return (track != nil && [_visibleTracks containsObject:track]);
+}
+
 - (void)updateTransport {
     BTPlayer *player = [BTPlayer sharedPlayer];
-    _playButton.glyph = [player isPlaying] ? BTGlyphPause : BTGlyphPlay;
+    _playButton.glyph = ([player isPlaying] && [self playingTrackIsListed])
+        ? BTGlyphPause : BTGlyphPlay;
     _shuffleButton.on = player.shuffle;
     _repeatButton.on = (player.repeatMode != BTRepeatModeOff);
     _repeatButton.glyph = (player.repeatMode == BTRepeatModeOne) ? BTGlyphRepeatOne : BTGlyphRepeat;
@@ -1900,20 +1914,21 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 - (void)playPause:(id)sender {
     BTPlayer *player = [BTPlayer sharedPlayer];
 
-    // A song already loaded is what this button controls, whatever list happens
-    // to be on screen. Looking at another playlist is not asking to play it: the
-    // button showed a pause mark, so it pauses. Starting the other playlist is
-    // what double-clicking a song in it is for.
-    if ([player currentTrack]) {
+    // The button does what its mark says, and the mark is decided by the list on
+    // screen. A song listed here is this button's own song, so it pauses and
+    // resumes. In the small player there is no list to disagree with, and the
+    // main window is not even on screen, so the loaded song answers there
+    // however it was started.
+    if ([player currentTrack] && (![[self window] isVisible] || [self playingTrackIsListed])) {
         [player togglePlayPause];
         return;
     }
 
-    // Nothing loaded, so this starts what is on screen: whatever source is
-    // selected on the left, narrowed by the browser and the search field. That
-    // list is also what next and previous walk, so a playlist plays its own
-    // songs and stops at the end of them rather than running on into the
-    // library.
+    // Either nothing is loaded, or what is loaded belongs to some other list.
+    // Either way this starts what is on screen: whatever source is selected on
+    // the left, narrowed by the browser and the search field. That list is also
+    // what next and previous walk, so a playlist plays its own songs and stops
+    // at the end of them rather than running on into the library.
     NSInteger row = [_trackTable selectedRow];
     if (row < 0 || row >= (NSInteger)[_visibleTracks count]) row = 0;
     if ([_visibleTracks count] == 0) return;
