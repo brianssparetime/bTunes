@@ -82,7 +82,7 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
     NSTextField *_databaseField;
     NSTextField *_iTunesField;
     NSTextField *_detuneField;
-    NSTextField *_btunesField;
+    NSTextField *_importedCDsField;
     NSButton *_losslessBox;
     NSButton *_lookupBox;
     NSButton *_evenVolumeBox;
@@ -106,7 +106,7 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
         @[@"iTunes:", (@"iTunes XML library from which to import playlists and songs\n"
                        @"Make sure \"Share iTunes library XML\" is checked in iTunes")],
         @[@"Detune:", @"Free recordings of iTunes protected music"],
-        @[@"BTunes:", @"Music BTunes records or imports (other than via iTunes)"],
+        @[@"Imported CDs:", @"Music BTunes records or imports (other than via iTunes)"],
     ];
 }
 
@@ -213,9 +213,9 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
     NSArray *rows = [BTPreferencesController settingRows];
     SEL actions[] = { @selector(chooseMusicFolder:), @selector(chooseDatabaseFolder:),
                       @selector(chooseITunesLibrary:), @selector(chooseDetuneFolder:),
-                      @selector(chooseBTunesFolder:) };
+                      @selector(chooseImportedCDsFolder:) };
     NSTextField *__strong *fields[] = { &_musicField, &_databaseField, &_iTunesField,
-                                        &_detuneField, &_btunesField };
+                                        &_detuneField, &_importedCDsField };
     NSUInteger row;
     for (row = 0; row < [rows count]; row++) {
         *fields[row] = [self addRowWithLabel:[[rows objectAtIndex:row] objectAtIndex:0]
@@ -394,11 +394,8 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
     [_musicField setStringValue:[prefs musicFolder]];
     [_databaseField setStringValue:[prefs databaseFolder]];
     [_iTunesField setStringValue:[prefs iTunesLibraryPath]];
-    // Said outright rather than left blank, because an empty box beside a name
-    // reads as a setting that failed to load rather than one not yet made.
-    NSString *detune = [prefs detuneFolder];
-    [_detuneField setStringValue:([detune length] > 0 ? detune : @"None chosen")];
-    [_btunesField setStringValue:[prefs btunesFolder]];
+    [_detuneField setStringValue:[prefs detuneFolder]];
+    [_importedCDsField setStringValue:[prefs importedCDsFolder]];
     [_losslessBox setState:([prefs importsLossless] ? NSOnState : NSOffState)];
     [_lookupBox setState:([prefs looksUpDiscs] ? NSOnState : NSOffState)];
     [_evenVolumeBox setState:([prefs evensOutVolume] ? NSOnState : NSOffState)];
@@ -440,14 +437,10 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
     [self refresh];
 }
 
-// Choosing the folder that holds the map, not the map itself, since the folder
-// is the thing that moves and the audio is found relative to it.
-// Made if it is not there yet, since this is a folder BTunes owns rather than
-// one it is being pointed at.
-- (void)chooseBTunesFolder:(id)sender {
-    NSString *chosen = [self chooseFolderStartingAt:[[BTPreferences sharedPreferences] btunesFolder]];
+- (void)chooseImportedCDsFolder:(id)sender {
+    NSString *chosen = [self chooseFolderStartingAt:[[BTPreferences sharedPreferences] importedCDsFolder]];
     if (chosen == nil) return;
-    [[BTPreferences sharedPreferences] setBtunesFolder:chosen];
+    [[BTPreferences sharedPreferences] setImportedCDsFolder:chosen];
     [self refresh];
 }
 

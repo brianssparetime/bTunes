@@ -34,12 +34,22 @@
     [BTAudioDisc startWatching];
     [BTBlankDisc startWatching];
 
+    // Before the library is read, since both decide where it is read from. A
+    // folder hand-moved into the home is noticed here rather than at the next
+    // sync, when nothing coming unlocked would be much harder to account for.
+    [BTLibrary moveDatabaseIntoTheHome];
+    [[BTPreferences sharedPreferences] forgetSavedFoldersThatHaveMoved];
+
     BTLibrary *library = [BTLibrary sharedLibrary];
     [library loadFromDisk];
     NSLog(@"BTunes library: %@ (%lu tracks, %lu playlists)",
           [library libraryFilePath],
           (unsigned long)[library.tracks count],
           (unsigned long)[library.playlists count]);
+    // Named because nothing writes it and an empty machine gives no other clue
+    // that the folders inside the home can be pointed somewhere else at all.
+    NSLog(@"BTunes home: %@ (folders can be moved from %@)",
+          [[BTPreferences sharedPreferences] btunesHome], [BTPreferences configFilePath]);
 
     _main = [[BTMainWindowController alloc] initMainWindow];
     [[_main window] center];

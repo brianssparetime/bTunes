@@ -2106,7 +2106,7 @@ constrainMaxCoordinate:(CGFloat)proposedMax
                              (unsigned long)already, (already == 1 ? @"is" : @"are")];
     }
     [detail appendFormat:@"They will be encoded as %@ and put in:\n%@\n\nThe disc is only read.",
-                         form, [prefs btunesFolder]];
+                         form, [prefs importedCDsFolder]];
     [alert setInformativeText:detail];
     [alert addButtonWithTitle:@"Import"];
     [alert addButtonWithTitle:@"Cancel"];

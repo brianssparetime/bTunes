@@ -23,9 +23,17 @@ extern NSString *const BTLibraryTrackDidChangeNotification;
 @property (nonatomic, readonly) NSMutableArray *playlists;   // top-level BTPlaylist
 
 - (NSString *)libraryFilePath;
-// Where the library would sit with no setting chosen: the environment
-// override, a folder beside the application, or Application Support.
-+ (NSString *)unconfiguredSupportDirectory;
+
+// Brings the database under the BTunes home, once, before it is first read.
+// Left where it is when the environment names a library, since that is a
+// throwaway one.
++ (void)moveDatabaseIntoTheHome;
+
+// The two halves of that, apart so each can be answered on its own: where a
+// database may be sitting from before the home existed, and the move itself,
+// which answers the folder it came from or nil if nothing moved.
++ (NSArray *)formerDatabaseFolders;
++ (NSString *)moveDatabaseIntoFolder:(NSString *)destination fromAnyOf:(NSArray *)folders;
 - (void)loadFromDisk;
 - (void)saveToDisk;
 

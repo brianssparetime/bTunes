@@ -1,12 +1,17 @@
 #import <Foundation/Foundation.h>
 
-// Which folder a track's path is measured from. Both are per-machine settings,
-// which is what lets one library be opened on another machine: point the setting
-// at wherever the files are there and every track resolves again.
+// Which folder a track's path is measured from. Each is a per-machine location,
+// which is what lets one library be opened on another machine: point BTunes at
+// wherever the files are there and every track resolves again.
+//
+// All but the first sit inside the BTunes home, so moving that one folder
+// carries every song measured from them.
 typedef NS_ENUM(NSInteger, BTPathRoot) {
-    BTPathRootMusic = 0,    // the music folder, where nearly everything lives
+    BTPathRootMusic = 0,    // the iTunes music folder, where nearly everything lives
     BTPathRootDetune,       // the free recordings standing in for locked purchases
-    BTPathRootBTunes        // music BTunes made itself, off a CD
+    BTPathRootImportedCDs,  // music BTunes made itself, off a CD
+    BTPathRootPodcasts,     // not yet used
+    BTPathRootAddedMusic    // not yet used
 };
 
 // Whether this song's own loudness is known, and if not, whether that is because

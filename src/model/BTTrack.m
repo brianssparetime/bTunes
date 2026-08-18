@@ -3,14 +3,44 @@
 #import "BTSavedValue.h"
 #import "BTSoundCheck.h"
 
-// The roots, asked of the settings each time rather than held, so pointing a
-// setting somewhere else takes effect without anything having to be told.
+// The roots, asked of the settings each time rather than held, so pointing the
+// BTunes home somewhere else takes effect without anything having to be told.
 static NSString *BTRootFor(BTPathRoot which) {
     BTPreferences *prefs = [BTPreferences sharedPreferences];
-    NSString *root = [prefs musicFolder];
-    if (which == BTPathRootDetune) root = [prefs detuneFolder];
-    else if (which == BTPathRootBTunes) root = [prefs btunesFolder];
+    NSString *root = nil;
+    switch (which) {
+        case BTPathRootDetune:      root = [prefs detuneFolder];       break;
+        case BTPathRootImportedCDs: root = [prefs importedCDsFolder];  break;
+        case BTPathRootPodcasts:    root = [prefs podcastsFolder];     break;
+        case BTPathRootAddedMusic:  root = [prefs addedMusicFolder];   break;
+        case BTPathRootMusic:       root = [prefs musicFolder];        break;
+    }
     return [root length] > 0 ? [root stringByStandardizingPath] : nil;
+}
+
+// What each root is called in the database. Names rather than numbers, so a
+// root added later cannot renumber the ones already written.
+static NSString *const BTRootNames[] = {
+    @"music", @"detune", @"importedCDs", @"podcasts", @"addedMusic"
+};
+
+// A name this version has never heard of reads as the ordinary music root,
+// which is wrong in the same harmless way an unfound file is: the song is in the
+// library with its ratings, and its path does not resolve until a version that
+// knows the name opens it again. Guessing at a root instead would point it at a
+// recording of something else.
+//
+// "btunes" is what the CD import root was called before the home gathered
+// everything under one folder.
+static BTPathRoot BTRootNamed(NSString *name) {
+    if ([name length] == 0) return BTPathRootMusic;
+    if ([name isEqualToString:@"btunes"]) return BTPathRootImportedCDs;
+
+    NSUInteger i, count = sizeof(BTRootNames) / sizeof(BTRootNames[0]);
+    for (i = 0; i < count; i++) {
+        if ([name isEqualToString:BTRootNames[i]]) return (BTPathRoot)i;
+    }
+    return BTPathRootMusic;
 }
 
 // A full path under the given root becomes the part below it. Anything else is
@@ -109,10 +139,7 @@ static NSString *BTMinuteCount(double minutes) {
     BTTrack *t = [[BTTrack alloc] init];
     t.trackID = BTSavedString(dict, @"id");
     // The root before the path, because the path is measured against it.
-    NSString *root = BTSavedString(dict, @"pathRoot");
-    if ([root isEqualToString:@"detune"]) t.pathRoot = BTPathRootDetune;
-    else if ([root isEqualToString:@"btunes"]) t.pathRoot = BTPathRootBTunes;
-    else t.pathRoot = BTPathRootMusic;
+    t.pathRoot = BTRootNamed(BTSavedString(dict, @"pathRoot"));
     t.path = BTSavedString(dict, @"path");
     t.persistentID = BTSavedString(dict, @"persistentID");
     t.title = BTSavedString(dict, @"title");
@@ -158,8 +185,9 @@ static NSString *BTMinuteCount(double minutes) {
     [d setObject:(self.path ? self.path : @"") forKey:@"path"];
     // Written only when it is not the ordinary one, so a library holding no
     // substituted songs reads exactly as it did before they were possible.
-    if (self.pathRoot == BTPathRootDetune) [d setObject:@"detune" forKey:@"pathRoot"];
-    else if (self.pathRoot == BTPathRootBTunes) [d setObject:@"btunes" forKey:@"pathRoot"];
+    if (self.pathRoot != BTPathRootMusic) {
+        [d setObject:BTRootNames[self.pathRoot] forKey:@"pathRoot"];
+    }
     if (self.persistentID) [d setObject:self.persistentID forKey:@"persistentID"];
     if (self.isProtected) [d setObject:@YES forKey:@"protected"];
     if (self.title) [d setObject:self.title forKey:@"title"];

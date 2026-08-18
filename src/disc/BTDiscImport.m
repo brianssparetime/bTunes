@@ -170,7 +170,7 @@ static BOOL BTEncodeTrack(NSString *source, NSString *destination, BOOL lossless
 // disc in a second time is a choice rather than a surprise.
 + (NSUInteger)songsOfDisc:(BTAudioDisc *)disc alreadyIn:(BTLibrary *)library {
     BOOL lossless = [[BTPreferences sharedPreferences] importsLossless];
-    NSString *root = [[BTPreferences sharedPreferences] btunesFolder];
+    NSString *root = [[BTPreferences sharedPreferences] importedCDsFolder];
     NSArray *tracks = [disc tracks];
 
     NSUInteger held = 0, i;
@@ -192,7 +192,7 @@ static BOOL BTEncodeTrack(NSString *source, NSString *destination, BOOL lossless
         completion:(void (^)(NSUInteger, NSString *))completion {
     NSArray *tracks = [disc tracks];
     BOOL lossless = [[BTPreferences sharedPreferences] importsLossless];
-    NSString *root = [[BTPreferences sharedPreferences] btunesFolder];
+    NSString *root = [[BTPreferences sharedPreferences] importedCDsFolder];
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSFileManager *fm = [NSFileManager defaultManager];
@@ -228,7 +228,7 @@ static BOOL BTEncodeTrack(NSString *source, NSString *destination, BOOL lossless
 
             BTTrack *kept = [[BTTrack alloc] init];
             kept.trackID = [[NSUUID UUID] UUIDString];
-            [kept setPath:full root:BTPathRootBTunes];
+            [kept setPath:full root:BTPathRootImportedCDs];
             kept.title = source.title;
             kept.artist = source.artist;
             kept.album = source.album;

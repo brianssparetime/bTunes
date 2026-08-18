@@ -10,6 +10,10 @@
 NSString *const BTLibraryDidChangeNotification = @"BTLibraryDidChange";
 NSString *const BTLibraryTrackDidChangeNotification = @"BTLibraryTrackDidChange";
 
+// Set once the database has been brought under the BTunes home, so a folder
+// chosen afterwards is not moved back out of it on the next launch.
+static NSString *const BTMovedIntoTheHomeKey = @"BTMovedIntoTheHome";
+
 @interface BTLibrary ()
 @property (nonatomic, strong) NSMutableArray *tracks;
 @property (nonatomic, strong) NSMutableArray *playlists;
@@ -55,32 +59,33 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
                                                                        length:strlen(override)];
 }
 
-// Where the library sits with nothing chosen: the environment variable, a
-// library folder beside the application, then the usual Application Support
-// location. The folder beside the application is for running a copy on another
-// machine without disturbing the library already there, and follows the same
-// layout as the other Mac applications here.
-+ (NSString *)unconfiguredSupportDirectory {
-    NSString *override = BTEnvironmentLibraryDirectory();
-    if (override) return override;
+// Where a database may be sitting from before BTunes kept everything under one
+// home, in the order those places used to be looked at: chosen in preferences,
+// beside the application, then Application Support. The folder beside the
+// application is how a copy was run on another machine without disturbing the
+// library already there, so on the machine BTunes is exercised on it is the one
+// holding the real database rather than the Application Support folder.
++ (NSArray *)formerDatabaseFolders {
+    NSMutableArray *folders = [NSMutableArray array];
 
-    NSString *beside = [[[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent]
-                        stringByAppendingPathComponent:@"BTunes Library"];
-    BOOL isDirectory = NO;
-    if ([[NSFileManager defaultManager] fileExistsAtPath:beside isDirectory:&isDirectory] && isDirectory) {
-        return beside;
-    }
+    NSString *saved = [[NSUserDefaults standardUserDefaults] stringForKey:@"BTDatabaseFolder"];
+    if ([saved length] > 0) [folders addObject:saved];
+
+    [folders addObject:[[[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent]
+                        stringByAppendingPathComponent:@"BTunes Library"]];
 
     NSArray *dirs = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
     NSString *base = [dirs count] > 0 ? [dirs objectAtIndex:0] : NSTemporaryDirectory();
-    return [base stringByAppendingPathComponent:@"BTunes"];
+    [folders addObject:[base stringByAppendingPathComponent:@"BTunes"]];
+
+    return folders;
 }
 
 - (NSString *)supportDirectory {
-    // The environment wins over the setting, so a test run cannot be sent at a
-    // real library by whatever happens to be saved in preferences. Everything
-    // below that is the setting's business, and it falls back to the
-    // unconfigured location on its own.
+    // The environment wins over everything, so a test run cannot be sent at a
+    // real library by whatever happens to be saved in preferences or written in
+    // the config file. Below that it is the settings' business, and they fall
+    // back to the folder inside the home on their own.
     NSString *dir = BTEnvironmentLibraryDirectory();
     if (dir == nil) dir = [[BTPreferences sharedPreferences] databaseFolder];
 
@@ -120,6 +125,119 @@ static NSString *BTEnvironmentLibraryDirectory(void) {
     } else {
         NSLog(@"BTunes: could not rename %@ (%@)", former, [error localizedDescription]);
     }
+}
+
+// The database file, under either name it has had.
++ (NSArray *)databaseFileNames {
+    return @[@"btunes_library.json", @"library.json"];
+}
+
+// Moves a database out of the first of the given folders that holds one and
+// into the destination, and answers where it came from. Nothing found, or a
+// database already at the destination, answers nil and moves nothing.
+//
+// The first folder holding one wins and no later folder is looked at. The order
+// they arrive in is the order they used to be resolved in, so the first is the
+// one the application would have opened; a later one is an older copy, and
+// preferring it would quietly restore a database from months ago.
+//
+// Moved rather than copied, so there is one database afterwards and no second
+// copy left to diverge from it. A move that fails leaves everything where it
+// was and answers nil, which is the reading that keeps working.
++ (NSString *)moveDatabaseIntoFolder:(NSString *)destination fromAnyOf:(NSArray *)folders {
+    NSFileManager *files = [NSFileManager defaultManager];
+    NSArray *names = [self databaseFileNames];
+    NSString *standardDestination = [destination stringByStandardizingPath];
+    NSUInteger i, n;
+
+    for (i = 0; i < [names count]; i++) {
+        NSString *there = [standardDestination stringByAppendingPathComponent:[names objectAtIndex:i]];
+        if ([files fileExistsAtPath:there]) return nil;
+    }
+
+    for (i = 0; i < [folders count]; i++) {
+        NSString *folder = [[folders objectAtIndex:i] stringByStandardizingPath];
+        if ([folder isEqualToString:standardDestination]) continue;
+
+        for (n = 0; n < [names count]; n++) {
+            NSString *from = [folder stringByAppendingPathComponent:[names objectAtIndex:n]];
+            if (![files fileExistsAtPath:from]) continue;
+
+            NSError *error = nil;
+            [files createDirectoryAtPath:standardDestination
+            withIntermediateDirectories:YES attributes:nil error:NULL];
+
+            // Under the current name whichever name it arrived under, so the
+            // rename and the move do not have to happen in two steps.
+            NSString *to = [standardDestination stringByAppendingPathComponent:
+                            [names objectAtIndex:0]];
+            if (![files moveItemAtPath:from toPath:to error:&error]) {
+                NSLog(@"BTunes: could not move %@ to %@ (%@)",
+                      from, to, [error localizedDescription]);
+                return nil;
+            }
+
+            // The log is BTunes' own and belongs beside the database. It is
+            // rewritten whenever anything is missing, so failing to bring it
+            // over costs nothing and is not worth reporting.
+            NSString *log = [folder stringByAppendingPathComponent:@"missing-files.log"];
+            if ([files fileExistsAtPath:log]) {
+                [files moveItemAtPath:log
+                               toPath:[standardDestination stringByAppendingPathComponent:
+                                       @"missing-files.log"]
+                                error:NULL];
+            }
+
+            NSLog(@"BTunes: moved the library from %@ to %@", from, to);
+            return folder;
+        }
+    }
+    return nil;
+}
+
+// Brings the database under the BTunes home the first time a version that keeps
+// it there runs, and forgets the folder that was chosen when it did not.
+//
+// Once, not on every launch. A database folder chosen after this has run is a
+// deliberate choice and is left alone; moving it back every time would make the
+// setting look as though it did nothing.
+//
+// A library pointed at by the environment is left exactly where it is. That
+// override is what the headless tools and the checks use to work on a throwaway
+// library, and a throwaway library is the last thing that should be moved
+// somewhere permanent.
++ (void)moveDatabaseIntoTheHome {
+    if (BTEnvironmentLibraryDirectory()) return;
+
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if ([defaults boolForKey:BTMovedIntoTheHomeKey]) return;
+
+    BTPreferences *prefs = [BTPreferences sharedPreferences];
+    NSString *destination = [prefs defaultDatabaseFolder];
+    [self moveDatabaseIntoFolder:destination fromAnyOf:[self formerDatabaseFolders]];
+
+    // The old choice is dropped only once the database is demonstrably at the
+    // destination. A move that failed leaves the setting as the only thing
+    // still pointing at the database, so clearing it there would lose the
+    // library rather than consolidate it, and the next launch tries again.
+    if (![self databaseIsInFolder:destination]) {
+        NSLog(@"BTunes: nothing was moved into %@ and the old location still stands", destination);
+        return;
+    }
+
+    [prefs forgetSavedDatabaseFolder];
+    [defaults setBool:YES forKey:BTMovedIntoTheHomeKey];
+}
+
++ (BOOL)databaseIsInFolder:(NSString *)folder {
+    NSFileManager *files = [NSFileManager defaultManager];
+    NSArray *names = [self databaseFileNames];
+    NSUInteger i;
+    for (i = 0; i < [names count]; i++) {
+        if ([files fileExistsAtPath:[folder stringByAppendingPathComponent:
+                                     [names objectAtIndex:i]]]) return YES;
+    }
+    return NO;
 }
 
 - (NSString *)missingFilesLogPath {
