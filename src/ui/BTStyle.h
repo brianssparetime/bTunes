@@ -84,6 +84,7 @@ static inline BOOL BTSameString(NSString *a, NSString *b) {
 // one place to turn them all.
 + (NSColor *)progressFill;        // how far into a song, and sync progress
 + (NSColor *)sourceIcon;          // the mark beside a source in the left pane
++ (NSColor *)alternateSourceIcon; // the hue the plain mark gave up
 + (NSColor *)smartPlaylistIcon;   // the same, for one built from rules
 + (NSColor *)defaultButtonTop;
 + (NSColor *)defaultButtonBottom;

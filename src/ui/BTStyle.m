@@ -148,15 +148,20 @@ static NSColor *BTSourcePurple(void) {
 
 + (NSColor *)sourceIcon { return [self tinted:BTSourceBlue()]; }
 
-// The two marks trade places rather than both turning. Blue and purple is what
-// tells a playlist from a smart one, and running the pair through the same
-// tinting would leave two purples a row apart that nobody could tell apart. So
-// the plain mark takes the window's hue and this one takes the hue the plain
-// mark gave up.
-+ (NSColor *)smartPlaylistIcon {
+// The hue the plain mark gave up. Marks that use it trade places with the plain
+// mark when the window turns, rather than turning with it.
+//
+// A pair that both turned would leave two purples where there had been a blue
+// and a purple, which is how a playlist and a smart playlist came to be
+// indistinguishable a row apart.
++ (NSColor *)alternateSourceIcon {
     if (![[BTPreferences sharedPreferences] purpleMode]) return BTSourcePurple();
     return BTSourceBlue();
 }
+
+// Blue and purple is what tells a playlist from a smart one, so the plain mark
+// takes the window's hue and this one takes the other.
++ (NSColor *)smartPlaylistIcon { return [self alternateSourceIcon]; }
 
 + (NSColor *)defaultButtonTop {
     return [self tinted:[NSColor colorWithCalibratedRed:0.48 green:0.71 blue:0.96 alpha:1.0]];

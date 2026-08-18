@@ -285,9 +285,11 @@ static NSBezierPath *BTPagePath(void) {
     [foot stroke];
 }
 
+// Purple while the window is blue, and blue while it is purple, so the clock
+// never wears the same hue as the window's own furniture.
 + (void)drawRecentlyAdded {
     NSBezierPath *face = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 15, 15)];
-    [[BTStyle sourceIcon] set];
+    [[BTStyle alternateSourceIcon] set];
     [face fill];
     [[NSColor whiteColor] set];
     NSBezierPath *hands = [NSBezierPath bezierPath];
