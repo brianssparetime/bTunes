@@ -2,10 +2,13 @@
 # Build BTunes on BUILD and put it on TARGET.
 #
 # Usage: ./tools/deploy.sh [--no-run] [--no-sync] [--stop] [--applications]
+#                          [--gentle] [--full-speed]
 #
 #   --no-run        install it but leave it stopped
 #   --no-sync       build whatever is already on BUILD, skip the source copy
 #   --stop          stop whatever is running on TARGET and do nothing else
+#   --gentle        let everything else on BUILD have the machine first
+#   --full-speed    build at ordinary priority, whatever env.local.sh says
 #   --applications  also put a copy in /Applications on TARGET, and start that
 #                   one. Needs sudo without a password there; if sudo asks for
 #                   one, this is reported and skipped rather than left hanging.
@@ -50,6 +53,10 @@ RUN_AFTER=1
 DO_SYNC=1
 STOP_ONLY=0
 INSTALL_APPLICATIONS=0
+# BUILD is shared. When something long is running there, a compile that takes
+# the processor and the disk is felt by it within seconds, so every step of the
+# deploy that runs on BUILD can be told to wait its turn instead.
+GENTLE=${BT_BUILD_GENTLE:-0}
 
 for arg in "$@"; do
     case "$arg" in
@@ -57,6 +64,8 @@ for arg in "$@"; do
         --no-sync)      DO_SYNC=0 ;;
         --stop)         STOP_ONLY=1 ;;
         --applications) INSTALL_APPLICATIONS=1 ;;
+        --gentle)       GENTLE=1 ;;
+        --full-speed)   GENTLE=0 ;;
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -109,11 +118,28 @@ echo "==> Checking both machines are up"
 $SSH "$BT_BUILD_HOST" 'true'  || { echo "BUILD is not answering." >&2; exit 1; }
 $SSH "$BT_TARGET_HOST" 'true' || { echo "TARGET is not answering." >&2; exit 1; }
 
+# nice alone only yields the processor. taskpolicy -b is the part that matters,
+# because background priority throttles the disk too, and a compile reading
+# every source and writing an object for each is as much a disk job as a
+# processor one. Children inherit both, so wrapping the top of each remote step
+# covers every clang it starts.
+NICE=""
+if [ "$GENTLE" -eq 1 ]; then
+    if $SSH "$BT_BUILD_HOST" 'test -x /usr/sbin/taskpolicy'; then
+        NICE="nice -n 20 /usr/sbin/taskpolicy -b"
+    else
+        NICE="nice -n 20"
+        echo "    no taskpolicy on BUILD, so this yields the processor only" >&2
+    fi
+    echo "==> Gentle: BUILD's other work comes first, so this will be slow"
+fi
+
 if [ "$DO_SYNC" -eq 1 ]; then
     echo "==> Copying source to BUILD"
     # Everything the build needs and nothing that belongs to this machine. The
     # deletes keep a file removed here from lingering there and being compiled.
     rsync -a --delete \
+        --rsync-path="${NICE:+$NICE }rsync" \
         --exclude 'build/' \
         --exclude '.git/' \
         --exclude '.claude/' \
@@ -126,10 +152,10 @@ if [ "$DO_SYNC" -eq 1 ]; then
 fi
 
 echo "==> Building on BUILD"
-$SSH "$BT_BUILD_HOST" "cd '$BT_BUILD_DIR' && ./build.sh"
+$SSH "$BT_BUILD_HOST" "cd '$BT_BUILD_DIR' && $NICE ./build.sh"
 
 echo "==> Fetching the app"
-$SSH "$BT_BUILD_HOST" "cd '$BT_BUILD_DIR/build' && rm -f '$TARBALL' && tar czf '$TARBALL' BTunes.app"
+$SSH "$BT_BUILD_HOST" "cd '$BT_BUILD_DIR/build' && rm -f '$TARBALL' && $NICE tar czf '$TARBALL' BTunes.app"
 rm -f "$TARBALL"
 scp -q "$BT_BUILD_HOST:$TARBALL" "$TARBALL"
 scp -q "$TARBALL" "$BT_TARGET_HOST:$TARBALL"
