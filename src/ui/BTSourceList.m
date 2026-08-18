@@ -18,6 +18,10 @@ NSString *const BTRecentlyAddedSource = @"Recently Added";
 // and closes the way every other pane in the left bar does: it is put away by
 // picking something else, and by nothing else.
 NSString *const BTITunesSyncSource = @"iTunes Sync";
+// Shows read from the podcasts folder. A row of its own rather than a playlist,
+// because episodes are not in the library: a podcast holds its own, and picking
+// this row is the only way to reach them.
+NSString *const BTPodcastsSource = @"Podcasts";
 
 BTPlaylist *BTPlaylistFromSource(id item) {
     return [item isKindOfClass:[BTPlaylist class]] ? (BTPlaylist *)item : nil;
@@ -169,6 +173,10 @@ static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
         NSMutableArray *roots = [NSMutableArray arrayWithObject:BTLibrarySource];
         if (self.disc) [roots addObject:self.disc];
         [roots addObject:BTRecentlyAddedSource];
+        // Podcasts sit directly under the library's two views and above
+        // everything else, because they are a third body of listening rather
+        // than a way of arranging the first.
+        [roots addObject:BTPodcastsSource];
         // Where songs come in from, under the two views of what is already here.
         [roots addObject:BTITunesSyncSource];
         // The iPod sits under the library views, above the playlists.
@@ -315,6 +323,7 @@ static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
     if (item == BTLibrarySource) return @"Library";
     if (item == BTRecentlyAddedSource) return @"Recently Added";
     if (item == BTITunesSyncSource) return @"iTunes Sync";
+    if (item == BTPodcastsSource) return @"Podcasts";
     if ([item isKindOfClass:[BTIPod class]]) return [(BTIPod *)item name];
     if ([item isKindOfClass:[BTAudioDisc class]]) return [(BTAudioDisc *)item name];
     return [(BTPlaylist *)item name];
@@ -332,7 +341,7 @@ static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
     [_delegate sourceList:self renamePlaylist:playlist to:object];
 }
 
-// Which of the eight marks a row wears. The only place that has to know what a
+// Which of the nine marks a row wears. The only place that has to know what a
 // source is; the drawing itself is told the kind.
 - (BTSourceIconKind)iconKindFor:(id)item {
     if ([item isKindOfClass:[BTIPod class]]) return BTSourceIconIPod;
@@ -340,6 +349,7 @@ static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
     if (item == BTRecentlyAddedSource) return BTSourceIconRecentlyAdded;
     if (item == BTLibrarySource) return BTSourceIconLibrary;
     if (item == BTITunesSyncSource) return BTSourceIconITunes;
+    if (item == BTPodcastsSource) return BTSourceIconPodcast;
 
     BTPlaylist *playlist = BTPlaylistFromSource(item);
     if (playlist.kind == BTPlaylistKindFolder) return BTSourceIconFolder;

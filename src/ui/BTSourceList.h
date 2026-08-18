@@ -2,14 +2,15 @@
 
 @class BTSourceList, BTPlaylist, BTIPod, BTAudioDisc;
 
-// The three rows that are not objects: the whole library, the same songs in
-// the order iTunes recorded them being added, and the place music comes over
-// from iTunes.
+// The four rows that are not objects: the whole library, the same songs in
+// the order iTunes recorded them being added, the shows read from the podcasts
+// folder, and the place music comes over from iTunes.
 //
 // Compared by pointer rather than by their words, so these are the constants to
 // test against and not equal strings written out again somewhere else.
 extern NSString *const BTLibrarySource;
 extern NSString *const BTRecentlyAddedSource;
+extern NSString *const BTPodcastsSource;
 extern NSString *const BTITunesSyncSource;
 
 // The list holds three kinds of row: the library and its by-date view, a device,

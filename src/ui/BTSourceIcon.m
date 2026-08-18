@@ -232,6 +232,35 @@ static NSBezierPath *BTPagePath(void) {
 }
 
 // A clock face, since the list is about when rather than what.
+// Something broadcasting: a head over two arcs widening away from it. The mark
+// iTunes used for this was a purple circle holding the same shape, and the
+// shape is what survives at sixteen points. The arcs are struck rather than
+// filled, because two filled crescents that thin come out as grey smears.
++ (void)drawPodcast {
+    NSColor *purple = [NSColor colorWithCalibratedRed:0.451 green:0.353 blue:0.702 alpha:1.0];
+    NSBezierPath *face = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 15, 15)];
+    [purple set];
+    [face fill];
+
+    [[NSColor whiteColor] set];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(6.6, 9.4, 2.8, 2.8)] fill];
+
+    // Struck from the same centre as the head, so the three read as one mark
+    // rather than a dot sitting above unrelated curves.
+    NSPoint centre = NSMakePoint(8.0, 10.8);
+    CGFloat radii[2] = { 4.0, 6.1 };
+    NSUInteger i;
+    for (i = 0; i < 2; i++) {
+        NSBezierPath *arc = [NSBezierPath bezierPath];
+        [arc appendBezierPathWithArcWithCenter:centre
+                                        radius:radii[i]
+                                    startAngle:212.0
+                                      endAngle:328.0];
+        [arc setLineWidth:1.5];
+        [arc stroke];
+    }
+}
+
 + (void)drawRecentlyAdded {
     NSBezierPath *face = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0.5, 0.5, 15, 15)];
     [[BTStyle sourceIcon] set];
@@ -334,6 +363,7 @@ static NSBezierPath *BTPagePath(void) {
         case BTSourceIconFolder:         [self drawFolder];           break;
         case BTSourceIconSmartPlaylist:  [self drawPlaylistSmart:YES]; break;
         case BTSourceIconPlaylist:       [self drawPlaylistSmart:NO];  break;
+        case BTSourceIconPodcast:        [self drawPodcast];           break;
     }
     [image unlockFocus];
     return image;

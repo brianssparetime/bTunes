@@ -22,6 +22,7 @@
 #import "BTDiscLookup.h"
 #import "BTSyncView.h"
 #import "BTITunesSyncView.h"
+#import "BTPodcastView.h"
 #import "BTPreferences.h"
 #import "BTTrack.h"
 #import "BTPlayer.h"
@@ -112,6 +113,7 @@ static CGFloat BTTitleBarHeight(void) {
     BTToggleButton *_repeatButton;
     BTToggleButton *_ejectButton;
     BTITunesSyncView *_iTunesSyncView;
+    BTPodcastView *_podcastView;
 
     id _selectedSource;              // BTLibrarySource or a BTPlaylist
     NSArray *_visibleTracks;
@@ -675,10 +677,14 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
 }
 
 // Both panes belong to a row in the left bar, so what the right half shows is
-// read off the selection rather than kept alongside it. Three things can occupy
-// it: the songs, the iPod, or the iTunes sync. Only one at a time.
+// read off the selection rather than kept alongside it. Four things can occupy
+// it: the songs, the iPod, the iTunes sync, or the podcasts. Only one at a time.
 - (BOOL)showingITunesSync {
     return _selectedSource == BTITunesSyncSource;
+}
+
+- (BOOL)showingPodcasts {
+    return _selectedSource == BTPodcastsSource;
 }
 
 - (void)updateRightPane {
@@ -694,6 +700,11 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
             _iTunesSyncView.didFinish = ^{ [weakSelf leaveITunesSync]; };
         }
         wanted = _iTunesSyncView;
+    } else if ([self showingPodcasts]) {
+        if (_podcastView == nil) {
+            _podcastView = [[BTPodcastView alloc] initWithFrame:[current frame]];
+        }
+        wanted = _podcastView;
     } else if ([_selectedSource isKindOfClass:[BTIPod class]]) {
         if (_syncView == nil) _syncView = [[BTSyncView alloc] initWithFrame:[current frame]];
         _syncView.iPod = (BTIPod *)_selectedSource;
@@ -1251,6 +1262,9 @@ static void BTRedrawEverything(NSView *view) {
     // Reading the iTunes library is what the row is for, so picking it starts.
     // Safe on a row picked twice: a comparison already running is left alone.
     if ([self showingITunesSync]) [_iTunesSyncView beginComparing];
+    // Read again on every visit rather than once, so a show dropped into the
+    // folder while BTunes was running is there when the row is next picked.
+    if ([self showingPodcasts]) [_podcastView reload];
     [self reloadEverything];
 }
 
