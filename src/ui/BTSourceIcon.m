@@ -232,68 +232,57 @@ static NSBezierPath *BTPagePath(void) {
 }
 
 // A clock face, since the list is about when rather than what.
-// A microphone with one arc either side. Pink, because the marks beside it are
-// already yellow, blue and green, and at this size a source is told apart by its
-// colour before its shape.
+// A microphone on a stand. Pink, because the marks around it are already yellow,
+// blue and green, and at this size a source is told apart by its colour before
+// its shape.
 //
-// One arc a side rather than the two a drawn-large microphone would carry. Two
-// were tried and they close up: at sixteen points the gap between them is under
-// a pixel, so they merge into a solid bowl and the microphone vanishes inside
-// it. What survives being drawn small is not what survives being shrunk.
+// Three measurements decide whether this reads at sixteen points, and all three
+// were found by drawing it magnified rather than by reasoning about it.
 //
-// The stand is struck as separate pieces because a single path crossing itself
-// cancels where it overlaps.
+// The yoke runs 160 degrees round to 380 counterclockwise, so it passes under
+// the capsule and both arms finish above its centre. Ending at 198 and 342 puts
+// the arms below the centre and the capsule sits in a cup instead of a yoke.
+//
+// Two points of clear space separate the capsule from the yoke. At one point the
+// two fuse into a single blob with a white notch in it, since the gap lands
+// under one pixel once both strokes are drawn.
+//
+// The mark fills its square. Drawn smaller it sat visibly lighter than the
+// filled circles it shares the bar with.
 + (void)drawPodcast {
     NSColor *pink = [NSColor colorWithCalibratedRed:0.925 green:0.282 blue:0.600 alpha:1.0];
     [pink set];
 
-    NSBezierPath *capsule =
-        [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(6.4, 7.0, 3.2, 6.6)
-                                        xRadius:1.6
-                                        yRadius:1.6];
-    [capsule fill];
+    const CGFloat weight = 1.7;
 
-    // The cradle under the capsule, and the post it stands on.
-    NSBezierPath *stand = [NSBezierPath bezierPath];
-    [stand appendBezierPathWithArcWithCenter:NSMakePoint(8.0, 7.4)
-                                      radius:2.5
-                                  startAngle:200.0
-                                    endAngle:340.0
-                                   clockwise:NO];
-    [stand setLineWidth:1.2];
-    [stand setLineCapStyle:NSRoundLineCapStyle];
-    [stand stroke];
+    [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(5.3, 5.2, 5.4, 10.2)
+                                     xRadius:2.7
+                                     yRadius:2.7] fill];
 
+    NSBezierPath *yoke = [NSBezierPath bezierPath];
+    [yoke appendBezierPathWithArcWithCenter:NSMakePoint(8.0, 8.1)
+                                     radius:5.6
+                                 startAngle:160.0
+                                   endAngle:380.0
+                                  clockwise:NO];
+    [yoke setLineWidth:weight];
+    [yoke setLineCapStyle:NSRoundLineCapStyle];
+    [yoke stroke];
+
+    // The post and the foot are struck separately, because a single path
+    // crossing itself cancels where it overlaps.
     NSBezierPath *post = [NSBezierPath bezierPath];
-    [post moveToPoint:NSMakePoint(8.0, 4.9)];
-    [post lineToPoint:NSMakePoint(8.0, 2.6)];
-    [post setLineWidth:1.2];
+    [post moveToPoint:NSMakePoint(8.0, 3.0)];
+    [post lineToPoint:NSMakePoint(8.0, 1.3)];
+    [post setLineWidth:weight];
     [post stroke];
 
     NSBezierPath *foot = [NSBezierPath bezierPath];
-    [foot moveToPoint:NSMakePoint(5.9, 2.6)];
-    [foot lineToPoint:NSMakePoint(10.1, 2.6)];
-    [foot setLineWidth:1.2];
+    [foot moveToPoint:NSMakePoint(5.0, 1.3)];
+    [foot lineToPoint:NSMakePoint(11.0, 1.3)];
+    [foot setLineWidth:weight];
     [foot setLineCapStyle:NSRoundLineCapStyle];
     [foot stroke];
-
-    // Struck from the capsule's own middle, so the three read as one mark, and kept
-// short. An arc long enough to curl under the capsule closes around it and the
-// whole mark reads as a goblet.
-    NSPoint centre = NSMakePoint(8.0, 10.6);
-    NSUInteger side;
-    for (side = 0; side < 2; side++) {
-        CGFloat middle = (side == 0) ? 180.0 : 0.0;
-        NSBezierPath *arc = [NSBezierPath bezierPath];
-        [arc appendBezierPathWithArcWithCenter:centre
-                                        radius:5.9
-                                    startAngle:(middle - 36.0)
-                                      endAngle:(middle + 36.0)
-                                     clockwise:NO];
-        [arc setLineWidth:1.2];
-        [arc setLineCapStyle:NSRoundLineCapStyle];
-        [arc stroke];
-    }
 }
 
 + (void)drawRecentlyAdded {
