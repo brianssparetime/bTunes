@@ -167,20 +167,21 @@ static NSComparisonResult BTCompareSourceNames(BTPlaylist *a, BTPlaylist *b) {
 
 - (NSArray *)childrenOf:(id)item {
     if (item == nil) {
-        // A disc sits directly under the library, because it is another place
-        // songs come from. Recently Added is a second view of the library rather
-        // than a source of its own, so it follows.
+        // Four groups, in this order: what is already here, where it comes in
+        // from, listening that is not the library, and the arrangements.
+        //
+        // Recently Added is a second view of the library rather than a source
+        // of its own, so it sits with it. The sync, an iPod and a disc are the
+        // three places music arrives from, and they stay together whether or
+        // not the two that come and go are there, so a disc appearing never
+        // moves a row that was already on screen. Podcasts follow, being a body
+        // of listening the library does not hold.
         NSMutableArray *roots = [NSMutableArray arrayWithObject:BTLibrarySource];
-        if (self.disc) [roots addObject:self.disc];
         [roots addObject:BTRecentlyAddedSource];
-        // Podcasts sit directly under the library's two views and above
-        // everything else, because they are a third body of listening rather
-        // than a way of arranging the first.
-        [roots addObject:BTPodcastsSource];
-        // Where songs come in from, under the two views of what is already here.
         [roots addObject:BTITunesSyncSource];
-        // The iPod sits under the library views, above the playlists.
         if (self.iPod) [roots addObject:self.iPod];
+        if (self.disc) [roots addObject:self.disc];
+        [roots addObject:BTPodcastsSource];
         [roots addObjectsFromArray:[self arranged:[BTLibrary sharedLibrary].playlists]];
         return roots;
     }
