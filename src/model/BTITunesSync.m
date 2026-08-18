@@ -26,6 +26,20 @@
 @end
 
 
+@implementation BTITunesSyncModification
+
++ (NSString *)keyForPlaylist:(NSString *)playlistID song:(NSString *)songID {
+    if ([playlistID length] == 0 || [songID length] == 0) return nil;
+    return [NSString stringWithFormat:@"%@/%@", playlistID, songID];
+}
+
+- (NSString *)key {
+    return [[self class] keyForPlaylist:self.playlistID song:self.songID];
+}
+
+@end
+
+
 @interface BTITunesSync ()
 @property (nonatomic, copy) NSString *error;
 @end
@@ -35,6 +49,7 @@
 @implementation BTITunesSync {
     NSMutableArray *_incomingTracks;
     NSMutableArray *_playlists;
+    NSMutableArray *_modifications;
 }
 
 - (id)init {
@@ -42,12 +57,14 @@
     if (self) {
         _incomingTracks = [NSMutableArray array];
         _playlists = [NSMutableArray array];
+        _modifications = [NSMutableArray array];
     }
     return self;
 }
 
 - (NSArray *)incomingTracks { return _incomingTracks; }
 - (NSArray *)playlists { return _playlists; }
+- (NSArray *)modifications { return _modifications; }
 
 #pragma mark - Reading the file
 
@@ -233,6 +250,20 @@
     // What BTunes already holds, by the iTunes playlist it came from.
     NSDictionary *haveByPersistent = [self playlistsBySourceIn:library];
 
+    // The songs by their persistent id, so a song joining a playlist can be
+    // named. The entries are keyed by track id, which is a number meaning one
+    // thing inside a single library file and nothing between two.
+    NSArray *readKeys = [read allKeys];
+    NSMutableDictionary *entriesByPersistent = [NSMutableDictionary dictionary];
+    for (i = 0; i < [readKeys count]; i++) {
+        BTITunesEntry *entry = [read objectForKey:[readKeys objectAtIndex:i]];
+        if ([entry.persistentID length] > 0) {
+            [entriesByPersistent setObject:entry forKey:entry.persistentID];
+        }
+    }
+
+    NSSet *excluded = [library excludedFromImport];
+
     for (i = 0; i < [playlistEntries count]; i++) {
         NSDictionary *entry = [playlistEntries objectAtIndex:i];
         if (![entry isKindOfClass:[NSDictionary class]]) continue;
@@ -312,6 +343,24 @@
             change.blocked = BTITunesBlockNone;
         }
         [_playlists addObject:change];
+
+        // Only for a playlist that could actually grow. A new playlist's songs
+        // are the playlist rather than a change to one, and a playlist nothing
+        // can be done to has nothing to offer.
+        if (change.change != BTITunesPlaylistGrew || change.blocked != BTITunesBlockNone) continue;
+        for (j = 0; j < [incoming count]; j++) {
+            NSString *songID = [incoming objectAtIndex:j];
+            BTITunesEntry *song = [entriesByPersistent objectForKey:songID];
+            BTITunesSyncModification *addition = [[BTITunesSyncModification alloc] init];
+            addition.playlistID = persistentID;
+            addition.playlistName = name;
+            addition.songID = songID;
+            addition.songTitle = song ? BTITunesString(song.entry, @"Name") : nil;
+            addition.songArtist = song ? BTITunesString(song.entry, @"Artist") : nil;
+            addition.excludedBefore = ([addition.key length] > 0 &&
+                                       [excluded containsObject:addition.key]);
+            [_modifications addObject:addition];
+        }
     }
 }
 
@@ -366,7 +415,8 @@
 
 - (NSDictionary *)importInto:(BTLibrary *)library
                  chosenSongs:(NSSet *)songIDs
-             chosenPlaylists:(NSSet *)playlistIDs {
+             chosenPlaylists:(NSSet *)playlistIDs
+           skippedAdditions:(NSSet *)skippedKeys {
     NSUInteger i, j, songsAdded = 0, songsFilledIn = 0;
     NSUInteger playlistsAdded = 0, playlistsGrown = 0;
 
@@ -420,6 +470,14 @@
         NSMutableArray *joining = [NSMutableArray array];
         for (j = 0; j < [incoming.incomingTrackIDs count]; j++) {
             NSString *persistent = [incoming.incomingTrackIDs objectAtIndex:j];
+            // A song turned down one playlist at a time. Only a playlist already
+            // here has these, since only there is a song joining a playlist a
+            // separate thing from the playlist arriving.
+            if (incoming.change == BTITunesPlaylistGrew) {
+                NSString *key = [BTITunesSyncModification keyForPlaylist:incoming.persistentID
+                                                                    song:persistent];
+                if (key && [skippedKeys containsObject:key]) continue;
+            }
             BTTrack *track = [heldByITunesID objectForKey:persistent];
             if (track && ![joining containsObject:track.trackID]) [joining addObject:track.trackID];
         }
@@ -517,8 +575,14 @@
         [parts addObject:[NSString stringWithFormat:@"%lu new playlist%@",
                           (unsigned long)added, (added == 1 ? @"" : @"s")]];
     }
+    // Counted in songs and in playlists both, because one number without the
+    // other says nothing useful. "1 playlist modification" was the whole of what
+    // this line used to say, and forty-four songs joining one playlist and one
+    // song joining it read exactly alike.
     if (grown > 0) {
-        [parts addObject:[NSString stringWithFormat:@"%lu playlist modification%@",
+        NSUInteger joining = [self.modifications count];
+        [parts addObject:[NSString stringWithFormat:@"%lu song%@ added to %lu playlist%@",
+                          (unsigned long)joining, (joining == 1 ? @"" : @"s"),
                           (unsigned long)grown, (grown == 1 ? @"" : @"s")]];
     }
     return [parts componentsJoinedByString:@", "];

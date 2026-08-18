@@ -6,6 +6,7 @@
 #import "BTPreferences.h"
 #import "BTPlaylist.h"
 #import "BTDisplayView.h"
+#import "BTSyncModificationsController.h"
 
 // Which columns are shown is remembered, since a reader who hides the ones that
 // cannot come across wants them to stay hidden next time as well.
@@ -71,7 +72,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
 @interface BTITunesSyncView () <NSTableViewDataSource, NSTableViewDelegate,
                                 NSOutlineViewDataSource, NSOutlineViewDelegate,
-                                NSSplitViewDelegate>
+                                NSSplitViewDelegate, BTSyncModificationsSource>
 + (NSArray *)statusVocabulary;
 - (void)sizeAllColumns;
 - (void)sizeColumnsOf:(NSTableView *)table in:(NSScrollView *)scroll;
@@ -89,7 +90,10 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     NSButton *_hideAlreadySynced;
     NSButton *_checkAll;
     NSButton *_syncButton;
+    NSButton *_modificationsButton;
     NSTextField *_chosenSummary;
+    BTSyncModificationsController *_modificationsWindow;
+    BOOL _modificationsShowing;
 
     NSTextField *_songsHeading;
     NSTextField *_playlistsHeading;
@@ -117,6 +121,15 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     NSMutableSet *_uncheckedSongs;
     NSMutableSet *_uncheckedLists;
 
+    // The songs joining a playlist that are turned down one at a time, held by
+    // the key that names the pair. A playlist can come across without one of
+    // them, which is why this cannot be folded into the two sets above: neither
+    // the song nor the playlist is being refused, only their joining.
+    NSMutableSet *_skippedAdditions;
+    NSDictionary *_modificationsByPlaylist;   // playlist id to BTITunesSyncModification
+    NSDictionary *_playlistsByID;             // playlist id to BTITunesSyncPlaylist
+    NSDictionary *_incomingByID;              // song id to BTITunesSyncTrack
+
     // Which of a playlist's songs are still up for choosing, worked out once
     // when the comparison lands. Asking the question row by row meant walking
     // all twelve thousand incoming songs for every row drawn, which is why
@@ -132,6 +145,7 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
 
     _uncheckedSongs = [NSMutableSet set];
     _uncheckedLists = [NSMutableSet set];
+    _skippedAdditions = [NSMutableSet set];
     _songs = @[];
     _lists = @[];
 
@@ -185,6 +199,15 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     _syncButton = [BTPushButton buttonWithTitle:@"Sync" target:self action:@selector(runSync:)];
     [_syncButton setKeyEquivalent:@"\r"];
     [self addSubview:_syncButton];
+
+    // The far corner from the button that acts, since this one only opens a
+    // window to read. Hidden until there is something in it, so a sync that
+    // changes no playlist says so by having nothing to open.
+    _modificationsButton = [BTPushButton buttonWithTitle:@"Playlist Modifications"
+                                                  target:self
+                                                  action:@selector(toggleModifications:)];
+    [_modificationsButton setHidden:YES];
+    [self addSubview:_modificationsButton];
 
     // What the button is about to do, beside the button that does it. The line
     // at the top says what iTunes has; this says what has been asked for, and
@@ -388,10 +411,19 @@ static NSString *const BTHideAlreadySyncedKey = @"BTSyncHideAlreadySynced";
     [_syncButton setFrame:NSMakeRect(NSMaxX(bounds) - margin - syncWidth,
                                      22.0 - syncHeight / 2.0, syncWidth, syncHeight)];
 
+    CGFloat modWidth = NSWidth([_modificationsButton frame]);
+    CGFloat modHeight = NSHeight([_modificationsButton frame]);
+    [_modificationsButton setFrame:NSMakeRect(margin, 22.0 - modHeight / 2.0, modWidth, modHeight)];
+
     // Right up against the button and centred on it, so the count reads as
-    // belonging to the button rather than to the pane above.
+    // belonging to the button rather than to the pane above. Clear of the
+    // modifications button when there is one, which is why its own frame is set
+    // first.
     CGFloat countRight = NSMinX([_syncButton frame]) - 12.0;
     CGFloat countLeft = margin + 110.0;
+    if (![_modificationsButton isHidden]) {
+        countLeft = NSMaxX([_modificationsButton frame]) + 12.0;
+    }
     if (countLeft > countRight - 40.0) countLeft = countRight - 40.0;
     // Two and a half points below where centring the box would put it. A label
     // and a button title centre their lines by different metrics, and matching
@@ -506,6 +538,14 @@ static CGFloat BTWidestOf(NSArray *words) {
     _lists = @[];
     [_uncheckedSongs removeAllObjects];
     [_uncheckedLists removeAllObjects];
+    [_skippedAdditions removeAllObjects];
+    // Everything it was showing belongs to a comparison that is being thrown
+    // away, and the next one may not hold any of it.
+    [self closeModifications];
+    [_modificationsWindow refresh];
+    _modificationsByPlaylist = nil;
+    _playlistsByID = nil;
+    _incomingByID = nil;
     [self showComparingState];
 
     NSString *path = [[BTPreferences sharedPreferences] iTunesLibraryPath];
@@ -534,6 +574,7 @@ static CGFloat BTWidestOf(NSArray *words) {
     [_syncButton setEnabled:NO];
     [_checkAll setEnabled:NO];
     [_checkAll setTitle:@"Uncheck All"];
+    [_modificationsButton setHidden:YES];
 }
 
 - (void)finishedComparing {
@@ -567,6 +608,14 @@ static CGFloat BTWidestOf(NSArray *words) {
         BTITunesSyncPlaylist *playlist = [_sync.playlists objectAtIndex:i];
         if (playlist.excludedBefore && playlist.persistentID) {
             [_uncheckedLists addObject:playlist.persistentID];
+        }
+    }
+    // All three lists, for the same reason. A song refused into one playlist and
+    // remembered nowhere would be offered again on every sync.
+    for (i = 0; i < [_sync.modifications count]; i++) {
+        BTITunesSyncModification *addition = [_sync.modifications objectAtIndex:i];
+        if (addition.excludedBefore && [addition.key length] > 0) {
+            [_skippedAdditions addObject:addition.key];
         }
     }
 
@@ -664,16 +713,36 @@ static CGFloat BTWidestOf(NSArray *words) {
 // already in the library comes along regardless, so it is not one of them.
 - (void)indexChoosableSongs {
     NSMutableSet *choosableIDs = [NSMutableSet set];
+    NSMutableDictionary *incomingByID = [NSMutableDictionary dictionary];
     NSUInteger i, j;
     for (i = 0; i < [_sync.incomingTracks count]; i++) {
         BTITunesSyncTrack *track = [_sync.incomingTracks objectAtIndex:i];
+        if (track.persistentID) [incomingByID setObject:track forKey:track.persistentID];
         if ([track eligible] && track.persistentID) [choosableIDs addObject:track.persistentID];
     }
+    _incomingByID = incomingByID;
+
+    // The songs joining each playlist, so a playlist can be asked whether any of
+    // its additions have been turned down without walking all of them.
+    NSMutableDictionary *additionsByPlaylist = [NSMutableDictionary dictionary];
+    for (i = 0; i < [_sync.modifications count]; i++) {
+        BTITunesSyncModification *addition = [_sync.modifications objectAtIndex:i];
+        if ([addition.playlistID length] == 0) continue;
+        NSMutableArray *mine = [additionsByPlaylist objectForKey:addition.playlistID];
+        if (mine == nil) {
+            mine = [NSMutableArray array];
+            [additionsByPlaylist setObject:mine forKey:addition.playlistID];
+        }
+        [mine addObject:addition];
+    }
+    _modificationsByPlaylist = additionsByPlaylist;
 
     NSMutableDictionary *byPlaylist = [NSMutableDictionary dictionary];
+    NSMutableDictionary *playlistsByID = [NSMutableDictionary dictionary];
     for (i = 0; i < [_sync.playlists count]; i++) {
         BTITunesSyncPlaylist *playlist = [_sync.playlists objectAtIndex:i];
         if (playlist.persistentID == nil) continue;
+        [playlistsByID setObject:playlist forKey:playlist.persistentID];
         NSMutableArray *mine = [NSMutableArray array];
         for (j = 0; j < [playlist.incomingTrackIDs count]; j++) {
             NSString *songID = [playlist.incomingTrackIDs objectAtIndex:j];
@@ -682,6 +751,7 @@ static CGFloat BTWidestOf(NSArray *words) {
         [byPlaylist setObject:mine forKey:playlist.persistentID];
     }
     _choosableByPlaylist = byPlaylist;
+    _playlistsByID = playlistsByID;
 }
 
 - (NSArray *)choosableSongsOf:(BTITunesSyncPlaylist *)playlist {
@@ -699,9 +769,32 @@ static CGFloat BTWidestOf(NSArray *words) {
 // holding that song alone. Ticking one playlist ticked its songs, which ticked
 // every other playlist sharing any of them. One song in common was enough to
 // drag a playlist across that the reader never chose.
+- (BOOL)playlistIsChosen:(BTITunesSyncPlaylist *)playlist {
+    if (![playlist eligible]) return NO;
+    return ![_uncheckedLists containsObject:playlist.persistentID];
+}
+
+// The songs iTunes put into this playlist, offered one at a time.
+- (NSArray *)modificationsOf:(BTITunesSyncPlaylist *)playlist {
+    NSArray *mine = ([playlist.persistentID length] > 0)
+        ? [_modificationsByPlaylist objectForKey:playlist.persistentID] : nil;
+    return mine ? mine : @[];
+}
+
+// What the box shows, which is not quite the same question. A playlist coming
+// across without one of the songs iTunes added to it is neither on nor off, and
+// a dash is the only honest answer: the row is the only place a reader who never
+// opens the modifications window would see that anything was left out.
 - (NSInteger)stateOfPlaylist:(BTITunesSyncPlaylist *)playlist {
-    if (![playlist eligible]) return NSOffState;
-    return [_uncheckedLists containsObject:playlist.persistentID] ? NSOffState : NSOnState;
+    if (![self playlistIsChosen:playlist]) return NSOffState;
+
+    NSArray *mine = [self modificationsOf:playlist];
+    NSUInteger i;
+    for (i = 0; i < [mine count]; i++) {
+        BTITunesSyncModification *addition = [mine objectAtIndex:i];
+        if ([_skippedAdditions containsObject:addition.key]) return NSMixedState;
+    }
+    return NSOnState;
 }
 
 // Every song the still-ticked playlists would bring.
@@ -710,7 +803,7 @@ static CGFloat BTWidestOf(NSArray *words) {
     NSUInteger i;
     for (i = 0; i < [_sync.playlists count]; i++) {
         BTITunesSyncPlaylist *playlist = [_sync.playlists objectAtIndex:i];
-        if ([self stateOfPlaylist:playlist] == NSOffState) continue;
+        if (![self playlistIsChosen:playlist]) continue;
         [wanted addObjectsFromArray:[self choosableSongsOf:playlist]];
     }
     return wanted;
@@ -743,7 +836,11 @@ static CGFloat BTWidestOf(NSArray *words) {
     for (i = 0; i < [inside count]; i++) {
         BTITunesSyncPlaylist *playlist = [inside objectAtIndex:i];
         if (![playlist eligible]) continue;
-        if ([self stateOfPlaylist:playlist] == NSOffState) anyOff = YES; else anyOn = YES;
+        NSInteger state = [self stateOfPlaylist:playlist];
+        // A folder holding a playlist that is itself partly chosen is partly
+        // chosen, however its other playlists stand.
+        if (state == NSMixedState) return NSMixedState;
+        if (state == NSOffState) anyOff = YES; else anyOn = YES;
         if (anyOn && anyOff) return NSMixedState;
     }
     return anyOn ? NSOnState : NSOffState;
@@ -765,6 +862,14 @@ static CGFloat BTWidestOf(NSArray *words) {
     if (chosen) {
         [_uncheckedLists removeObject:playlist.persistentID];
         [_uncheckedSongs minusSet:[NSSet setWithArray:[self choosableSongsOf:playlist]]];
+        // Everything iTunes added to it comes too. A dash means partly chosen
+        // and the click that follows one takes all of it, so a song turned down
+        // on its own is put back by ticking the playlist it belongs to.
+        NSArray *mine = [self modificationsOf:playlist];
+        NSUInteger j;
+        for (j = 0; j < [mine count]; j++) {
+            [_skippedAdditions removeObject:[[mine objectAtIndex:j] key]];
+        }
         return;
     }
 
@@ -782,6 +887,106 @@ static CGFloat BTWidestOf(NSArray *words) {
         NSString *songID = [mine objectAtIndex:i];
         if (![stillWanted containsObject:songID]) [_uncheckedSongs addObject:songID];
     }
+}
+
+#pragma mark - The songs joining a playlist
+
+// The playlist a song is joining, found by the id the pair carries.
+- (BTITunesSyncPlaylist *)playlistOfModification:(BTITunesSyncModification *)addition {
+    return ([addition.playlistID length] > 0)
+        ? [_playlistsByID objectForKey:addition.playlistID] : nil;
+}
+
+- (NSArray *)syncModifications {
+    return _sync ? _sync.modifications : @[];
+}
+
+- (BOOL)modificationIsChosen:(BTITunesSyncModification *)addition {
+    if (![self modificationCanBeChosen:addition]) return NO;
+    return ![_skippedAdditions containsObject:addition.key];
+}
+
+// Two things have to be true and neither is this pair's own doing: the playlist
+// has to be coming across, and a song still waiting to be imported has to be
+// coming across as well. A tick that cannot be acted on is not offered.
+- (BOOL)modificationCanBeChosen:(BTITunesSyncModification *)addition {
+    if (![self playlistIsChosen:[self playlistOfModification:addition]]) return NO;
+    BTITunesSyncTrack *song = [self songToImportFor:addition];
+    return (song == nil) || [self songIsChosen:song];
+}
+
+- (NSString *)wordForModification:(BTITunesSyncModification *)addition {
+    if (![self playlistIsChosen:[self playlistOfModification:addition]]) {
+        return @"playlist not checked";
+    }
+    BTITunesSyncTrack *song = [self songToImportFor:addition];
+    if (song && ![self songIsChosen:song]) return @"song not checked";
+    return @"";
+}
+
+// The song this pair has to wait on, or nil when it has to wait on nothing.
+//
+// Almost every one of these names a song the library holds already, since that
+// is what a playlist growing usually means, and a song already here needs
+// nothing done to it before it can join a playlist. Only one this sync would
+// have to import first can hold the joining up: the comparison lists every song
+// it read, here or not, so having an entry says nothing on its own.
+- (BTITunesSyncTrack *)songToImportFor:(BTITunesSyncModification *)addition {
+    BTITunesSyncTrack *song = [_incomingByID objectForKey:addition.songID];
+    return (song && [song eligible]) ? song : nil;
+}
+
+- (void)setModification:(BTITunesSyncModification *)addition chosen:(BOOL)chosen {
+    if ([addition.key length] == 0) return;
+    if (chosen) {
+        [_skippedAdditions removeObject:addition.key];
+    } else {
+        [_skippedAdditions addObject:addition.key];
+    }
+    // The playlist holding it now reads as partly chosen, and so does its
+    // folder, so the tree is redrawn rather than one row.
+    [_playlistsTable reloadData];
+    [self updateButtons];
+}
+
+// Kept rather than read off the window. The notification that the window is
+// closing arrives while it is still on screen, so asking it would have the
+// button offering to hide a window that is in the act of going away.
+- (BOOL)showingModifications {
+    return _modificationsShowing;
+}
+
+// The window is made once and kept, and the button orders it in and out. Letting
+// go of the controller when the window closed would have freed it from inside
+// its own windowWillClose:, since the pane holds the only reference to it.
+- (void)toggleModifications:(id)sender {
+    if ([self showingModifications]) {
+        [[_modificationsWindow window] performClose:self];
+        return;
+    }
+    if (_modificationsWindow == nil) {
+        _modificationsWindow = [[BTSyncModificationsController alloc] initWithSource:self];
+    }
+    [_modificationsWindow refresh];
+    [_modificationsWindow showWindow:self];
+    _modificationsShowing = YES;
+    [self updateModificationsButton];
+}
+
+- (void)closeModifications {
+    if (_modificationsShowing) [[_modificationsWindow window] performClose:self];
+}
+
+- (void)modificationsWindowClosed {
+    _modificationsShowing = NO;
+    [self updateModificationsButton];
+}
+
+// The pane goes away when another row in the left bar is picked, and a window
+// belonging to it must not outlive what it is showing.
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    if ([self window] == nil) [self closeModifications];
 }
 
 // What the Sync button would bring across. A count of nothing is said outright
@@ -808,7 +1013,7 @@ static NSString *BTChosenSummary(NSUInteger playlists, NSUInteger songs) {
         if ([self songIsChosen:[_sync.incomingTracks objectAtIndex:i]]) chosenSongs++;
     }
     for (i = 0; i < [_sync.playlists count]; i++) {
-        if ([self stateOfPlaylist:[_sync.playlists objectAtIndex:i]] != NSOffState) chosenLists++;
+        if ([self playlistIsChosen:[_sync.playlists objectAtIndex:i]]) chosenLists++;
     }
 
     // Anything ticked and the button offers to clear it; nothing ticked and it
@@ -817,12 +1022,39 @@ static NSString *BTChosenSummary(NSUInteger playlists, NSUInteger songs) {
     [_checkAll setTitle:(anything ? @"Uncheck All" : @"Check All")];
     [_syncButton setEnabled:anything];
     [_chosenSummary setStringValue:BTChosenSummary(chosenLists, chosenSongs)];
+
+    [self updateModificationsButton];
+    [_modificationsWindow refresh];
+}
+
+// The count is on the button because it is the only place the pane says how many
+// there are: the two lists above can name neither end of one of these.
+- (void)updateModificationsButton {
+    NSUInteger count = [[self syncModifications] count];
+    BOOL hidden = (count == 0);
+    [_modificationsButton setHidden:hidden];
+    if (hidden) return;
+
+    NSString *title = [NSString stringWithFormat:@"%@ Playlist Modifications (%lu)",
+                       ([self showingModifications] ? @"Hide" : @"Show"), (unsigned long)count];
+    if ([[_modificationsButton title] isEqualToString:title]) return;
+
+    // Rebuilt rather than retitled, since a push button sizes itself to its
+    // words when it is made and "Hide" is not as wide as "Show".
+    [_modificationsButton setTitle:title];
+    [_modificationsButton sizeToFit];
+    NSRect frame = [_modificationsButton frame];
+    [_modificationsButton setFrameSize:NSMakeSize(NSWidth(frame) + 12.0, 22.0)];
+    [self layoutPane];
 }
 
 - (void)checkAllOrNone:(id)sender {
     BOOL turningOn = [[_checkAll title] isEqualToString:@"Check All"];
     [_uncheckedSongs removeAllObjects];
     [_uncheckedLists removeAllObjects];
+    // Ticking everything means everything, and unticking the playlists takes
+    // their additions with them, so this set is empty either way.
+    [_skippedAdditions removeAllObjects];
 
     if (!turningOn) {
         NSUInteger i;
@@ -1105,15 +1337,35 @@ static NSString *BTChosenSummary(NSUInteger playlists, NSUInteger songs) {
     for (i = 0; i < [_sync.playlists count]; i++) {
         BTITunesSyncPlaylist *playlist = [_sync.playlists objectAtIndex:i];
         if (![playlist eligible] || playlist.persistentID == nil) continue;
-        if ([self stateOfPlaylist:playlist] != NSOffState) {
+        if ([self playlistIsChosen:playlist]) {
             [lists addObject:playlist.persistentID];
         } else {
             [listsLeftBehind addObject:playlist.persistentID];
         }
     }
 
+    // Only the pairs belonging to a playlist that is actually coming across. One
+    // whose playlist was turned down was not refused on its own account, and
+    // remembering it as refused would leave it unticked next time for a reason
+    // that had stopped being true. The playlist's own memory covers that case.
+    NSMutableArray *additionsRefused = [NSMutableArray array];
+    NSMutableArray *additionsTaken = [NSMutableArray array];
+    for (i = 0; i < [_sync.modifications count]; i++) {
+        BTITunesSyncModification *addition = [_sync.modifications objectAtIndex:i];
+        if ([addition.key length] == 0) continue;
+        if (![self playlistIsChosen:[self playlistOfModification:addition]]) continue;
+        if ([_skippedAdditions containsObject:addition.key]) {
+            [additionsRefused addObject:addition.key];
+        } else if ([self modificationCanBeChosen:addition]) {
+            [additionsTaken addObject:addition.key];
+        }
+    }
+
     BTLibrary *library = [BTLibrary sharedLibrary];
-    NSDictionary *result = [_sync importInto:library chosenSongs:songs chosenPlaylists:lists];
+    NSDictionary *result = [_sync importInto:library
+                                 chosenSongs:songs
+                             chosenPlaylists:lists
+                            skippedAdditions:_skippedAdditions];
 
     // What was left unticked starts unticked next time. What came across is no
     // longer left behind, so it stops being remembered as such.
@@ -1121,6 +1373,8 @@ static NSString *BTChosenSummary(NSUInteger playlists, NSUInteger songs) {
     [library setExcluded:NO forPersistentIDs:[songs allObjects]];
     [library setExcluded:YES forPersistentIDs:listsLeftBehind];
     [library setExcluded:NO forPersistentIDs:[lists allObjects]];
+    [library setExcluded:YES forPersistentIDs:additionsRefused];
+    [library setExcluded:NO forPersistentIDs:additionsTaken];
 
     NSAlert *alert = [[NSAlert alloc] init];
     [alert setMessageText:@"The sync finished."];

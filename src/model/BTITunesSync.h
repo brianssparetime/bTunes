@@ -78,6 +78,30 @@ typedef NS_ENUM(NSInteger, BTITunesPlaylistChange) {
 @end
 
 
+// A song iTunes has put into a playlist that is already here.
+//
+// Neither list can name one of these on its own. The song is usually in the
+// library already, so it is not among the incoming songs, and the playlist can
+// say only how many it gained. The change is the joining of the two, so the
+// joining is what is offered.
+@interface BTITunesSyncModification : NSObject
+@property (nonatomic, copy) NSString *playlistID;
+@property (nonatomic, copy) NSString *playlistName;
+@property (nonatomic, copy) NSString *songID;
+@property (nonatomic, copy) NSString *songTitle;
+@property (nonatomic, copy) NSString *songArtist;
+// Turned down the last time a sync ran, so it starts unticked. Only the tick it
+// starts with: every one of these can still be ticked and brought across.
+@property (nonatomic, assign) BOOL excludedBefore;
+// How the pair is remembered between syncs, and the only name it has. A
+// persistent id names one song or one playlist and can never name the joining
+// of the two. iTunes writes its ids as hex, so a slash appears in neither half
+// and a key can never be mistaken for either.
+@property (nonatomic, readonly) NSString *key;
++ (NSString *)keyForPlaylist:(NSString *)playlistID song:(NSString *)songID;
+@end
+
+
 @interface BTITunesSync : NSObject
 
 // Reads the file and compares it against the library. Returns a sync whose
@@ -97,10 +121,14 @@ typedef NS_ENUM(NSInteger, BTITunesPlaylistChange) {
 
 @property (nonatomic, readonly) NSArray *incomingTracks;   // BTITunesSyncTrack
 @property (nonatomic, readonly) NSArray *playlists;    // BTITunesSyncPlaylist
+// Every song joining a playlist that is already here, for the playlists that
+// could actually grow. Built here rather than worked out from the two lists
+// above, which between them hold neither end of it.
+@property (nonatomic, readonly) NSArray *modifications;   // BTITunesSyncModification
 @property (nonatomic, readonly) NSString *error;
 
-// "15 new songs to import, 1 new playlist, 2 playlist modifications", counting
-// only what could actually come across.
+// "15 new songs to import, 1 new playlist, 9 songs added to 2 playlists",
+// counting only what could actually come across.
 - (NSString *)summary;
 
 // Brings the chosen songs and playlists into the library. Both sets hold iTunes
@@ -108,9 +136,12 @@ typedef NS_ENUM(NSInteger, BTITunesPlaylistChange) {
 // or copied, and nothing is written back to iTunes.
 //
 // A playlist already here grows rather than being replaced, and its new songs
-// join at the end so an arrangement made by hand is never disturbed.
+// join at the end so an arrangement made by hand is never disturbed. It grows by
+// everything it gained except the keys named in skippedAdditions, so a playlist
+// can come across holding some of what iTunes put in it and not the rest.
 - (NSDictionary *)importInto:(BTLibrary *)library
                  chosenSongs:(NSSet *)songIDs
-             chosenPlaylists:(NSSet *)playlistIDs;
+             chosenPlaylists:(NSSet *)playlistIDs
+           skippedAdditions:(NSSet *)skippedKeys;
 
 @end
