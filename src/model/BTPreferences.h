@@ -33,6 +33,11 @@ extern NSString *const BTPreferencesDidChangeNotification;
 // home, in the order iTunes has used them.
 @property (nonatomic, copy) NSString *iTunesLibraryPath;
 
+// Whether a file has been named outright. The tick in preferences is the
+// presence of that choice rather than a setting of its own, since a file named
+// but not used and a file used but not named are both states nothing wants.
+@property (nonatomic, readonly) BOOL usesAlternateITunesLibrary;
+
 // Where the ratings, play counts and playlists live. The irreplaceable part.
 @property (nonatomic, copy) NSString *databaseFolder;
 

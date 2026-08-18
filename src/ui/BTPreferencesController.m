@@ -27,10 +27,15 @@
 // A tick box does not fill its frame the way a field does, so its note sits
 // closer to it or the two read as unrelated.
 #define BT_BOX_TO_NOTE 4.0
+// The column the names sit in, and where the path beside them starts. Wide
+// enough for "BTunes Home:", which is what the setting is called now that the
+// folders inside it are the layout rather than five separate questions.
+#define BT_NAME_WIDTH  92.0
+#define BT_PATH_LEFT  116.0
 // A note under a path starts out beside the field and stops twenty points short
 // of the right edge. One under a tick box starts at the box's own words, so it
 // runs wider.
-#define BT_NOTE_WIDTH(w) ((w) - 104.0)
+#define BT_NOTE_WIDTH(w) ((w) - BT_PATH_LEFT - 20.0)
 #define BT_BOX_NOTE_WIDTH(w) ((w) - 58.0)
 
 // How tall a note is: asked of the field that draws it rather than of the words
@@ -61,6 +66,56 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
 - (BOOL)isFlipped { return YES; }
 @end
 
+// One setting in the pane: a path with a button to choose it, or a tick box.
+// Either way a note may sit under it.
+//
+// One list of these rather than a list of paths and a list of boxes, because
+// the box that turns on the alternative iTunes library sits between the paths
+// and the path it reveals sits under the box. Two lists can only put every path
+// before every box, and a row that comes and goes needs the pane's height and
+// its layout to walk the same order.
+@interface BTPrefsRow : NSObject
+@property (nonatomic, assign) BOOL isBox;
+@property (nonatomic, strong) NSTextField *name;      // a path's own name
+@property (nonatomic, strong) NSTextField *field;     // and the path itself
+@property (nonatomic, strong) NSButton *chooser;
+// The height the button chose for itself, kept rather than read back from its
+// frame: a rounded bezel draws at a height of its own choosing, and a row that
+// has been away has no frame left to ask.
+@property (nonatomic, assign) CGFloat chooserHeight;
+@property (nonatomic, strong) NSButton *box;
+@property (nonatomic, strong) NSTextField *note;
+@property (nonatomic, assign) BOOL shown;
+@end
+
+@implementation BTPrefsRow
+
+- (id)init {
+    self = [super init];
+    if (self) _shown = YES;
+    return self;
+}
+
+- (CGFloat)controlHeight {
+    return self.isBox ? BT_BOX : BT_FIELD;
+}
+
+// Every view of the row at once, so a row that is not shown neither draws nor
+// takes a click at the place it would have been.
+- (void)setShown:(BOOL)shown {
+    _shown = shown;
+    NSArray *views = @[self.name ?: [NSNull null], self.field ?: [NSNull null],
+                       self.chooser ?: [NSNull null], self.box ?: [NSNull null],
+                       self.note ?: [NSNull null]];
+    NSUInteger i;
+    for (i = 0; i < [views count]; i++) {
+        id view = [views objectAtIndex:i];
+        if (view != [NSNull null]) [view setHidden:!shown];
+    }
+}
+
+@end
+
 @implementation BTPreferencesController {
     // What the window shows through, and the pane it shows. The pane is as tall
     // as the settings need, which at any narrow width is taller than a small
@@ -68,21 +123,16 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
     NSScrollView *_scroll;
     NSView *_pane;
 
-    // Every view the layout has to place, in the order it places them. Held
+    // Every setting the layout has to place, in the order it places them. Held
     // because the layout is redone whenever the window changes width: a note
     // wraps to a different number of lines and everything under it moves.
-    NSMutableArray *_names;
-    NSMutableArray *_paths;
-    NSMutableArray *_choosers;
-    NSMutableArray *_pathNotes;
-    NSMutableArray *_boxes;
-    NSMutableArray *_boxNotes;
+    NSMutableArray *_rows;
 
-    NSTextField *_musicField;
-    NSTextField *_databaseField;
-    NSTextField *_iTunesField;
-    NSTextField *_detuneField;
-    NSTextField *_importedCDsField;
+    NSTextField *_btunesHomeField;
+    NSTextField *_iTunesHomeField;
+    NSTextField *_iTunesXMLField;
+    BTPrefsRow *_iTunesXMLRow;
+    NSButton *_alternateXMLBox;
     NSButton *_losslessBox;
     NSButton *_lookupBox;
     NSButton *_evenVolumeBox;
@@ -96,51 +146,50 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
     return shared;
 }
 
-// The five paths, in the order they are shown: what each is called, and the
-// note under it. A note is a line, and a second line only where there is a
-// second thing to know; a setting its own name explains carries none.
-+ (NSArray *)settingRows {
-    return @[
-        @[@"Music:", @"Folder of music files (e.g. iTunes library)\nNothing there modified"],
-        @[@"Library:", @"Where BTunes stores its data"],
-        @[@"iTunes:", (@"iTunes XML library from which to import playlists and songs\n"
-                       @"Make sure \"Share iTunes library XML\" is checked in iTunes")],
-        @[@"Detune:", @"Free recordings of iTunes protected music"],
-        @[@"Imported CDs:", @"Music BTunes records or imports (other than via iTunes)"],
-    ];
+// The rows the pane is shown to hold, whether or not each is showing at the
+// moment. A note is a line, and a second line only where there is a second thing
+// to know; a setting its own name explains carries none.
+- (NSArray *)shownRows {
+    NSMutableArray *shown = [NSMutableArray array];
+    NSUInteger i;
+    for (i = 0; i < [_rows count]; i++) {
+        BTPrefsRow *row = [_rows objectAtIndex:i];
+        if ([row shown]) [shown addObject:row];
+    }
+    return shown;
 }
 
-// The tick boxes, in the order they are shown: what each says, and the note
-// under it. Three of the four say the whole of it themselves.
-+ (NSArray *)boxRows {
-    return @[
-        @[@"Look up CDs that do not provide track names", @""],
-        @[@"Import CDs as Apple Lossless (ALAC) instead of AAC", @""],
-        @[@"Soundcheck", @"Plays songs at the same loudness as each other"],
-        @[@"Purple mode", @""],
-    ];
+- (CGFloat)noteWidthForRow:(BTPrefsRow *)row inWidth:(CGFloat)width {
+    // A note under a path starts beside the field; one under a tick box starts
+    // at the box's own words, so it runs wider.
+    return row.isBox ? BT_BOX_NOTE_WIDTH(width) : BT_NOTE_WIDTH(width);
 }
 
-// The pane is the sum of what goes in it: the paths, each a field, the air
-// under it, its note however many lines that turns out to be, and the air under
-// that; then the tick boxes, whose notes run to different lengths too. It
+- (CGFloat)gapAboveNoteForRow:(BTPrefsRow *)row height:(CGFloat)noteHeight {
+    return BTGapAbove(noteHeight, row.isBox ? BT_BOX_TO_NOTE : BT_TO_NOTE);
+}
+
+// The pane is the sum of what goes in it: each control, the air under it, its
+// note however many lines that turns out to be, and the air under that. It
 // shortens as the window widens, since a wider note takes fewer lines to say
-// the same thing.
+// the same thing, and shortens again when the alternative library is not asked
+// for and its row is not there at all.
 //
-// The last box carries no step after it, because a step is the room made for
+// The last row carries no step after it, because a step is the room made for
 // whatever comes next and nothing does. The bottom margin is that room.
 - (CGFloat)heightForWidth:(CGFloat)width {
-    CGFloat total = 52.0;
-    NSUInteger i;
-    for (i = 0; i < [_pathNotes count]; i++) {
-        CGFloat note = BTNoteHeight([_pathNotes objectAtIndex:i], BT_NOTE_WIDTH(width));
-        total += BT_FIELD + BTGapAbove(note, BT_TO_NOTE) + note + BT_AFTER_NOTE;
-    }
+    NSArray *rows = [self shownRows];
+    if ([rows count] == 0) return 90.0;
 
-    for (i = 0; i < [_boxNotes count]; i++) {
-        CGFloat note = BTNoteHeight([_boxNotes objectAtIndex:i], BT_BOX_NOTE_WIDTH(width));
-        total += BTGapAbove(note, BT_BOX_TO_NOTE) + note;
-        if (i + 1 < [_boxNotes count]) total += BT_AFTER_NOTE + BT_BOX;
+    CGFloat total = 52.0 + [[rows objectAtIndex:0] controlHeight];
+    NSUInteger i;
+    for (i = 0; i < [rows count]; i++) {
+        BTPrefsRow *row = [rows objectAtIndex:i];
+        CGFloat note = BTNoteHeight(row.note, [self noteWidthForRow:row inWidth:width]);
+        total += [self gapAboveNoteForRow:row height:note] + note;
+        if (i + 1 < [rows count]) {
+            total += BT_AFTER_NOTE + [[rows objectAtIndex:i + 1] controlHeight];
+        }
     }
     return total + 38.0;
 }
@@ -163,6 +212,9 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
 
     _pane = [[NSView alloc] initWithFrame:frame];
     [self buildSettings];
+    // Before the height is worked out, since it is what decides whether the
+    // alternative library's row is one of the rows to make room for.
+    [self refresh];
 
     _scroll = [[NSScrollView alloc] initWithFrame:[[window contentView] bounds]];
     [_scroll setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
@@ -191,7 +243,6 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
     [window center];
     [self layoutPane];
     [self showTopOfPane];
-    [self refresh];
     return self;
 }
 
@@ -203,59 +254,43 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
 // decides where anything goes. Sizes that never change, such as the height a
 // push button chooses for itself, are settled here and read back at layout.
 - (void)buildSettings {
-    _names = [NSMutableArray array];
-    _paths = [NSMutableArray array];
-    _choosers = [NSMutableArray array];
-    _pathNotes = [NSMutableArray array];
-    _boxes = [NSMutableArray array];
-    _boxNotes = [NSMutableArray array];
+    _rows = [NSMutableArray array];
 
-    NSArray *rows = [BTPreferencesController settingRows];
-    SEL actions[] = { @selector(chooseMusicFolder:), @selector(chooseDatabaseFolder:),
-                      @selector(chooseITunesLibrary:), @selector(chooseDetuneFolder:),
-                      @selector(chooseImportedCDsFolder:) };
-    NSTextField *__strong *fields[] = { &_musicField, &_databaseField, &_iTunesField,
-                                        &_detuneField, &_importedCDsField };
-    NSUInteger row;
-    for (row = 0; row < [rows count]; row++) {
-        *fields[row] = [self addRowWithLabel:[[rows objectAtIndex:row] objectAtIndex:0]
-                                        note:[[rows objectAtIndex:row] objectAtIndex:1]
-                                      action:actions[row]];
-    }
+    // Two folders are chosen and everything else is worked out from them. What
+    // sits inside each is the layout rather than a question put to the reader,
+    // which is what keeps the next kind of file from becoming a third path.
+    _btunesHomeField = [self addPathRowWithLabel:@"BTunes Home:"
+                                            note:@"BTunes data files and imported music files (other than iTunes)"
+                                          action:@selector(chooseBTunesHome:)];
+    _iTunesHomeField = [self addPathRowWithLabel:@"iTunes Home:"
+                                            note:@"BTunes never writes to this folder"
+                                          action:@selector(chooseITunesHome:)];
 
-    // The boxes, in the order boxRows names them. Each is a choice about how
-    // BTunes behaves rather than about where something lives, which is why none
-    // of them is a sixth path to choose.
-    NSArray *boxes = [BTPreferencesController boxRows];
-    SEL boxActions[] = { @selector(lookupChanged:), @selector(losslessChanged:),
-                         @selector(evenVolumeChanged:), @selector(purpleModeChanged:) };
-    NSButton *__strong *boxFields[] = { &_lookupBox, &_losslessBox,
-                                        &_evenVolumeBox, &_purpleBox };
-    NSUInteger box;
-    for (box = 0; box < [boxes count]; box++) {
-        NSString *title = [[boxes objectAtIndex:box] objectAtIndex:0];
-        NSString *note = [[boxes objectAtIndex:box] objectAtIndex:1];
+    _alternateXMLBox = [self addBoxWithTitle:@"Use alternative iTunes XML"
+                                        note:(@"Otherwise the library file inside the iTunes home is read\n"
+                                              @"Make sure \"Share iTunes library XML\" is checked in iTunes")
+                                      action:@selector(alternateXMLChanged:)];
 
-        NSButton *button = [[NSButton alloc] initWithFrame:NSZeroRect];
-        [button setButtonType:NSSwitchButton];
-        [button setFont:[BTStyle uiFont]];
-        [button setTitle:title];
-        [button setTarget:self];
-        [button setAction:boxActions[box]];
-        [_pane addSubview:button];
-        [_boxes addObject:button];
-        *boxFields[box] = button;
+    // Under the box that asks for it, and gone when it is not asked for. A field
+    // naming a file that is not being read would be answering a question nobody
+    // put.
+    _iTunesXMLField = [self addPathRowWithLabel:@"XML file:"
+                                           note:@""
+                                         action:@selector(chooseITunesLibrary:)];
+    _iTunesXMLRow = [_rows lastObject];
 
-        // The note sits under the box at the same left edge as the words beside
-        // it, the way the notes under the paths do.
-        NSTextField *label = [self labelWithText:note small:YES];
-        [_pane addSubview:label];
-        [_boxNotes addObject:label];
-    }
+    _lookupBox = [self addBoxWithTitle:@"Look up CDs that do not provide track names"
+                                  note:@"" action:@selector(lookupChanged:)];
+    _losslessBox = [self addBoxWithTitle:@"Import CDs as Apple Lossless (ALAC) instead of AAC"
+                                    note:@"" action:@selector(losslessChanged:)];
+    _evenVolumeBox = [self addBoxWithTitle:@"Soundcheck"
+                                      note:@"Plays songs at the same loudness as each other"
+                                    action:@selector(evenVolumeChanged:)];
+    _purpleBox = [self addBoxWithTitle:@"Purple mode" note:@"" action:@selector(purpleModeChanged:)];
 
     // Named in the colour it turns things, which says more than the words do.
     [_purpleBox setAttributedTitle:
-        [[NSAttributedString alloc] initWithString:[[boxes lastObject] objectAtIndex:0]
+        [[NSAttributedString alloc] initWithString:@"Purple mode"
                                        attributes:@{NSFontAttributeName: [BTStyle uiFont],
                                                     NSForegroundColorAttributeName: [BTStyle accent]}]];
 }
@@ -302,38 +337,49 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
     [_scroll reflectScrolledClipView:clip];
 }
 
+// Each row is placed at its own origin and extends upward from it, so the step
+// down to the next one carries that next row's height. A path and a tick box are
+// not the same height, and the two now alternate.
 - (void)placeSettingsInWidth:(CGFloat)width fromTop:(CGFloat)top {
-    CGFloat noteWidth = BT_NOTE_WIDTH(width);
-    CGFloat boxNoteWidth = BT_BOX_NOTE_WIDTH(width);
+    NSArray *rows = [self shownRows];
     CGFloat y = top - 52.0;
     NSUInteger i;
 
-    for (i = 0; i < [_paths count]; i++) {
-        [[_names objectAtIndex:i] setFrame:NSMakeRect(20, y, 60, BT_NAME)];
-        [[_paths objectAtIndex:i] setFrame:NSMakeRect(84, y - 3, width - 84 - 120, BT_FIELD)];
-
-        NSButton *choose = [_choosers objectAtIndex:i];
-        [choose setFrame:NSMakeRect(width - 112, y - 3, 92, NSHeight([choose frame]))];
-
-        NSTextField *note = [_pathNotes objectAtIndex:i];
-        CGFloat noteHeight = BTNoteHeight(note, noteWidth);
-        CGFloat gap = BTGapAbove(noteHeight, BT_TO_NOTE);
-        [note setFrame:NSMakeRect(84, y - gap - noteHeight, noteWidth, noteHeight)];
-
-        y -= gap + noteHeight + BT_AFTER_NOTE + BT_FIELD;
+    // A row that is not showing is left holding no ground at all, rather than
+    // the frame it had when it last showed. Hidden is enough for the eye and not
+    // enough for anything that reads the pane back.
+    for (i = 0; i < [_rows count]; i++) {
+        BTPrefsRow *row = [_rows objectAtIndex:i];
+        if ([row shown]) continue;
+        [row.name setFrame:NSZeroRect];
+        [row.field setFrame:NSZeroRect];
+        [row.chooser setFrame:NSZeroRect];
+        [row.box setFrame:NSZeroRect];
+        [row.note setFrame:NSZeroRect];
     }
 
-    for (i = 0; i < [_boxes count]; i++) {
-        [[_boxes objectAtIndex:i] setFrame:NSMakeRect(20, y, width - 40, BT_BOX)];
+    for (i = 0; i < [rows count]; i++) {
+        BTPrefsRow *row = [rows objectAtIndex:i];
+        CGFloat noteWidth = [self noteWidthForRow:row inWidth:width];
+        CGFloat noteHeight = BTNoteHeight(row.note, noteWidth);
+        CGFloat gap = [self gapAboveNoteForRow:row height:noteHeight];
+        CGFloat noteLeft;
 
-        NSTextField *note = [_boxNotes objectAtIndex:i];
-        CGFloat noteHeight = BTNoteHeight(note, boxNoteWidth);
-        CGFloat gap = BTGapAbove(noteHeight, BT_BOX_TO_NOTE);
-        [note setFrame:NSMakeRect(38, y - gap - noteHeight, boxNoteWidth, noteHeight)];
+        if (row.isBox) {
+            [row.box setFrame:NSMakeRect(20, y, width - 40, BT_BOX)];
+            noteLeft = 38;
+        } else {
+            [row.name setFrame:NSMakeRect(20, y, BT_NAME_WIDTH, BT_NAME)];
+            [row.field setFrame:NSMakeRect(BT_PATH_LEFT, y - 3,
+                                           width - BT_PATH_LEFT - 120, BT_FIELD)];
+            [row.chooser setFrame:NSMakeRect(width - 112, y - 3, 92, row.chooserHeight)];
+            noteLeft = BT_PATH_LEFT;
+        }
 
-        // The next box sits at its own origin and extends upward, so its height
-        // comes off here too. Without it the note above runs straight into it.
-        y -= gap + noteHeight + BT_AFTER_NOTE + BT_BOX;
+        [row.note setFrame:NSMakeRect(noteLeft, y - gap - noteHeight, noteWidth, noteHeight)];
+
+        y -= gap + noteHeight + BT_AFTER_NOTE;
+        if (i + 1 < [rows count]) y -= [[rows objectAtIndex:i + 1] controlHeight];
     }
 }
 
@@ -361,41 +407,66 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
     return label;
 }
 
-- (NSTextField *)addRowWithLabel:(NSString *)labelText
-                            note:(NSString *)noteText
-                          action:(SEL)action {
-    NSTextField *name = [self labelWithText:labelText small:NO];
-    [_pane addSubview:name];
-    [_names addObject:name];
+- (NSTextField *)addPathRowWithLabel:(NSString *)labelText
+                                note:(NSString *)noteText
+                              action:(SEL)action {
+    BTPrefsRow *row = [[BTPrefsRow alloc] init];
 
-    NSTextField *path = [[NSTextField alloc] initWithFrame:NSZeroRect];
-    [path setEditable:NO];
-    [path setSelectable:YES];
-    [path setFont:[BTStyle uiFont]];
-    [[path cell] setLineBreakMode:NSLineBreakByTruncatingHead];
-    [_pane addSubview:path];
-    [_paths addObject:path];
+    row.name = [self labelWithText:labelText small:NO];
+    [_pane addSubview:row.name];
+
+    row.field = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    [row.field setEditable:NO];
+    [row.field setSelectable:YES];
+    [row.field setFont:[BTStyle uiFont]];
+    [[row.field cell] setLineBreakMode:NSLineBreakByTruncatingHead];
+    [_pane addSubview:row.field];
 
     // Made at the height it asks for, which the layout then leaves alone: a
     // rounded bezel draws at a height of its own choosing.
-    BTPushButton *choose = [BTPushButton buttonWithTitle:@"Choose..." target:self action:action];
-    [_pane addSubview:choose];
-    [_choosers addObject:choose];
+    row.chooser = [BTPushButton buttonWithTitle:@"Choose..." target:self action:action];
+    row.chooserHeight = NSHeight([row.chooser frame]);
+    [_pane addSubview:row.chooser];
 
-    NSTextField *note = [self labelWithText:noteText small:YES];
-    [_pane addSubview:note];
-    [_pathNotes addObject:note];
+    row.note = [self labelWithText:noteText small:YES];
+    [_pane addSubview:row.note];
 
-    return path;
+    [_rows addObject:row];
+    return row.field;
+}
+
+// A choice about how BTunes behaves rather than about where something lives,
+// which is why none of these is a path to choose. The note sits under the box at
+// the same left edge as the words beside it, the way a path's note does.
+- (NSButton *)addBoxWithTitle:(NSString *)title note:(NSString *)noteText action:(SEL)action {
+    BTPrefsRow *row = [[BTPrefsRow alloc] init];
+    row.isBox = YES;
+
+    row.box = [[NSButton alloc] initWithFrame:NSZeroRect];
+    [row.box setButtonType:NSSwitchButton];
+    [row.box setFont:[BTStyle uiFont]];
+    [row.box setTitle:title];
+    [row.box setTarget:self];
+    [row.box setAction:action];
+    [_pane addSubview:row.box];
+
+    row.note = [self labelWithText:noteText small:YES];
+    [_pane addSubview:row.note];
+
+    [_rows addObject:row];
+    return row.box;
 }
 
 - (void)refresh {
     BTPreferences *prefs = [BTPreferences sharedPreferences];
-    [_musicField setStringValue:[prefs musicFolder]];
-    [_databaseField setStringValue:[prefs databaseFolder]];
-    [_iTunesField setStringValue:[prefs iTunesLibraryPath]];
-    [_detuneField setStringValue:[prefs detuneFolder]];
-    [_importedCDsField setStringValue:[prefs importedCDsFolder]];
+    [_btunesHomeField setStringValue:[prefs btunesHome]];
+    [_iTunesHomeField setStringValue:[prefs iTunesHome]];
+
+    BOOL alternate = [prefs usesAlternateITunesLibrary];
+    [_alternateXMLBox setState:(alternate ? NSOnState : NSOffState)];
+    [_iTunesXMLRow setShown:alternate];
+    [_iTunesXMLField setStringValue:[prefs iTunesLibraryPath]];
+
     [_losslessBox setState:([prefs importsLossless] ? NSOnState : NSOffState)];
     [_lookupBox setState:([prefs looksUpDiscs] ? NSOnState : NSOffState)];
     [_evenVolumeBox setState:([prefs evensOutVolume] ? NSOnState : NSOffState)];
@@ -437,58 +508,62 @@ static CGFloat BTGapAbove(CGFloat noteHeight, CGFloat gap) {
     [self refresh];
 }
 
-- (void)chooseImportedCDsFolder:(id)sender {
-    NSString *chosen = [self chooseFolderStartingAt:[[BTPreferences sharedPreferences] importedCDsFolder]];
+- (void)chooseITunesHome:(id)sender {
+    NSString *chosen = [self chooseFolderStartingAt:[[BTPreferences sharedPreferences] iTunesHome]];
     if (chosen == nil) return;
-    [[BTPreferences sharedPreferences] setImportedCDsFolder:chosen];
+    [[BTPreferences sharedPreferences] setITunesHome:chosen];
     [self refresh];
 }
 
-- (void)chooseDetuneFolder:(id)sender {
-    NSString *chosen = [self chooseFolderStartingAt:[[BTPreferences sharedPreferences] detuneFolder]];
-    if (chosen == nil) return;
-
-    // Said now rather than discovered at the next sync, when the reason nothing
-    // came unlocked would be a great deal harder to work out.
-    NSString *map = [chosen stringByAppendingPathComponent:@"detune-mapping.json"];
-    if (![[NSFileManager defaultManager] fileExistsAtPath:map]) {
-        NSAlert *alert = [[NSAlert alloc] init];
-        [alert setMessageText:@"That folder holds no detune-mapping.json."];
-        [alert setInformativeText:@"Choose the folder the map sits in. Without it nothing can be matched, and locked songs stay locked."];
-        [alert runModal];
-        return;
-    }
-
-    [[BTPreferences sharedPreferences] setDetuneFolder:chosen];
-    [self refresh];
-}
-
-- (void)chooseMusicFolder:(id)sender {
-    NSString *chosen = [self chooseFolderStartingAt:[[BTPreferences sharedPreferences] musicFolder]];
-    if (chosen == nil) return;
-    [[BTPreferences sharedPreferences] setMusicFolder:chosen];
-    [self refresh];
-}
-
-- (void)chooseDatabaseFolder:(id)sender {
+// The database sits inside this folder, so choosing another one is choosing
+// another library as well as another place for the songs BTunes made.
+- (void)chooseBTunesHome:(id)sender {
     BTLibrary *library = [BTLibrary sharedLibrary];
-    NSString *chosen = [self chooseFolderStartingAt:[[BTPreferences sharedPreferences] databaseFolder]];
+    NSString *chosen = [self chooseFolderStartingAt:[[BTPreferences sharedPreferences] btunesHome]];
     if (chosen == nil) return;
 
     // The library in hand is written out to where it came from before the
     // setting moves, so nothing in progress is lost. Whatever is at the new
     // location is then read; an empty folder starts an empty library.
     [library saveToDisk];
-    [[BTPreferences sharedPreferences] setDatabaseFolder:chosen];
+    [[BTPreferences sharedPreferences] setBtunesHome:chosen];
     [library loadFromDisk];
     [library noteChanged];
     [self refresh];
 
     NSAlert *alert = [[NSAlert alloc] init];
-    [alert setMessageText:@"The library location changed."];
+    [alert setMessageText:@"The BTunes folder changed."];
     [alert setInformativeText:[NSString stringWithFormat:
-        @"BTunes now reads and writes its database in %@. Songs stay where they are.", chosen]];
+        @"BTunes now keeps its database and the music it imports in %@. "
+        @"Songs already in the library stay where they are.", chosen]];
     [alert runModal];
+}
+
+// Ticked means a file has been named; unticked means the library inside the
+// iTunes home is read. There is no third state to keep, so the tick is the
+// presence of the setting rather than a setting of its own.
+- (void)alternateXMLChanged:(id)sender {
+    BTPreferences *prefs = [BTPreferences sharedPreferences];
+    if ([_alternateXMLBox state] == NSOnState) {
+        [prefs setITunesLibraryPath:[prefs suggestedAlternateITunesLibraryPath]];
+    } else {
+        [prefs setITunesLibraryPath:nil];
+    }
+    [self refresh];
+    [self sizeWindowToSettings];
+}
+
+// The window follows the settings when a row comes or goes, rather than leaving
+// blank space under them or a scroller with one row's worth of travel. Still no
+// taller than the screen, which is the rule a window built from its contents has
+// to keep either way.
+- (void)sizeWindowToSettings {
+    NSWindow *window = [self window];
+    NSRect content = [window contentRectForFrameRect:[window frame]];
+    [window setContentSize:NSMakeSize(NSWidth(content), [self heightForWidth:NSWidth(content)])];
+    [self openNoTallerThanTheScreen];
+    [self layoutPane];
+    [self showTopOfPane];
 }
 
 @end

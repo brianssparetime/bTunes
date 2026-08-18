@@ -61,6 +61,7 @@ static NSString *BTConfiguredFolder(NSString *key) {
 @dynamic btunesHome, iTunesHome, musicFolder, databaseFolder, detuneFolder;
 @dynamic importedCDsFolder, podcastsFolder, addedMusicFolder;
 @dynamic importsLossless, looksUpDiscs, evensOutVolume, purpleMode;
+@dynamic iTunesLibraryPath, usesAlternateITunesLibrary;
 
 + (instancetype)sharedPreferences {
     static BTPreferences *shared = nil;
@@ -192,6 +193,10 @@ static NSString *BTConfiguredFolder(NSString *key) {
 
 - (NSString *)suggestedAlternateITunesLibraryPath {
     return [NSHomeDirectory() stringByAppendingPathComponent:@"Projects/btunes/itunes-snapshot.xml"];
+}
+
+- (BOOL)usesAlternateITunesLibrary {
+    return [self savedStringForKey:BTITunesLibraryPathKey] != nil;
 }
 
 - (NSString *)iTunesLibraryPath {
