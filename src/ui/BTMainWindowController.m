@@ -703,6 +703,13 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     } else if ([self showingPodcasts]) {
         if (_podcastView == nil) {
             _podcastView = [[BTPodcastView alloc] initWithFrame:[current frame]];
+            __weak BTMainWindowController *weakSelf = self;
+            _podcastView.statusDidChange = ^(NSString *status) {
+                BTMainWindowController *strongSelf = weakSelf;
+                if (strongSelf == nil || ![strongSelf showingPodcasts]) return;
+                strongSelf->_bottomBar.statusText = status;
+                [strongSelf->_bottomBar setNeedsDisplay:YES];
+            };
         }
         wanted = _podcastView;
     } else if ([_selectedSource isKindOfClass:[BTIPod class]]) {
@@ -1149,6 +1156,15 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
 }
 
 - (void)updateStatus {
+    // The podcasts pane counts its own, because the songs this window is
+    // holding are not what is on screen: the episodes belong to the show rather
+    // than to the library, so counting the library here would say nothing at
+    // all and say it in the shape of an answer.
+    if ([self showingPodcasts]) {
+        [_podcastView reportStatusNow];
+        return;
+    }
+
     NSTimeInterval total = 0;
     long long bytes = 0;
     NSUInteger i;

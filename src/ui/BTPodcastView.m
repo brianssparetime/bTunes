@@ -5,6 +5,7 @@
 #import "BTPlayer.h"
 #import "BTPodcast.h"
 #import "BTStyle.h"
+#import "BTTrackColumns.h"
 #import "BTTrack.h"
 
 // How wide the list of shows starts, and how far it can be dragged. The same
@@ -388,7 +389,32 @@ typedef struct {
     _episodes = [self sorted:[podcast episodes]];
     [_episodeTable reloadData];
     [_episodeTable deselectAll:nil];
+    [self reportStatus];
     [self readDurationsOf:podcast];
+}
+
+// The same three figures the song list gives, in the same order and the same
+// words, counting episodes instead of songs. The running time is nothing until
+// the lengths have been read, which is why this is said again when they arrive.
+- (void)reportStatusNow { [self reportStatus]; }
+
+- (void)reportStatus {
+    if (self.statusDidChange == nil) return;
+
+    NSTimeInterval total = 0;
+    long long bytes = 0;
+    NSUInteger i;
+    for (i = 0; i < [_episodes count]; i++) {
+        BTTrack *episode = [_episodes objectAtIndex:i];
+        total += episode.duration;
+        bytes += episode.fileSize;
+    }
+
+    NSUInteger count = [_episodes count];
+    self.statusDidChange([NSString stringWithFormat:@"%lu episode%@, %@, %@",
+                          (unsigned long)count, (count == 1 ? @"" : @"s"),
+                          [BTTrack runningTimeStringFromInterval:total],
+                          BTSizeString(bytes)]);
 }
 
 // Opening two hundred files to ask how long each runs takes long enough to be
@@ -406,6 +432,7 @@ typedef struct {
             if (strongSelf == nil) return;
             if (podcast != strongSelf->_selectedShow) return;
             [strongSelf->_episodeTable reloadData];
+            [strongSelf reportStatus];
         });
     });
 }
