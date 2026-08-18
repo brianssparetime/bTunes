@@ -546,7 +546,8 @@ typedef struct {
         return number ? number : @"";
     }
     if ([identifier isEqualToString:@"date"]) return [self dateStringForEpisode:episode];
-    return [episode displayTitle];
+    // The number has a column of its own, so the title does not repeat it.
+    return [_selectedShow displayTitleForEpisode:episode];
 }
 
 - (void)tableView:(NSTableView *)tableView

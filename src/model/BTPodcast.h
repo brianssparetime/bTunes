@@ -51,6 +51,15 @@
 // 003b, and because a show that numbers from 001 should not be listed from 1.
 - (NSString *)episodeNumberForEpisode:(BTTrack *)episode;
 
+// The title with the show's own numbering taken off the front, for a list that
+// already has a column of numbers: "In the Beginning" rather than "001- In the
+// Beginning".
+//
+// Only when the leading number is this episode's number. A title that begins
+// with a number of its own keeps it, which is the difference between tidying a
+// list and eating the first word of one.
+- (NSString *)displayTitleForEpisode:(BTTrack *)episode;
+
 // Opens every episode to find how long it runs, which is the one thing no
 // description file records. Slow in proportion to the number of episodes, so it
 // is not done while building the list: call it off the main thread and reload

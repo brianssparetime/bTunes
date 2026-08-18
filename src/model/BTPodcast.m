@@ -58,6 +58,18 @@ static NSString *BTNumberFromFileName(NSString *fileName) {
     return [fileName substringToIndex:i];
 }
 
+// "01" and "1" are the same episode; "3a" and "3b" are not.
+static BOOL BTSameEpisodeNumber(NSString *a, NSString *b) {
+    NSCharacterSet *digits = [NSCharacterSet decimalDigitCharacterSet];
+    NSString *aDigits = [a stringByTrimmingCharactersInSet:[digits invertedSet]];
+    NSString *bDigits = [b stringByTrimmingCharactersInSet:[digits invertedSet]];
+    if ([aDigits integerValue] != [bDigits integerValue]) return NO;
+
+    NSString *aLetter = [a substringFromIndex:[aDigits length]];
+    NSString *bLetter = [b substringFromIndex:[bDigits length]];
+    return [[aLetter lowercaseString] isEqualToString:[bLetter lowercaseString]];
+}
+
 + (NSDateFormatter *)airDateFormatter {
     static NSDateFormatter *formatter = nil;
     static dispatch_once_t once;
@@ -231,6 +243,31 @@ static NSString *BTNumberFromFileName(NSString *fileName) {
 
 - (NSString *)episodeNumberForEpisode:(BTTrack *)episode {
     return [_numbers objectForKey:episode.trackID];
+}
+
+- (NSString *)displayTitleForEpisode:(BTTrack *)episode {
+    NSString *title = [episode displayTitle];
+    NSString *number = [_numbers objectForKey:episode.trackID];
+    if ([number length] == 0 || [title length] == 0) return title;
+
+    NSString *leading = BTNumberFromFileName(title);
+    if ([leading length] == 0) return title;
+
+    // Compared as a number and a letter rather than as text, because the file
+    // may pad where the title does not: "01 - " beside "1- " is the same
+    // episode said twice.
+    if (!BTSameEpisodeNumber(leading, number)) return title;
+
+    NSUInteger i = [leading length];
+    NSCharacterSet *joiners =
+        [NSCharacterSet characterSetWithCharactersInString:@" \t-\u2013\u2014:."];
+    while (i < [title length] && [joiners characterIsMember:[title characterAtIndex:i]]) {
+        i++;
+    }
+    // A title that was nothing but its number keeps it, since a blank row says
+    // less than a repeated number does.
+    if (i >= [title length]) return title;
+    return [title substringFromIndex:i];
 }
 
 #pragma mark - Lengths
