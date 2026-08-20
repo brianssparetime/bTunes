@@ -418,16 +418,28 @@ static NSImage *BTSteelGrain(void) {
     }
 
     // A soft gray rim rather than an outline: the 2003 buttons had no black
-    // edge, they had a lighter ring that darkened toward the bottom.
+    // edge, they had a gray ring that darkened toward the bottom.
+    //
+    // The ring keeps its weight the whole way round. Letting it fade to nearly
+    // the colour of the face at the top left the disc with no edge up there and
+    // a dark one underneath, so the outline appeared to come and go around the
+    // circumference: at a size where one point is one pixel, an edge that is
+    // present in some places and absent in others reads as a ragged shape
+    // rather than a lit one. It still darkens downward, which is what says the
+    // light is above.
+    //
+    // A button that cannot be pressed keeps its outline but not its weight: the
+    // ring follows the face down, so the whole disc recedes together instead of
+    // a pale face sitting inside a ring as dark as a live one's.
+    NSColor *rimTop = enabled ? [NSColor colorWithCalibratedWhite:0.62 alpha:1.0]
+                              : [NSColor colorWithCalibratedWhite:0.76 alpha:1.0];
+    NSColor *rimBottom = enabled ? [NSColor colorWithCalibratedWhite:0.44 alpha:1.0]
+                                 : [NSColor colorWithCalibratedWhite:0.66 alpha:1.0];
+
     NSBezierPath *rim = [NSBezierPath bezierPathWithOvalInRect:box];
     [NSGraphicsContext saveGraphicsState];
     [rim addClip];
-    // Almost as light as the face at the top, so the edge disappears where the
-    // button is brightest and only shows along the sides and underneath. A rim
-    // darker than the face reads as a ring drawn across the top.
-    [self drawVerticalGradientInRect:box
-                                from:[NSColor colorWithCalibratedWhite:0.93 alpha:1.0]
-                                  to:[NSColor colorWithCalibratedWhite:0.42 alpha:1.0]];
+    [self drawVerticalGradientInRect:box from:rimTop to:rimBottom];
     [NSGraphicsContext restoreGraphicsState];
 
     box = NSInsetRect(box, 1.0, 1.0);
@@ -450,9 +462,19 @@ static NSImage *BTSteelGrain(void) {
     NSRect cap = BTTopBand(NSInsetRect(box, NSWidth(box) * 0.10, 0.0),
                            NSHeight(box) * 0.66);
 
+    // The light is gone before the ellipse ends rather than at it. A fade that
+    // is still carrying something when it reaches the boundary is cut off
+    // there, and the cut runs across the face as a visible seam: brightness
+    // stepped by 0.04 across that line where its neighbours stepped by 0.015.
+    static const CGFloat capStops[] = {0.0, 0.80, 1.0};
+    NSArray *capColors = @[
+        [NSColor colorWithCalibratedWhite:1.0 alpha:(pressed ? 0.24 : 0.78)],
+        [NSColor colorWithCalibratedWhite:1.0 alpha:0.0],
+        [NSColor colorWithCalibratedWhite:1.0 alpha:0.0]];
     NSGradient *capGradient = [[NSGradient alloc]
-        initWithStartingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:(pressed ? 0.24 : 0.78)]
-                  endingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:0.0]];
+        initWithColors:capColors
+           atLocations:capStops
+            colorSpace:[NSColorSpace genericRGBColorSpace]];
     // Off centre toward the top, so the brightest point sits high on the dome
     // rather than in the middle of it. The centre is given in the context's own
     // coordinates, so which sign is upward depends on which way up it runs.

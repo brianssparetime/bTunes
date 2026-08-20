@@ -310,9 +310,20 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
 
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = [self bounds];
-    // Deeply rounded ends, the way the readout was drawn in 2003.
+    // Fully rounded ends, the way the readout was drawn in 2003.
+    //
+    // Round the whole way rather than nearly so. At four tenths of the height
+    // the arcs stopped short and left nearly nine points of dead straight edge
+    // in the middle of each end.
+    //
+    // A hairline that runs straight lands on one row of pixels and reaches its
+    // full colour. The same line around a curve is spread across two and never
+    // does: that short segment held 0.427 exactly while the arcs above and
+    // below it wandered between 0.43 and 0.54. Curvature that runs out at half
+    // the height leaves no crisp segment beside the soft ones, and the end
+    // reads as a smooth curve rather than a frayed one.
     [BTStyle drawSunkenBezelInRect:bounds
-                            radius:(NSHeight(bounds) * 0.40)
+                            radius:(NSHeight(bounds) / 2.0)
                               fill:[BTStyle displayBackground]];
 
     if (_syncing) {
