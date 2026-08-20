@@ -4,6 +4,7 @@
 #import "BTPlaylist.h"
 #import "BTITunesImport.h"
 #import "BTDetuneMap.h"
+#import "BTITunesTwins.h"
 
 @implementation BTITunesSyncTrack
 - (BOOL)fillsInDetails { return [self.fillsInTrackID length] > 0; }
@@ -75,7 +76,9 @@
 // about every file twice over, and asking is nearly all the time a sync takes.
 // It also left two answers free to disagree, and one of them decided what could
 // be ticked while the other decided what was actually imported.
-- (NSDictionary *)readEntries:(NSDictionary *)entries detune:(BTDetuneMap *)detune {
+- (NSDictionary *)readEntries:(NSDictionary *)entries
+                       detune:(BTDetuneMap *)detune
+                        twins:(BTITunesTwins *)twins {
     NSFileManager *files = [NSFileManager defaultManager];
     NSMutableDictionary *read = [NSMutableDictionary dictionaryWithCapacity:[entries count]];
     NSArray *keys = [entries allKeys];
@@ -84,6 +87,7 @@
         id key = [keys objectAtIndex:i];
         BTITunesEntry *one = [BTITunesEntry readEntry:[entries objectForKey:key]
                                                detune:detune
+                                                twins:twins
                                                 files:files];
         if (one) [read setObject:one forKey:key];
     }
@@ -106,7 +110,9 @@
         return sync;
     }
 
-    NSDictionary *read = [sync readEntries:entries detune:[BTDetuneMap currentMap]];
+    NSDictionary *read = [sync readEntries:entries
+                                          detune:[BTDetuneMap currentMap]
+                                           twins:[BTITunesTwins twinsInEntries:entries]];
     [sync compareTracks:read against:library];
     [sync comparePlaylists:[root objectForKey:@"Playlists"] read:read against:library];
     return sync;
@@ -136,7 +142,9 @@
             sync.error = @"That file has no Tracks section.";
         } else {
             report(0.20, @"Looking for the songs on disk");
-            NSDictionary *read = [sync readEntries:entries detune:[BTDetuneMap currentMap]];
+            NSDictionary *read = [sync readEntries:entries
+                                          detune:[BTDetuneMap currentMap]
+                                           twins:[BTITunesTwins twinsInEntries:entries]];
             report(0.70, @"Comparing songs");
             [sync compareTracks:read against:library];
             report(0.85, @"Comparing playlists");
@@ -212,6 +220,7 @@
         incoming.album = BTITunesString(source.entry, @"Album");
         incoming.source = source;
         incoming.fromDetune = source.fromDetune;
+        incoming.fromTwin = source.fromTwin;
         // One whose details can still be filled in is not finished with, so it
         // is not "already here" however much of it is.
         incoming.alreadyHere = (here && fillsIn == nil);

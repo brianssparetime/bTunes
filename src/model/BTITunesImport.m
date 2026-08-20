@@ -1,6 +1,7 @@
 #import "BTITunesImport.h"
 #import "BTTrack.h"
 #import "BTDetuneMap.h"
+#import "BTITunesTwins.h"
 
 @implementation BTLibrary (ITunesImport)
 
@@ -37,16 +38,16 @@ static NSInteger BTStarsFromITunes(NSDictionary *entry) {
     track.album = BTITunesString(entry, @"Album");
     track.genre = BTITunesString(entry, @"Genre");
     track.composer = BTITunesString(entry, @"Composer");
-    // A substituted song is a plain recording whatever iTunes called the
-    // purchase it replaces, and saying otherwise would put "Protected" beside a
-    // song that plays.
-    track.kind = source.fromDetune ? @"AAC audio file" : BTITunesString(entry, @"Kind");
+    // What the file is, which for a substituted song is the stand-in rather
+    // than the purchase it replaces. Saying otherwise would put "Protected"
+    // beside a song that plays.
+    track.kind = source.fileKind;
     track.trackNumber = BTIntFor(entry, @"Track Number");
     track.discNumber = BTIntFor(entry, @"Disc Number");
     track.year = BTIntFor(entry, @"Year");
     track.playCount = BTIntFor(entry, @"Play Count");
-    track.duration = (NSTimeInterval)BTIntFor(entry, @"Total Time") / 1000.0;
-    track.fileSize = (long long)BTIntFor(entry, @"Size");
+    track.duration = source.fileDuration;
+    track.fileSize = source.fileSize;
     track.dateAdded = BTDateFor(entry, @"Date Added");
     track.lastPlayed = BTDateFor(entry, @"Play Date UTC");
     track.isProtected = source.isProtected;
@@ -113,6 +114,7 @@ static NSInteger BTStarsFromITunes(NSDictionary *entry) {
     if (![entries isKindOfClass:[NSDictionary class]]) return @{};
 
     BTDetuneMap *detune = [BTDetuneMap currentMap];
+    BTITunesTwins *twins = [BTITunesTwins twinsInEntries:entries];
     NSFileManager *files = [NSFileManager defaultManager];
     NSMutableDictionary *places = [NSMutableDictionary dictionary];
 
@@ -125,7 +127,7 @@ static NSInteger BTStarsFromITunes(NSDictionary *entry) {
         BTTrack *track = ([persistentID length] > 0) ? [wanted objectForKey:persistentID] : nil;
         if (track == nil) continue;
 
-        BTITunesEntry *read = [BTITunesEntry readEntry:entry detune:detune files:files];
+        BTITunesEntry *read = [BTITunesEntry readEntry:entry detune:detune twins:twins files:files];
         if (read == nil || [read.resolvedPath length] == 0) continue;
 
         // Somewhere the file actually is, and somewhere new. Repointing one dead

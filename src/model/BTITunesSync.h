@@ -46,6 +46,10 @@
 // A free recording is standing in for a locked purchase, so this song comes
 // from detune rather than from where iTunes keeps it.
 @property (nonatomic, assign) BOOL fromDetune;
+// A free copy of the same recording, already in the iTunes library, is standing
+// in for a locked purchase. The song comes from where iTunes keeps it, but from
+// a different file than the one this entry names.
+@property (nonatomic, assign) BOOL fromTwin;
 // The entry as it was read, kept so the import points at the file eligibility
 // was decided about rather than working the question out a second time and
 // possibly differently.

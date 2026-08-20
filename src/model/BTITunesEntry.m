@@ -1,5 +1,6 @@
 #import "BTITunesEntry.h"
 #import "BTDetuneMap.h"
+#import "BTITunesTwins.h"
 
 NSString *BTITunesString(NSDictionary *entry, NSString *key) {
     id value = [entry objectForKey:key];
@@ -13,9 +14,7 @@ NSString *BTITunesPathFromLocation(NSString *location) {
     return [[url path] stringByStandardizingPath];
 }
 
-// A locked purchase. Recognised three ways because iTunes has spelled it
-// differently over the years and one library spans all of them.
-static BOOL BTEntryIsProtected(NSDictionary *entry, NSString *path) {
+BOOL BTITunesEntryIsProtected(NSDictionary *entry, NSString *path) {
     if ([[entry objectForKey:@"Protected"] boolValue]) return YES;
     if ([[[path pathExtension] lowercaseString] isEqualToString:@"m4p"]) return YES;
     NSString *kind = BTITunesString(entry, @"Kind");
@@ -31,6 +30,10 @@ static BOOL BTEntryIsProtected(NSDictionary *entry, NSString *path) {
 @property (nonatomic, assign) BTPathRoot pathRoot;
 @property (nonatomic, copy) NSString *resolvedPath;
 @property (nonatomic, assign) BOOL fromDetune;
+@property (nonatomic, assign) BOOL fromTwin;
+@property (nonatomic, copy) NSString *fileKind;
+@property (nonatomic, assign) NSTimeInterval fileDuration;
+@property (nonatomic, assign) long long fileSize;
 @property (nonatomic, assign) BOOL isProtected;
 @property (nonatomic, assign) BOOL originalIsProtected;
 @property (nonatomic, assign) BTITunesBlock blocked;
@@ -45,13 +48,25 @@ static BTITunesBlock BTBlockForOriginal(NSDictionary *entry, NSString *path, NSF
     if (path == nil) return BTITunesBlockNotOnDisk;
     // Before asking the filesystem, because a locked file is blocked whether it
     // is sitting there or not, and asking is the slow part of a sync.
-    if (BTEntryIsProtected(entry, path)) return BTITunesBlockProtected;
+    if (BTITunesEntryIsProtected(entry, path)) return BTITunesBlockProtected;
     if (![files fileExistsAtPath:path]) return BTITunesBlockNotOnDisk;
     return BTITunesBlockNone;
 }
 
+static NSTimeInterval BTEntrySeconds(NSDictionary *entry) {
+    id value = [entry objectForKey:@"Total Time"];
+    if (![value respondsToSelector:@selector(doubleValue)]) return 0.0;
+    return [value doubleValue] / 1000.0;
+}
+
+static long long BTEntryBytes(NSDictionary *entry) {
+    id value = [entry objectForKey:@"Size"];
+    return [value respondsToSelector:@selector(longLongValue)] ? [value longLongValue] : 0;
+}
+
 + (instancetype)readEntry:(NSDictionary *)entry
                    detune:(BTDetuneMap *)detune
+                    twins:(BTITunesTwins *)twins
                     files:(NSFileManager *)files {
     if (![entry isKindOfClass:[NSDictionary class]]) return nil;
 
@@ -63,7 +78,11 @@ static BTITunesBlock BTBlockForOriginal(NSDictionary *entry, NSString *path, NSF
     read.persistentID = BTITunesString(entry, @"Persistent ID");
     read.iTunesPath = BTITunesPathFromLocation(location);
     read.originalIsProtected = (read.iTunesPath != nil &&
-                                BTEntryIsProtected(entry, read.iTunesPath));
+                                BTITunesEntryIsProtected(entry, read.iTunesPath));
+    // What iTunes says, until something stands in and answers for itself.
+    read.fileKind = BTITunesString(entry, @"Kind");
+    read.fileDuration = BTEntrySeconds(entry);
+    read.fileSize = BTEntryBytes(entry);
 
     BTITunesBlock original = BTBlockForOriginal(entry, read.iTunesPath, files);
 
@@ -85,9 +104,32 @@ static BTITunesBlock BTBlockForOriginal(NSDictionary *entry, NSString *path, NSF
         read.resolvedPath = [[detune root] stringByAppendingPathComponent:[substitute path]];
         read.pathRoot = BTPathRootDetune;
         read.fromDetune = YES;
+        read.fileKind = @"AAC audio file";
         read.blocked = BTITunesBlockNone;
         read.isProtected = NO;
         return read;
+    }
+
+    // A free copy of the same recording, already in the library. Only for a
+    // locked purchase: a song that is merely in the cloud is one the listener
+    // can still fetch from iTunes, and pointing it at a different file would
+    // decide that for them.
+    if (original == BTITunesBlockProtected) {
+        BTITunesTwin *twin = [twins twinForEntry:entry files:files];
+        if (twin) {
+            read.path = [twin path];
+            read.resolvedPath = [twin path];
+            read.pathRoot = BTPathRootMusic;
+            read.fromTwin = YES;
+            // The free copy is its own file, of its own kind and length. Taking
+            // these from the purchase would describe a file that is not there.
+            read.fileKind = [twin kind];
+            if ([twin duration] > 0.0) read.fileDuration = [twin duration];
+            if ([twin fileSize] > 0) read.fileSize = [twin fileSize];
+            read.blocked = BTITunesBlockNone;
+            read.isProtected = NO;
+            return read;
+        }
     }
 
     // Nothing standing in for it, so it stays as iTunes left it.

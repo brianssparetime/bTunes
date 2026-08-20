@@ -2,6 +2,7 @@
 #import "BTTrack.h"
 
 @class BTDetuneMap;
+@class BTITunesTwins;
 
 // Why something cannot be brought across yet. Blocked things are listed and
 // shown, greyed, rather than hidden, so it is clear they exist and are waiting.
@@ -29,18 +30,23 @@ typedef NS_ENUM(NSInteger, BTITunesBlock) {
 // and then imported as its locked original by another. Deciding once and
 // carrying the answer makes disagreement impossible rather than unlikely.
 //
-// Where a locked purchase has a free recording standing in for it, that
-// substitution happens here too, and everything downstream sees an ordinary
-// unblocked entry that happens to point somewhere else.
+// Where a locked purchase has a free copy standing in for it, that substitution
+// happens here too, and everything downstream sees an ordinary unblocked entry
+// that happens to point somewhere else. Two kinds of free copy stand in, and
+// they are tried in that order: a recording detune made, which names the
+// purchase by its persistent id and so cannot be the wrong song, and then a
+// free copy of the same recording already in the iTunes library, which is
+// recognised by what it is rather than by an id and so is the weaker claim.
 @interface BTITunesEntry : NSObject
 
 // Nil when the entry names no file at all, which is neither a song on disk nor
 // a cloud copy and has nothing for a library to record.
 //
 // A nil detune map means no substitution, which is the ordinary state before
-// detune has published anything.
+// detune has published anything. A nil twin index means the same.
 + (instancetype)readEntry:(NSDictionary *)entry
                    detune:(BTDetuneMap *)detune
+                    twins:(BTITunesTwins *)twins
                     files:(NSFileManager *)files;
 
 @property (nonatomic, readonly, strong) NSDictionary *entry;
@@ -60,6 +66,17 @@ typedef NS_ENUM(NSInteger, BTITunesBlock) {
 
 // Whether a free recording is standing in for a locked purchase.
 @property (nonatomic, readonly, assign) BOOL fromDetune;
+// Whether a free copy already in the iTunes library is standing in for one.
+@property (nonatomic, readonly, assign) BOOL fromTwin;
+
+// What the file BTunes would point at actually is: the entry's own answer,
+// unless something stands in for it, in which case these describe the stand-in
+// rather than the purchase it replaces. A substituted song plays, so saying
+// "Protected AAC audio file" beside it would be plainly wrong, and a free copy
+// of the same recording is its own file with its own length and size.
+@property (nonatomic, readonly, copy) NSString *fileKind;
+@property (nonatomic, readonly, assign) NSTimeInterval fileDuration;
+@property (nonatomic, readonly, assign) long long fileSize;
 
 // Whether the file BTunes would point at is locked. A substituted entry is not,
 // which is the whole point of substituting it.
@@ -74,5 +91,8 @@ typedef NS_ENUM(NSInteger, BTITunesBlock) {
 
 // Reading an iTunes entry's fields, one definition rather than one per caller.
 NSString *BTITunesString(NSDictionary *entry, NSString *key);
+// A locked purchase. Recognised three ways because iTunes has spelled it
+// differently over the years and one library spans all of them.
+BOOL BTITunesEntryIsProtected(NSDictionary *entry, NSString *path);
 // The file:// URL iTunes stores, as a path. Nil when it names no local file.
 NSString *BTITunesPathFromLocation(NSString *location);
