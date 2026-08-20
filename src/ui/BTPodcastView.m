@@ -173,7 +173,24 @@ static CGFloat BTTwoLineRowHeight(void) {
     [_split addSubview:[self buildEpisodeList]];
     [_split setPosition:BTShowListWidth ofDividerAtIndex:0];
 
+    // The speaker beside the playing episode is drawn from what the player holds
+    // right now, so the list has to be told when that changes. Without this the
+    // mark only appears when something else happens to redraw the rows, and an
+    // episode can play with nothing on screen saying which one it is.
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(playerChanged:)
+                                                 name:BTPlayerDidChangeNotification
+                                               object:nil];
+
     return self;
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)playerChanged:(NSNotification *)note {
+    [_episodeTable setNeedsDisplay:YES];
 }
 
 #pragma mark - Layout
@@ -511,6 +528,20 @@ typedef struct {
 }
 
 #pragma mark - Playing
+
+- (NSArray *)listedEpisodes {
+    return _episodes;
+}
+
+// The row the reader picked, and the top of the list when they have picked
+// none. Starting at the top matches the song list, where a play button pressed
+// with nothing selected starts the list rather than refusing.
+- (BTTrack *)episodeToStart {
+    NSInteger row = [_episodeTable selectedRow];
+    if (row < 0 || row >= (NSInteger)[_episodes count]) row = 0;
+    if ([_episodes count] == 0) return nil;
+    return [_episodes objectAtIndex:(NSUInteger)row];
+}
 
 - (void)playClickedEpisode:(id)sender {
     NSInteger row = [_episodeTable clickedRow];

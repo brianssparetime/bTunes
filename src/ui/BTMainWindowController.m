@@ -709,6 +709,11 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
                 if (strongSelf == nil || ![strongSelf showingPodcasts]) return;
                 strongSelf->_bottomBar.statusText = status;
                 [strongSelf->_bottomBar setNeedsDisplay:YES];
+                // The count changes when the reader picks a different show, and
+                // so does the list the play button acts on: an episode playing
+                // out of the show they just left is no longer listed, and the
+                // button has to go back to offering to start this one.
+                [strongSelf updateTransport];
             };
         }
         wanted = _podcastView;
@@ -1191,6 +1196,24 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
     [_bottomBar setNeedsDisplay:YES];
 }
 
+// The rows in front of the reader, and which of them the transport button would
+// start. The song list is not always what is on screen: the podcasts pane holds
+// its own episodes, and answering with the song list there would have the button
+// acting on rows nobody can see. Both questions are asked in one place so the
+// button cannot offer to start one list and then start another.
+- (NSArray *)listedTracks {
+    if ([self showingPodcasts]) return [_podcastView listedEpisodes];
+    return _visibleTracks;
+}
+
+- (BTTrack *)trackToStart {
+    if ([self showingPodcasts]) return [_podcastView episodeToStart];
+    NSInteger row = [_trackTable selectedRow];
+    if (row < 0 || row >= (NSInteger)[_visibleTracks count]) row = 0;
+    if ([_visibleTracks count] == 0) return nil;
+    return [_visibleTracks objectAtIndex:(NSUInteger)row];
+}
+
 // Whether the song in the player is one of the rows on screen. The transport
 // button belongs to the list being looked at, so a playlist that does not hold
 // the playing song offers to start itself rather than pausing a song listed
@@ -1198,7 +1221,7 @@ void BTChromeLayout(CGFloat chromeWidth, CGFloat volumeRight, BOOL actionShown,
 // which is why the two agree row for row.
 - (BOOL)playingTrackIsListed {
     BTTrack *track = [[BTPlayer sharedPlayer] currentTrack];
-    return (track != nil && [_visibleTracks containsObject:track]);
+    return (track != nil && [[self listedTracks] containsObject:track]);
 }
 
 - (void)updateTransport {
@@ -1956,14 +1979,14 @@ constrainMaxCoordinate:(CGFloat)proposedMax
 
     // Either nothing is loaded, or what is loaded belongs to some other list.
     // Either way this starts what is on screen: whatever source is selected on
-    // the left, narrowed by the browser and the search field. That list is also
-    // what next and previous walk, so a playlist plays its own songs and stops
-    // at the end of them rather than running on into the library.
-    NSInteger row = [_trackTable selectedRow];
-    if (row < 0 || row >= (NSInteger)[_visibleTracks count]) row = 0;
-    if ([_visibleTracks count] == 0) return;
+    // the left, narrowed by the browser and the search field, or the episodes of
+    // the chosen show while the podcasts pane is up. That list is also what next
+    // and previous walk, so a playlist plays its own songs and stops at the end
+    // of them rather than running on into the library.
+    BTTrack *start = [self trackToStart];
+    if (start == nil) return;
 
-    [player playTrack:[_visibleTracks objectAtIndex:(NSUInteger)row] inList:_visibleTracks];
+    [player playTrack:start inList:[self listedTracks]];
 }
 
 - (void)nextTrack:(id)sender { [[BTPlayer sharedPlayer] next]; }
