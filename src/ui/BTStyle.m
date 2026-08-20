@@ -181,19 +181,51 @@ static NSColor *BTSourcePurple(void) {
 + (NSColor *)displayEdge     { return [NSColor colorWithCalibratedWhite:0.427 alpha:1.0]; }
 + (NSColor *)displayText     { return [NSColor colorWithCalibratedRed:0.055 green:0.106 blue:0.067 alpha:1.0]; }
 
+// Where the light comes from, in a form that survives being drawn either way up.
+//
+// NSGradient measures its angle in the current user space, so a fixed 90 runs
+// up the screen in a view and down it in a button. Every surface below is lit
+// from above, and every one of them would be lit from underneath in half the
+// places it is drawn if the angle were written as a number. A rect positioned
+// against NSMinY has the same problem: that is the floor in a view and the
+// ceiling in a button.
+//
+// The helpers say which edge is meant and let the context work out the
+// arithmetic. A gradient angle or a highlight's edge written as a number is the
+// bug waiting to happen; ask for the edge by name instead.
+static BOOL BTContextIsFlipped(void) {
+    return [[NSGraphicsContext currentContext] isFlipped];
+}
+
+// Runs from the top of the screen downward: the starting color lands on top.
+static CGFloat BTDownwardAngle(void) { return BTContextIsFlipped() ? 90.0 : 270.0; }
+
+// Runs from the bottom of the screen upward: the starting color lands beneath.
+static CGFloat BTUpwardAngle(void)   { return BTContextIsFlipped() ? 270.0 : 90.0; }
+
+// A band of the given height lying along the upper edge of a rect.
+static NSRect BTTopBand(NSRect rect, CGFloat height) {
+    return NSMakeRect(NSMinX(rect),
+                      BTContextIsFlipped() ? NSMinY(rect) : NSMaxY(rect) - height,
+                      NSWidth(rect), height);
+}
+
+// A band of the given height lying along the lower edge of a rect.
+static NSRect BTBottomBand(NSRect rect, CGFloat height) {
+    return NSMakeRect(NSMinX(rect),
+                      BTContextIsFlipped() ? NSMaxY(rect) - height : NSMinY(rect),
+                      NSWidth(rect), height);
+}
+
 + (void)drawVerticalGradientInRect:(NSRect)rect from:(NSColor *)top to:(NSColor *)bottom {
-    NSGradient *g = [[NSGradient alloc] initWithStartingColor:bottom endingColor:top];
-    [g drawInRect:rect angle:90.0];
+    NSGradient *g = [[NSGradient alloc] initWithStartingColor:top endingColor:bottom];
+    [g drawInRect:rect angle:BTDownwardAngle()];
 }
 
 // A gradient given in the order it is read, topmost band first. Written this way
 // because both headings below were measured off a screenshot a row at a time
 // from the top, and a list that has to be reversed to be used is a list that
 // will be reversed wrongly one day.
-//
-// Which angle puts the first band on top depends on which way up the context is,
-// so the context is asked. A header view is flipped and an image is not, and a
-// heading built for one comes out lit from underneath in the other.
 static void BTDrawBandsDownRect(NSRect rect, const CGFloat *whites,
                                 const CGFloat *stops, NSUInteger count) {
     NSMutableArray *colors = [NSMutableArray arrayWithCapacity:count];
@@ -207,14 +239,13 @@ static void BTDrawBandsDownRect(NSRect rect, const CGFloat *whites,
                                            atLocations:locations
                                             colorSpace:[NSColorSpace genericRGBColorSpace]];
     free(locations);
-    [g drawInRect:rect angle:([[NSGraphicsContext currentContext] isFlipped] ? 90.0 : 270.0)];
+    [g drawInRect:rect angle:BTDownwardAngle()];
 }
 
 // The rule closing a heading off from the rows under it, on whichever edge is
 // the lower one here.
 static void BTDrawHeaderRule(NSRect rect, NSColor *color) {
-    CGFloat y = [[NSGraphicsContext currentContext] isFlipped] ? NSMaxY(rect) - 1.0
-                                                               : NSMinY(rect);
+    CGFloat y = NSMinY(BTBottomBand(rect, 1.0));
     [color set];
     NSRectFill(NSMakeRect(NSMinX(rect), y, NSWidth(rect), 1.0));
 }
@@ -297,8 +328,7 @@ static NSImage *BTSteelGrain(void) {
     NSGradient *bounce = [[NSGradient alloc]
         initWithStartingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:0.55]
                   endingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:0.0]];
-    [bounce drawInRect:NSMakeRect(NSMinX(inner), NSMinY(inner), NSWidth(inner), 5.0)
-                 angle:90.0];
+    [bounce drawInRect:BTBottomBand(inner, 5.0) angle:BTUpwardAngle()];
     [NSGraphicsContext restoreGraphicsState];
 
     [[self displayEdge] set];
@@ -321,7 +351,7 @@ static NSImage *BTSteelGrain(void) {
     NSGradient *shade = [[NSGradient alloc]
         initWithStartingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:0.55]
                   endingColor:[NSColor colorWithCalibratedWhite:0.0 alpha:0.30]];
-    [shade drawInRect:inner angle:90.0];
+    [shade drawInRect:inner angle:BTUpwardAngle()];
     [NSGraphicsContext restoreGraphicsState];
 
     [[NSColor colorWithCalibratedWhite:0.48 alpha:1.0] set];
@@ -417,24 +447,24 @@ static NSImage *BTSteelGrain(void) {
     // partway down leaves the surface dimmest between the top edge and the
     // highlight. Brightness that falls and then rises again reads as a crease
     // across something that should be smooth.
-    NSRect cap = NSInsetRect(box, NSWidth(box) * 0.10, 0);
-    cap.origin.y = NSMinY(box) + NSHeight(box) * 0.34;
-    cap.size.height = NSHeight(box) * 0.66;
+    NSRect cap = BTTopBand(NSInsetRect(box, NSWidth(box) * 0.10, 0.0),
+                           NSHeight(box) * 0.66);
 
     NSGradient *capGradient = [[NSGradient alloc]
         initWithStartingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:(pressed ? 0.24 : 0.78)]
                   endingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:0.0]];
     // Off centre toward the top, so the brightest point sits high on the dome
-    // rather than in the middle of it.
+    // rather than in the middle of it. The centre is given in the context's own
+    // coordinates, so which sign is upward depends on which way up it runs.
+    CGFloat capRise = BTContextIsFlipped() ? -0.45 : 0.45;
     [capGradient drawInBezierPath:[NSBezierPath bezierPathWithOvalInRect:cap]
-           relativeCenterPosition:NSMakePoint(0.0, 0.45)];
+           relativeCenterPosition:NSMakePoint(0.0, capRise)];
 
     // Light bouncing back up off the surface the button sits on.
     NSGradient *bounce = [[NSGradient alloc]
         initWithStartingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:0.55]
                   endingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:0.0]];
-    [bounce drawInRect:NSMakeRect(NSMinX(box), NSMinY(box), NSWidth(box), NSHeight(box) * 0.30)
-                 angle:90.0];
+    [bounce drawInRect:BTBottomBand(box, NSHeight(box) * 0.30) angle:BTUpwardAngle()];
 
     [NSGraphicsContext restoreGraphicsState];
 }
@@ -491,9 +521,7 @@ static NSImage *BTSteelGrain(void) {
     NSGradient *sheen = [[NSGradient alloc]
         initWithStartingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:(isDefault ? 0.34 : 0.55)]
                   endingColor:[NSColor colorWithCalibratedWhite:1.0 alpha:0.0]];
-    [sheen drawInRect:NSMakeRect(NSMinX(box), NSMaxY(box) - NSHeight(box) * 0.46,
-                                 NSWidth(box), NSHeight(box) * 0.46)
-                angle:270.0];
+    [sheen drawInRect:BTTopBand(box, NSHeight(box) * 0.46) angle:BTDownwardAngle()];
     [NSGraphicsContext restoreGraphicsState];
 
     [edge set];
@@ -512,8 +540,7 @@ static NSImage *BTSteelGrain(void) {
 // carried their own closure to answer it; the eject mark spent two of its lines
 // undoing the flip a third time.
 static CGFloat BTUpPoints(NSRect rect, CGFloat points) {
-    return [[NSGraphicsContext currentContext] isFlipped] ? NSMaxY(rect) - points
-                                                          : NSMinY(rect) + points;
+    return BTContextIsFlipped() ? NSMaxY(rect) - points : NSMinY(rect) + points;
 }
 
 // The same, as a fraction of the rect's own height. A glyph that places a dozen
@@ -678,7 +705,7 @@ static void BTDrawArrowhead(NSPoint tip, CGFloat length, CGFloat halfHeight, NSC
     // Cells draw in a flipped context while views do not, so the lens has to be
     // placed against whichever edge is currently the top. Drawn the same way in
     // both, the handle ends up pointing the wrong way in one of them.
-    BOOL flipped = [[NSGraphicsContext currentContext] isFlipped];
+    BOOL flipped = BTContextIsFlipped();
     CGFloat diameter = MIN(NSWidth(rect), NSHeight(rect)) * 0.62;
     NSRect lens = flipped ? NSMakeRect(NSMinX(rect), NSMinY(rect), diameter, diameter)
                           : NSMakeRect(NSMinX(rect), NSMaxY(rect) - diameter, diameter, diameter);
