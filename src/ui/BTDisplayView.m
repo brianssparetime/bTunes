@@ -13,6 +13,7 @@
 #define BT_DISPLAY_FOOT  15.0                            // the scrub bar and the times
 #define BT_DISPLAY_AIR   6.0                             // between words and frame
 #define BT_DISPLAY_GROOVE 6.0                            // the scrub bar, and its lift
+#define BT_DISPLAY_CUT   3.0                             // words in flight, off the frame
 
 
 // A line too long for the panel sits still for a while, travels far enough to
@@ -110,11 +111,17 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     return NSInsetRect(band, curve + BT_DISPLAY_AIR, 0.0);
 }
 
-// Everything the frame encloses. The frame is laid half a point inside the
-// bounds and stroked a point wide, so its own ink ends one point in, and that is
-// where anything meant to look enclosed by it has to stop.
-- (NSBezierPath *)insideOfTheFrame {
-    NSRect inner = NSInsetRect([self bounds], 1.0, 1.0);
+// Where a travelling line may be seen: the frame's own curve, carried inward far
+// enough to leave a margin between the words and the border.
+//
+// The frame is laid half a point inside the bounds and stroked a point wide, so
+// its ink ends one point in. Cut there, the letters slid out touching the
+// border. The curve is moved in from the sides only, since it is the sides the
+// words run out through; taking the same margin off the top and the bottom would
+// shave the tallest letters as the type grew, and there is nothing up there for
+// a margin to protect against.
+- (NSBezierPath *)roomInsideTheFrame {
+    NSRect inner = NSInsetRect([self bounds], 1.0 + BT_DISPLAY_CUT, 1.0);
     return [NSBezierPath bezierPathWithRoundedRect:inner
                                            xRadius:NSHeight(inner) / 2.0
                                            yRadius:NSHeight(inner) / 2.0];
@@ -361,7 +368,7 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
 
     [NSGraphicsContext saveGraphicsState];
     NSRectClip(wings);
-    [[self insideOfTheFrame] addClip];
+    [[self roomInsideTheFrame] addClip];
     [line drawInRect:NSMakeRect(NSMinX(rect) - offset, NSMinY(rect), size.width + 8.0, NSHeight(rect))
       withAttributes:scrolling];
     [NSGraphicsContext restoreGraphicsState];
