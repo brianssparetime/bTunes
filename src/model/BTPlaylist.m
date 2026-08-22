@@ -471,8 +471,9 @@ static NSComparator BTComparatorForLimit(BTSmartLimitOrder order) {
         NSComparisonResult result = [[left displayAlbum] caseInsensitiveCompare:[right displayAlbum]];
         if (result != NSOrderedSame) return result;
 
-        if (left.discNumber != right.discNumber) {
-            return left.discNumber < right.discNumber ? NSOrderedAscending : NSOrderedDescending;
+        NSInteger leftDisc = [left orderingDiscNumber], rightDisc = [right orderingDiscNumber];
+        if (leftDisc != rightDisc) {
+            return leftDisc < rightDisc ? NSOrderedAscending : NSOrderedDescending;
         }
         if (left.trackNumber != right.trackNumber) {
             return left.trackNumber < right.trackNumber ? NSOrderedAscending : NSOrderedDescending;

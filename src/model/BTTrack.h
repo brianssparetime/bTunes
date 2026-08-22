@@ -148,6 +148,14 @@ typedef NS_ENUM(NSInteger, BTSoundCheckState) {
 - (NSString *)displayGenre;
 - (NSString *)durationString;    // m:ss
 
+// Which disc the song counts as being on when songs are put in order. A song
+// with no disc number is on the only disc, so this answers one rather than
+// zero. Left at zero it sorts ahead of everything numbered, and a record with
+// the number filled in on some songs and blank on others comes apart into two
+// runs, each ascending on its own and neither one the album. The column still
+// shows a blank; this is for arranging only.
+- (NSInteger)orderingDiscNumber;
+
 // What the search field looks through: title, artist, album, genre, composer.
 //
 // Every word has to be found, and each may be found in a different one of them,

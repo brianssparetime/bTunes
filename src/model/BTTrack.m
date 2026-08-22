@@ -332,6 +332,10 @@ static NSString *BTMinuteCount(double minutes) {
     return [self.genre length] > 0 ? self.genre : @"Unknown Genre";
 }
 
+- (NSInteger)orderingDiscNumber {
+    return self.discNumber > 0 ? self.discNumber : 1;
+}
+
 + (NSString *)clockStringFromSeconds:(NSInteger)seconds {
     if (seconds < 0) seconds = 0;
     NSInteger hours = seconds / 3600;

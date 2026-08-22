@@ -211,13 +211,15 @@ NSArray *BTSortTracks(NSArray *tracks, NSString *column, BOOL ascending,
             // A track number only means something within an album, so albums
             // stay together and disc and track order the songs inside them.
             result = [[left displayAlbum] caseInsensitiveCompare:[right displayAlbum]];
-            if (result == NSOrderedSame) result = BTCompareNumbers(left.discNumber, right.discNumber);
+            if (result == NSOrderedSame) result = BTCompareNumbers([left orderingDiscNumber],
+                                                                  [right orderingDiscNumber]);
             if (result == NSOrderedSame) result = BTCompareNumbers(left.trackNumber, right.trackNumber);
         } else if ([key isEqualToString:@"title"]) {
             result = [[left displayTitle] caseInsensitiveCompare:[right displayTitle]];
         } else if ([key isEqualToString:@"album"]) {
             result = [[left displayAlbum] caseInsensitiveCompare:[right displayAlbum]];
-            if (result == NSOrderedSame) result = BTCompareNumbers(left.discNumber, right.discNumber);
+            if (result == NSOrderedSame) result = BTCompareNumbers([left orderingDiscNumber],
+                                                                  [right orderingDiscNumber]);
             if (result == NSOrderedSame) result = BTCompareNumbers(left.trackNumber, right.trackNumber);
         } else if ([key isEqualToString:@"genre"]) {
             result = [[left displayGenre] caseInsensitiveCompare:[right displayGenre]];
