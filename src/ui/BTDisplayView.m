@@ -110,6 +110,16 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     return NSInsetRect(band, curve + BT_DISPLAY_AIR, 0.0);
 }
 
+// Everything the frame encloses. The frame is laid half a point inside the
+// bounds and stroked a point wide, so its own ink ends one point in, and that is
+// where anything meant to look enclosed by it has to stop.
+- (NSBezierPath *)insideOfTheFrame {
+    NSRect inner = NSInsetRect([self bounds], 1.0, 1.0);
+    return [NSBezierPath bezierPathWithRoundedRect:inner
+                                           xRadius:NSHeight(inner) / 2.0
+                                           yRadius:NSHeight(inner) / 2.0];
+}
+
 // The bands of words, counting from the top.
 - (NSRect)bandAtIndex:(NSUInteger)index {
     NSRect bounds = [self bounds];
@@ -339,8 +349,19 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     NSMutableDictionary *scrolling = [NSMutableDictionary dictionaryWithDictionary:attributes];
     [scrolling setObject:left forKey:NSParagraphStyleAttributeName];
 
+    // A travelling line is cut by the frame rather than by the band it rests
+    // in. Cut at the band, it ended on a hard vertical with clear panel beyond
+    // it, which reads as a line stopping for no reason; cut at the frame, the
+    // last letter is eaten by the curve as it goes, the way it would be if the
+    // words were sliding behind the case. The band still decides where the line
+    // starts, so nothing moves at the reading end.
+    NSRect wings = rect;
+    wings.origin.x = NSMinX([self bounds]);
+    wings.size.width = NSWidth([self bounds]);
+
     [NSGraphicsContext saveGraphicsState];
-    NSRectClip(rect);
+    NSRectClip(wings);
+    [[self insideOfTheFrame] addClip];
     [line drawInRect:NSMakeRect(NSMinX(rect) - offset, NSMinY(rect), size.width + 8.0, NSHeight(rect))
       withAttributes:scrolling];
     [NSGraphicsContext restoreGraphicsState];
