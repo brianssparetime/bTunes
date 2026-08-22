@@ -5,4 +5,10 @@
 // returns to the full window.
 @interface BTMiniWindowController : NSWindowController
 - (instancetype)initMiniPlayer;
+
+// The corner the small player was last left in is its own, kept apart from the
+// full window's and across a restart. Placing it beside another window is the
+// fallback for a machine that has never had it anywhere.
+- (void)placeAtTopLeftOfWindow:(NSWindow *)other;
+- (void)rememberPlace;
 @end

@@ -2,6 +2,7 @@
 #import "BTMainWindowController.h"
 #import "BTMiniWindowController.h"
 #import "BTSplashWindowController.h"
+#import "BTWindowFrames.h"
 #import "BTPreferencesController.h"
 #import "BTEqualizerController.h"
 #import "BTLibrary.h"
@@ -52,7 +53,6 @@
           [[BTPreferences sharedPreferences] btunesHome], [BTPreferences configFilePath]);
 
     _main = [[BTMainWindowController alloc] initMainWindow];
-    [[_main window] center];
 
     if (_splash) {
         [_splash dismissAfterMinimumTime:^{
@@ -193,6 +193,10 @@
 - (void)applicationWillTerminate:(NSNotification *)notification {
     [[BTPlayer sharedPlayer] stop];
     [[BTLibrary sharedLibrary] saveToDisk];
+    // Both windows are remembered separately, so the next launch puts each one
+    // back where it was rather than putting both where the last one was.
+    BTSaveWindowFrame([_main window], BTMainWindowFrameName);
+    [_mini rememberPlace];
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
@@ -206,12 +210,15 @@
 
     if (_miniMode) {
         if (_mini == nil) _mini = [[BTMiniWindowController alloc] initMiniPlayer];
-        NSRect mainFrame = [[_main window] frame];
-        [[_mini window] setFrameTopLeftPoint:NSMakePoint(NSMinX(mainFrame), NSMaxY(mainFrame))];
+        // The full window's corner is only a starting point, and only for a
+        // small player that has never been put anywhere itself.
+        [_mini placeAtTopLeftOfWindow:[_main window]];
         [_mini showWindow:nil];
         [[_mini window] makeKeyAndOrderFront:nil];
+        BTSaveWindowFrame([_main window], BTMainWindowFrameName);
         [[_main window] orderOut:nil];
     } else {
+        [_mini rememberPlace];
         // Closed rather than ordered out: the analyzer and the marquee are
         // driven by timers the controller starts when the window opens and
         // stops when it closes. Ordering the window away left both running, so

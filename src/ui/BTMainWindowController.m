@@ -4,6 +4,7 @@
 #import "BTDragTypes.h"
 #import "BTTrackColumns.h"
 #import "BTStyle.h"
+#import "BTWindowFrames.h"
 #import "BTControls.h"
 #import "BTDisplayView.h"
 #import "BTBrowserView.h"
@@ -168,7 +169,11 @@ static CGFloat BTTitleBarHeight(void) {
                                                            defer:NO];
     [window setTitle:@"BTunes"];
     [window setMinSize:NSMakeSize(640, 420)];
-    [window setFrameAutosaveName:@"BTunesMainWindow"];
+    [window setFrameAutosaveName:BTMainWindowFrameName];
+    // Where it was last left, and the middle of the screen only on a machine
+    // that has never had it anywhere. The small player remembers a corner of
+    // its own, so a switch either way moves neither window.
+    if (!BTRestoreWindowFrame(window, BTMainWindowFrameName)) [window center];
 
     // The title bar takes the color of the chrome below it, so the top of the
     // window reads as one piece with the close, minimize and zoom buttons

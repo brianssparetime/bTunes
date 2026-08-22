@@ -2,6 +2,7 @@
 #import "BTFireBarView.h"
 #import "BTControls.h"
 #import "BTStyle.h"
+#import "BTWindowFrames.h"
 #import "BTPlayer.h"
 #import "BTTrack.h"
 
@@ -630,6 +631,7 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
     BTMiniSlider *_position;
     NSTimer *_scrollTimer;
     BOOL _draggingPosition;
+    BOOL _hasPlace;
 }
 
 - (NSImage *)logoImage {
@@ -671,9 +673,15 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
     // The controller owns the window and reopens the same one each time mini
     // mode is entered, so closing it must not release it.
     [window setReleasedWhenClosed:NO];
+    [window setFrameAutosaveName:BTMiniWindowFrameName];
 
     self = [super initWithWindow:window];
     if (self == nil) return nil;
+
+    // The corner it was last dragged to, if it has ever been dragged anywhere.
+    // Only the position is taken: the panel is a fixed size laid out from these
+    // constants, and a frame saved before they changed would stretch it.
+    _hasPlace = BTRestoreWindowPosition(window, BTMiniWindowFrameName);
 
     _panel = [[BTMiniPanelView alloc] initWithFrame:frame];
     _panel.logo = [self logoImage];
@@ -750,6 +758,25 @@ static void BTDrawMiniBevel(NSRect rect, BOOL pressed) {
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [_scrollTimer invalidate];
+}
+
+#pragma mark - Where it sits
+
+// The full window's corner, taken once and never again. The small player is
+// usually wanted somewhere the full window is not, so after the first switch it
+// keeps whatever corner it was dragged to, and a saved one counts as dragged.
+- (void)placeAtTopLeftOfWindow:(NSWindow *)other {
+    if (_hasPlace || other == nil) return;
+    NSRect frame = [other frame];
+    [[self window] setFrameTopLeftPoint:NSMakePoint(NSMinX(frame), NSMaxY(frame))];
+    _hasPlace = YES;
+}
+
+// Called as mini mode is left and as the application quits. The window is
+// dragged by hand from the panel rather than by a title bar, so its place is
+// written down at the two moments it is about to stop being on screen.
+- (void)rememberPlace {
+    if (_hasPlace) BTSaveWindowFrame([self window], BTMiniWindowFrameName);
 }
 
 - (void)showWindow:(id)sender {
