@@ -11,6 +11,8 @@
 #define BT_DISPLAY_LINE  ([BTStyle displayLineHeight])   // one band of words
 #define BT_DISPLAY_TOP   3.0                             // above the first band
 #define BT_DISPLAY_FOOT  15.0                            // the scrub bar and the times
+#define BT_DISPLAY_AIR   6.0                             // between words and frame
+#define BT_DISPLAY_GROOVE 6.0                            // the scrub bar, and its lift
 
 
 // A line too long for the panel sits still for a while, travels far enough to
@@ -87,6 +89,57 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     if ([self hasSomethingNewToDraw]) [self setNeedsDisplay:YES];
 }
 
+// A band of the panel, narrowed until it clears the frame.
+//
+// The ends are round, so how much width a band has depends on how far it sits
+// from the middle: the curve has come further in at the top and the bottom than
+// it has across the centre. Holding every band off the edge by the same amount
+// gave the middle plenty and the ends nothing, which is a title running into
+// the frame while the line below it stops well short of one. Each band now
+// clears the curve at its own height and keeps the same air beyond it.
+- (NSRect)heldOffTheFrame:(NSRect)band {
+    NSRect bounds = [self bounds];
+    CGFloat radius = NSHeight(bounds) / 2.0;
+
+    // Measured at whichever of the band's edges is further from the middle,
+    // since that is the one the words meet first.
+    CGFloat reach = MAX(fabs(NSMaxY(band) - NSMidY(bounds)),
+                        fabs(NSMinY(band) - NSMidY(bounds)));
+    CGFloat curve = (reach >= radius) ? radius
+                                      : radius - sqrt(radius * radius - reach * reach);
+    return NSInsetRect(band, curve + BT_DISPLAY_AIR, 0.0);
+}
+
+// The bands of words, counting from the top.
+- (NSRect)bandAtIndex:(NSUInteger)index {
+    NSRect bounds = [self bounds];
+    return [self heldOffTheFrame:
+        NSMakeRect(NSMinX(bounds),
+                   NSMaxY(bounds) - BT_DISPLAY_TOP - (CGFloat)(index + 1) * BT_DISPLAY_LINE,
+                   NSWidth(bounds),
+                   BT_DISPLAY_LINE)];
+}
+
+// Room for the longest time there is, rather than a width written down: a song
+// over an hour with the remaining time showing is eight characters, and the
+// number grows with the type.
+- (CGFloat)timeWidth {
+    NSDictionary *attrs = @{NSFontAttributeName: [BTStyle smallFont]};
+    return ceil([@"-0:00:00" sizeWithAttributes:attrs].width) + 2.0;
+}
+
+// The band the two clocks sit in, centred on the scrub bar. Measuring the type
+// is the only way to line them up: a fixed rect leaves the glyphs wherever the
+// font's metrics put them.
+- (NSRect)timesBand {
+    NSRect bounds = [self bounds];
+    NSDictionary *attrs = @{NSFontAttributeName: [BTStyle smallFont]};
+    CGFloat height = ceil([@"0:00" sizeWithAttributes:attrs].height);
+    CGFloat middle = NSMinY(bounds) + BT_DISPLAY_GROOVE + BT_DISPLAY_GROOVE / 2.0;
+    return [self heldOffTheFrame:NSMakeRect(NSMinX(bounds), middle - height / 2.0,
+                                            NSWidth(bounds), height)];
+}
+
 // A line too long for the panel travels on every tick, and that is the one case
 // where each frame really is a new picture.
 - (BOOL)linesTravel {
@@ -96,18 +149,24 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     NSString *title = [track displayTitle];
     NSString *second = [NSString stringWithFormat:@"%@ - %@",
                         [track displayArtist], [track displayAlbum]];
-    CGFloat room = NSWidth([self bounds]) - 12;
-    if (room == _measuredWidth && BTSameString(title, _measuredTitle)
+    // Each line is asked about the band it is drawn in, since the two bands are
+    // not the same width. Measured against one width, a title that travels on
+    // screen would have been reported as sitting still, and the panel would
+    // have repainted only when the clock changed.
+    CGFloat width = NSWidth([self bounds]);
+    if (width == _measuredWidth && BTSameString(title, _measuredTitle)
         && BTSameString(second, _measuredSecond)) {
         return _linesTravel;
     }
 
     _measuredTitle = title;
     _measuredSecond = second;
-    _measuredWidth = room;
+    _measuredWidth = width;
     _linesTravel =
-        [title sizeWithAttributes:@{NSFontAttributeName: [BTStyle displayBoldFont]}].width > room
-        || [second sizeWithAttributes:@{NSFontAttributeName: [BTStyle displayFont]}].width > room;
+        [title sizeWithAttributes:@{NSFontAttributeName: [BTStyle displayBoldFont]}].width
+            > NSWidth([self bandAtIndex:0])
+        || [second sizeWithAttributes:@{NSFontAttributeName: [BTStyle displayFont]}].width
+            > NSWidth([self bandAtIndex:1]);
     return _linesTravel;
 }
 
@@ -180,13 +239,8 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
                                 NSForegroundColorAttributeName: [BTStyle displayText],
                                 NSParagraphStyleAttributeName: centred};
 
-    CGFloat top = NSMaxY(bounds) - BT_DISPLAY_LINE - BT_DISPLAY_TOP;
-    [@"Nothing played" drawInRect:NSMakeRect(NSMinX(bounds) + 6, top,
-                                             NSWidth(bounds) - 12, BT_DISPLAY_LINE)
-                   withAttributes:headAttrs];
-    [_notice drawInRect:NSMakeRect(NSMinX(bounds) + 6, top - BT_DISPLAY_LINE,
-                                   NSWidth(bounds) - 12, BT_DISPLAY_LINE)
-         withAttributes:lineAttrs];
+    [@"Nothing played" drawInRect:[self bandAtIndex:0] withAttributes:headAttrs];
+    [_notice drawInRect:[self bandAtIndex:1] withAttributes:lineAttrs];
 }
 
 #pragma mark - Sync progress
@@ -226,19 +280,13 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
                             NSForegroundColorAttributeName: [BTStyle displayText],
                             NSParagraphStyleAttributeName: centered};
     NSString *title = [_syncTitle length] > 0 ? _syncTitle : @"Working";
-    [title drawInRect:NSMakeRect(NSMinX(bounds) + 6,
-                                 NSMaxY(bounds) - BT_DISPLAY_LINE - BT_DISPLAY_TOP,
-                                 NSWidth(bounds) - 12, BT_DISPLAY_LINE)
-       withAttributes:attrs];
+    [title drawInRect:[self bandAtIndex:0] withAttributes:attrs];
 
     if ([_syncMessage length] > 0) {
         NSDictionary *lineAttrs = @{NSFontAttributeName: [BTStyle displayFont],
                                     NSForegroundColorAttributeName: [BTStyle displayText],
                                     NSParagraphStyleAttributeName: centered};
-        [_syncMessage drawInRect:NSMakeRect(NSMinX(bounds) + 6,
-                                            NSMaxY(bounds) - 2.0 * BT_DISPLAY_LINE - BT_DISPLAY_TOP,
-                                            NSWidth(bounds) - 12, BT_DISPLAY_LINE)
-                  withAttributes:lineAttrs];
+        [_syncMessage drawInRect:[self bandAtIndex:1] withAttributes:lineAttrs];
     }
 
     NSRect groove = [self progressRect];
@@ -302,10 +350,16 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     return BT_DISPLAY_TOP + 2.0 * BT_DISPLAY_LINE + BT_DISPLAY_FOOT;
 }
 
+// The groove runs between the two clocks, so it starts where they end rather
+// than at a distance written down. Written down, it was the one number that did
+// not follow the clocks in, and the elapsed time would have been drawn across
+// the left end of the bar.
 - (NSRect)progressRect {
-    // Inset past the rounded ends so the groove does not run into them.
-    NSRect b = [self bounds];
-    return NSMakeRect(NSMinX(b) + 56, NSMinY(b) + 6, NSWidth(b) - 112, 6);
+    NSRect bounds = [self bounds];
+    NSRect times = [self timesBand];
+    CGFloat side = (NSMinX(times) - NSMinX(bounds)) + [self timeWidth] + BT_DISPLAY_AIR;
+    return NSMakeRect(NSMinX(bounds) + side, NSMinY(bounds) + BT_DISPLAY_GROOVE,
+                      NSWidth(bounds) - 2.0 * side, BT_DISPLAY_GROOVE);
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
@@ -372,21 +426,16 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     }
     NSTimeInterval shown = _lineShownAt ? -[_lineShownAt timeIntervalSinceNow] : 0.0;
 
-    NSRect titleRect = NSMakeRect(NSMinX(bounds) + 6,
-                                  NSMaxY(bounds) - BT_DISPLAY_LINE - BT_DISPLAY_TOP,
-                                  NSWidth(bounds) - 12,
-                                  BT_DISPLAY_LINE);
-    [self drawLine:[track displayTitle] inRect:titleRect attributes:titleAttrs elapsed:shown];
+    [self drawLine:[track displayTitle]
+            inRect:[self bandAtIndex:0]
+        attributes:titleAttrs
+           elapsed:shown];
 
     // The whole line is kept even when it does not fit: it scrolls rather than
     // being cut down.
     NSString *second = [NSString stringWithFormat:@"%@ - %@",
                         [track displayArtist], [track displayAlbum]];
-    NSRect secondRect = NSMakeRect(NSMinX(bounds) + 6,
-                                   NSMinY(titleRect) - BT_DISPLAY_LINE,
-                                   NSWidth(bounds) - 12,
-                                   BT_DISPLAY_LINE);
-    [self drawLine:second inRect:secondRect attributes:lineAttrs elapsed:shown];
+    [self drawLine:second inRect:[self bandAtIndex:1] attributes:lineAttrs elapsed:shown];
 
     NSTimeInterval elapsed = [player currentTime];
     NSTimeInterval duration = [player duration];
@@ -403,9 +452,6 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
                                      NSForegroundColorAttributeName: [BTStyle displayText],
                                      NSParagraphStyleAttributeName: right};
 
-    // Both readouts center on the scrub bar rather than sitting on the floor of
-    // the panel. Measuring the drawn text is the only way to line them up: a
-    // fixed rect leaves the glyphs wherever the font's metrics put them.
     NSRect groove = [self progressRect];
     NSString *leading = [BTStyle timeStringFromInterval:elapsed];
     NSString *trailing = [self trailingFor:elapsed of:duration];
@@ -413,18 +459,14 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
     _drawnTrailing = trailing;
     _drawnKnob = [self knobFor:elapsed of:duration];
 
-    CGFloat textHeight = [leading sizeWithAttributes:timeLeftAttrs].height;
-    CGFloat textY = NSMidY(groove) - textHeight / 2.0;
-
-    // Wide enough for the longest time there is rather than a width written
-    // down, since a song over an hour with the remaining time showing is eight
-    // characters and grows with the type.
-    CGFloat textWidth = ceil([@"-0:00:00" sizeWithAttributes:timeLeftAttrs].width) + 2.0;
-
-    // Held in against the scrub bar rather than out against the rounded ends.
-    [leading drawInRect:NSMakeRect(NSMinX(bounds) + 14, textY, textWidth, textHeight)
+    // One at each end of the band, each in a box wide enough for the longest
+    // time there is, so an hour-long song reads the same as a three minute one.
+    NSRect times = [self timesBand];
+    CGFloat timeWidth = [self timeWidth];
+    [leading drawInRect:NSMakeRect(NSMinX(times), NSMinY(times), timeWidth, NSHeight(times))
          withAttributes:timeLeftAttrs];
-    [trailing drawInRect:NSMakeRect(NSMaxX(bounds) - 14 - textWidth, textY, textWidth, textHeight)
+    [trailing drawInRect:NSMakeRect(NSMaxX(times) - timeWidth, NSMinY(times),
+                                    timeWidth, NSHeight(times))
           withAttributes:timeRightAttrs];
 
     // Progress groove and knob.
@@ -477,7 +519,12 @@ NSString *const BTDisplayProgressDidEndNotification = @"BTDisplayProgressDidEnd"
         [self seekToPoint:point];
         return;
     }
-    if (point.x > NSMaxX([self bounds]) - 52 && point.y < NSMinY([self bounds]) + 16) {
+    // The remaining time turns into the total when it is clicked, so the target
+    // is the box that number is drawn in.
+    NSRect times = [self timesBand];
+    NSRect trailing = NSMakeRect(NSMaxX(times) - [self timeWidth], NSMinY(times),
+                                 [self timeWidth], NSHeight(times));
+    if (NSPointInRect(point, NSInsetRect(trailing, 0, -4))) {
         _showRemaining = !_showRemaining;
         [self setNeedsDisplay:YES];
     }
