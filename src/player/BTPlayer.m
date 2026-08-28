@@ -282,6 +282,10 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
 // Runs on the render thread, so it allocates nothing and takes no locks. The
 // channels are averaged because the analyzer shows one picture, not one a side.
 - (void)analyzeBuffer:(AVAudioPCMBuffer *)buffer {
+    // Whatever arrives while nothing is playing is silence, and a transform of
+    // silence costs as much as a transform of music.
+    if (!self.playing) return;
+
     BTSpectrum *spectrum = self.spectrum;
     if (spectrum == nil || buffer == nil) return;
 
@@ -420,11 +424,19 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
     }
 }
 
+// A paused node still leaves a running engine, and a running engine keeps the
+// audio hardware asking for buffers: the graph is pulled through the equalizer
+// and the mixer, and the analyzer's tap is handed the silence, several dozen
+// times a second for as long as the pause lasts. That was a steady cost here and
+// a larger one in coreaudiod, both of it for nothing anybody can hear, so the
+// engine is stopped as well. It is paused rather than stopped, which keeps the
+// graph and its connections; only the hardware is let go.
 - (void)pause {
     // Read before pausing: once the node stops, its clock answers nothing and
     // the last reading is all there is to go on.
     [self currentTime];
     [self.node pause];
+    [self.engine pause];
     self.playing = NO;
     [self stopTick];
     self.smoothedAverage = 0;
@@ -432,9 +444,17 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
     [self postChange];
 }
 
+// The song is scheduled again from where the pause left it. Letting the hardware
+// go takes the node's clock with it, and the node counts from each scheduling,
+// so scheduling here is what makes the readout carry on from the place it
+// stopped rather than from wherever the node believes it is.
 - (void)resume {
     if (self.file == nil) return;
+    NSTimeInterval at = self.lastKnownTime;
     if (![self ensureEngineRunning]) return;
+
+    [self.node stop];
+    [self scheduleFromFrame:(AVAudioFramePosition)(at * [[self.file processingFormat] sampleRate])];
     [self.node play];
     self.playing = YES;
     [self startTick];
