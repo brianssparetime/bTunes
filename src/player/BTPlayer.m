@@ -34,6 +34,9 @@ NSString *const BTPlayerCouldNotPlayNotification = @"BTPlayerCouldNotPlay";
 @property (nonatomic, assign) AVAudioFramePosition seekFrame;
 @property (nonatomic, assign) NSTimeInterval lastKnownTime;
 @property (nonatomic, assign) BOOL playing;
+// When the hardware was last started again after stopping under a playing song,
+// so a start that keeps failing is tried once a second and not once a tick.
+@property (nonatomic, assign) NSTimeInterval lastHardwareStart;
 
 @property (nonatomic, strong) BTTrack *currentTrack;
 @property (nonatomic, strong) NSArray *queue;          // BTTrack, in list order
@@ -381,7 +384,7 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
     if (from < 0 || from >= [file length]) from = 0;
 
     [self scheduleFromFrame:from];
-    [self.node play];
+    [self playNode];
     self.playing = YES;
 
     self.orderPosition = position;
@@ -444,21 +447,71 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
     [self postChange];
 }
 
-// The song is scheduled again from where the pause left it. Letting the hardware
-// go takes the node's clock with it, and the node counts from each scheduling,
-// so scheduling here is what makes the readout carry on from the place it
-// stopped rather than from wherever the node believes it is.
 - (void)resume {
     if (self.file == nil) return;
-    NSTimeInterval at = self.lastKnownTime;
-    if (![self ensureEngineRunning]) return;
+    [self playFromTime:self.lastKnownTime];
+}
 
+// The hardware started if it is not running, and the song scheduled again from
+// the time given and set going. It is scheduled again rather than simply told
+// to play on because the hardware stopping takes the node's clock with it, and
+// the node counts from each scheduling: scheduling from the last known time is
+// what makes the readout carry on from where it was rather than from wherever
+// the node believes it is.
+//
+// Playing is recorded as the intent whether or not the hardware obliged just
+// now. If it did not, the tick will try again once it is running.
+- (void)playFromTime:(NSTimeInterval)at {
+    [self ensureEngineRunning];
     [self.node stop];
     [self scheduleFromFrame:(AVAudioFramePosition)(at * [[self.file processingFormat] sampleRate])];
-    [self.node play];
+    [self playNode];
     self.playing = YES;
     [self startTick];
     [self postChange];
+}
+
+// The node set going, if the hardware is there to be played into.
+//
+// The hardware can stop between the engine being started and the node being
+// told to play, while a device is still being rebuilt, and the node throws
+// rather than declining if it is asked to play into a stopped engine. Caught
+// here, because the tick will make another attempt once the hardware is back;
+// a song a second late is better than an exception out of a timer.
+- (BOOL)playNode {
+    if (![self.engine isRunning]) return NO;
+    @try {
+        [self.node play];
+    } @catch (NSException *exception) {
+        NSLog(@"BTunes: the sound output stopped before the song could start (%@)", [exception reason]);
+        return NO;
+    }
+    return YES;
+}
+
+// The output hardware changed shape under the engine: the television the HDMI
+// output belongs to was switched on or off, a device came or went, a sample
+// rate changed. The engine stops itself when that happens and does not start
+// itself again. Left alone, the node goes on believing it is playing, its
+// clock answers nothing, and the readout sits on the last time it was given
+// with the sound gone: a player that looks stopped and says it is playing.
+//
+// So the song is started again from where the clock last stood. The tick asks
+// rather than the engine's own notice of the change, because that notice comes
+// on a background thread while the hardware is still being rebuilt, and a start
+// made on it raced the next change and threw. The tick sees the same stopped
+// engine within a twentieth of a second, on the main thread, and tries once a
+// second until a start holds. A pause needs nothing done: resuming starts the
+// hardware anyway.
+- (void)startAgainIfTheHardwareStopped {
+    if (self.file == nil || !self.playing || [self.engine isRunning]) return;
+
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if (now - self.lastHardwareStart < 1.0) return;
+    self.lastHardwareStart = now;
+
+    NSLog(@"BTunes: the sound output stopped; starting it again at %.1fs", self.lastKnownTime);
+    [self playFromTime:self.lastKnownTime];
 }
 
 - (void)stop {
@@ -607,7 +660,7 @@ NSInteger BTWalkForPlayable(NSInteger count, NSInteger from, NSInteger step,
     [self scheduleFromFrame:(AVAudioFramePosition)(time * [[file processingFormat] sampleRate])];
     if (wasPlaying) {
         [self ensureEngineRunning];
-        [self.node play];
+        [self playNode];
     }
     [self postTime];
 }
@@ -822,6 +875,8 @@ NSInteger BTWalkForPlayable(NSInteger count, NSInteger from, NSInteger step,
 }
 
 - (void)tickFired:(NSTimer *)timer {
+    [self startAgainIfTheHardwareStopped];
+
     // Asked before the end is noticed, or a song shorter than one turn of the
     // timer would reach its end and be counted by neither.
     [self countThePlayIfItIsEarned];
