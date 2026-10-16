@@ -491,27 +491,56 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
 
 // The output hardware changed shape under the engine: the television the HDMI
 // output belongs to was switched on or off, a device came or went, a sample
-// rate changed. The engine stops itself when that happens and does not start
-// itself again. Left alone, the node goes on believing it is playing, its
-// clock answers nothing, and the readout sits on the last time it was given
-// with the sound gone: a player that looks stopped and says it is playing.
+// rate changed. Left alone, the node goes on believing it is playing, its clock
+// answers nothing, and the readout sits on the last time it was given with the
+// sound gone: a player that looks stopped and says it is playing.
 //
-// So the song is started again from where the clock last stood. The tick asks
-// rather than the engine's own notice of the change, because that notice comes
-// on a background thread while the hardware is still being rebuilt, and a start
-// made on it raced the next change and threw. The tick sees the same stopped
-// engine within a twentieth of a second, on the main thread, and tries once a
-// second until a start holds. A pause needs nothing done: resuming starts the
-// hardware anyway.
+// Two shapes of it have been seen. The engine can stop itself and not start
+// again. Or, when a song is started while the output is half built, the engine
+// goes on saying it is running while the node refuses to play into it, and
+// every song after that is refused the same way. Asking only whether the engine
+// runs misses the second, so the tick asks whether the node is actually
+// playing as well.
+//
+// The engine is thrown away and built again rather than started again. A new
+// one binds to whatever the output is now; the old one, in the second shape,
+// cannot be argued out of believing it is already running. Building a graph
+// costs a moment, and this happens only when the sound has gone anyway.
+//
+// The tick asks rather than the engine's own notice of the change, because that
+// notice comes on a background thread while the hardware is still being
+// rebuilt, and a start made on it raced the next change and threw. The tick sees
+// the same thing within a twentieth of a second, on the main thread, and tries
+// once a second until a start holds. A pause needs nothing done: resuming
+// starts the hardware anyway.
 - (void)startAgainIfTheHardwareStopped {
-    if (self.file == nil || !self.playing || [self.engine isRunning]) return;
+    if (self.file == nil || !self.playing) return;
+    if ([self.engine isRunning] && [self.node isPlaying]) return;
 
     NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
     if (now - self.lastHardwareStart < 1.0) return;
     self.lastHardwareStart = now;
 
-    NSLog(@"BTunes: the sound output stopped; starting it again at %.1fs", self.lastKnownTime);
-    [self playFromTime:self.lastKnownTime];
+    NSLog(@"BTunes: the sound output stopped; building it again at %.1fs", self.lastKnownTime);
+    NSTimeInterval at = self.lastKnownTime;
+    [self discardEngine];
+    NSError *error = nil;
+    if (![self prepareEngineForFile:self.file error:&error]) {
+        NSLog(@"BTunes: cannot start audio (%@)", [error localizedDescription]);
+        return;
+    }
+    [self playFromTime:at];
+}
+
+// The graph let go of entirely, so the next song or the next attempt builds a
+// new one bound to the output as it is now.
+- (void)discardEngine {
+    [self teardownTap];
+    [self.engine stop];
+    self.engine = nil;
+    self.node = nil;
+    self.equalizerUnit = nil;
+    self.connectedFormat = nil;
 }
 
 - (void)stop {
