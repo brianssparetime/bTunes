@@ -37,6 +37,8 @@ NSString *const BTPlayerCouldNotPlayNotification = @"BTPlayerCouldNotPlay";
 // When the hardware was last started again after stopping under a playing song,
 // so a start that keeps failing is tried once a second and not once a tick.
 @property (nonatomic, assign) NSTimeInterval lastHardwareStart;
+// How many restarts in a row have not held. Past two, the engine is replaced.
+@property (nonatomic, assign) NSInteger failedRestarts;
 
 @property (nonatomic, strong) BTTrack *currentTrack;
 @property (nonatomic, strong) NSArray *queue;          // BTTrack, in list order
@@ -502,10 +504,11 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
 // runs misses the second, so the tick asks whether the node is actually
 // playing as well.
 //
-// The engine is thrown away and built again rather than started again. A new
-// one binds to whatever the output is now; the old one, in the second shape,
-// cannot be argued out of believing it is already running. Building a graph
-// costs a moment, and this happens only when the sound has gone anyway.
+// The engine is stopped and started again first, which binds it to whatever
+// the output is now. Only if that fails twice running is a new engine built,
+// and the old one is then kept rather than freed: the system goes on sending
+// an engine's output notices of device changes after the engine is gone, and
+// one arriving at a freed engine took the whole application down.
 //
 // The tick asks rather than the engine's own notice of the change, because that
 // notice comes on a background thread while the hardware is still being
@@ -515,28 +518,43 @@ static NSString *const BTRepeatKey = @"BTRepeatMode";
 // starts the hardware anyway.
 - (void)startAgainIfTheHardwareStopped {
     if (self.file == nil || !self.playing) return;
-    if ([self.engine isRunning] && [self.node isPlaying]) return;
+    if ([self.engine isRunning] && [self.node isPlaying]) {
+        self.failedRestarts = 0;
+        return;
+    }
 
     NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
     if (now - self.lastHardwareStart < 1.0) return;
     self.lastHardwareStart = now;
 
-    NSLog(@"BTunes: the sound output stopped; building it again at %.1fs", self.lastKnownTime);
     NSTimeInterval at = self.lastKnownTime;
-    [self discardEngine];
-    NSError *error = nil;
-    if (![self prepareEngineForFile:self.file error:&error]) {
-        NSLog(@"BTunes: cannot start audio (%@)", [error localizedDescription]);
-        return;
+    if (self.failedRestarts < 2) {
+        NSLog(@"BTunes: the sound output stopped; starting it again at %.1fs", at);
+        [self.node stop];
+        [self.engine stop];
+    } else {
+        NSLog(@"BTunes: the sound output would not start; building it again at %.1fs", at);
+        [self retireEngine];
+        NSError *error = nil;
+        if (![self prepareEngineForFile:self.file error:&error]) {
+            NSLog(@"BTunes: cannot start audio (%@)", [error localizedDescription]);
+        }
     }
+    self.failedRestarts++;
     [self playFromTime:at];
 }
 
-// The graph let go of entirely, so the next song or the next attempt builds a
-// new one bound to the output as it is now.
-- (void)discardEngine {
+// The graph let go of, so the next attempt builds a new one bound to the output
+// as it is now. The old engine is stopped and kept for the life of the process,
+// never freed; see above. One is retired only after two failed restarts, so
+// they do not pile up.
+- (void)retireEngine {
+    static NSMutableArray *retired = nil;
+    if (retired == nil) retired = [NSMutableArray array];
+
     [self teardownTap];
     [self.engine stop];
+    if (self.engine) [retired addObject:self.engine];
     self.engine = nil;
     self.node = nil;
     self.equalizerUnit = nil;
