@@ -1,63 +1,61 @@
 # BTunes
 
-A music player for macOS built to look and work like iTunes 4, with a mini mode
-shaped like classic Winamp.
+BTunes is a music player for the Mac that looks and works like iTunes 4, with a Winamp-style mini mode.
 
-BTunes is not affiliated with or endorsed by Apple or the owners of Winamp.
-iTunes is a trademark of Apple Inc. and Winamp is a trademark of its owner.
-None of their code or artwork is used here.
+BTunes is not affiliated with or endorsed by Apple, or by whoever owns Winamp these days.  iTunes is a trademark of Apple Inc. and Winamp is a trademark of its owner.  None of their code or artwork is in here.
+
+**BTunes never writes to your audio files or to your iTunes library.**  It reads them, and keeps its own database somewhere else.
+
+## What this is and why it exists
+
+My iTunes library goes back about 25 years.  Ratings, play counts, date added, and a lot of playlists I built by hand.  The ratings are the part I can't replace.
+
+The Mac that plays music in my house is old enough that El Capitan is the last OS it will run.  I wanted iTunes 4 back on it: the plain gray window, the browser columns, search in the corner.  I also wanted the Winamp mini player.
+
+So I wrote my own.
+
+I wanted it to read the existing iTunes library and keep every rating and play count.  I wanted it to look like iTunes 4.  And it had to run on El Capitan.  The last one decided most of the engineering (see Requirements).
 
 ## What it does
 
-Sources sit on the left: the whole library, Recently Added, playlists, and
-folders of playlists. Recently Added holds the same songs in the order iTunes
-recorded them being added, newest first, and does not sort. Playlists are grouped
-by kind, the smart ones first, then folders, then the ones built by hand, and the
-same grouping applies inside a folder. Within a kind they are in name order, so
-dragging one chooses which folder it belongs to rather than where it sits.
-Three browser columns across the top narrow by genre, then artist, then album,
-and appear for the library only. The track list sorts by any column. Search is
-in the upper right, transport and volume in the upper left, and the readout
-between them. New playlist, shuffle and repeat sit at the bottom left.
+ - looks like iTunes 4: gray window, search top right, transport top left, readout in between, sources down the left
+ - genre / artist / album browser columns across the top of the library
+ - smart playlists, built from rules
+ - playlist folders (which iTunes 4 didn't have)
+ - imports from an iTunes library: songs, ratings, play counts, date added, and playlists
+ - mini mode: a small dark panel with a spectrum analyzer that floats over everything, including full screen apps
+ - a ten band equalizer
+ - plays audio CDs, and rips them to AAC or Apple Lossless
+ - burns a playlist to an audio CD, with CD-Text
+ - syncs playlists to an iPod
 
-Smart playlists build themselves from rules. Playlist folders group playlists,
-which iTunes 4 could not do.
+### Sources and playlists
 
-Playing starts from whatever the left pane has selected and stays inside it, so
-a playlist plays its own songs and stops at the end of them. Sorting follows
-what a source is: the library and smart playlists by track number within album,
-a playlist that is an album in the album's order, and any other playlist in the
-order it was built, because that order was chosen.
+The left pane holds the whole library, Recently Added, your playlists, and folders of playlists.  Recently Added is in the order iTunes recorded the songs being added, newest first, and doesn't sort.
 
-Mini mode is a compact dark panel with an analyzer, floating above other windows
-and over full screen spaces. Clicking its logo returns to the full window.
+Playlists are grouped by kind: smart playlists first, then folders, then the ones you built by hand.  Within a kind they're alphabetical.  Dragging a playlist only changes which folder it's in.  The same grouping applies inside a folder.
 
-An audio CD in the drive appears under the library, and its songs play from the
-disc. The button between the search field and the mini player takes it in,
-encoding as AAC, or as Apple Lossless if preferred, into a BTunes folder in
-~/Music laid out the way iTunes lays one out.
+Playing starts from the source selected on the left and stays there.  A playlist plays its own songs and stops at the end.  The library and smart playlists sort by track number within album.  A playlist that is an album plays in album order, and any other playlist plays in the order you built it.
 
-A playlist can be burned to an audio CD, playable in anything that plays CDs.
-The drive, the gap between songs, and whether to verify the disc are all chosen
-in one dialog before anything is written, and a playlist that cannot be burned
-says why rather than failing partway through.
+### Mini mode
 
-An attached iPod appears under the library with an eject mark beside its name.
-Selecting it opens a pane listing the playlists with a checkbox each, folders
-reflecting what is inside them, and the ones already on the device checked, so
-what you are looking at is the difference. Syncing copies only what is missing
-and rewrites the device's database, keeping songs it did not put there.
+Shift-Command-M, the round button at the top right, or a double click on the mini panel switches between the two.  The mini panel floats above other windows and over full screen spaces.  Clicking its logo brings the full window back.
+
+### CDs
+
+Put an audio CD in the drive and it appears under the library.  Its songs play from the disc.  The button between the search field and the mini player button rips it, as AAC or Apple Lossless, into a BTunes folder in ~/Music laid out the way iTunes lays one out.
+
+Burn Playlist to Disc (Command-B) makes an audio CD of the selected playlist.  The dialog shows how much of the disc the playlist uses, and the Burn button stays dead until the playlist fits the blank actually in the drive.  You pick the drive, the gap between songs, and whether to verify.  If a playlist can't be burned, it tells you why before it starts.  The playlist name and each song's title and artist go on as CD-Text if the drive supports it.
+
+### iPod
+
+An attached iPod shows up under the library with an eject mark next to it.  Select it and you get the playlists with a checkbox each.  The ones already on the iPod are checked.  Syncing copies the missing songs over and rewrites the iPod's database.  Songs that got onto the iPod some other way are left alone.
 
 ## Requirements
 
-The target system is macOS 10.11 El Capitan, so the app is written in
-Objective-C against APIs that system has. Supported audio formats are the ones
-its Core Audio decodes: mp3, AAC, Apple Lossless, AIFF, WAV, and CAF. FLAC and
-Ogg Vorbis are deliberately out of scope.
+The target is macOS 10.11 El Capitan, so the app is Objective-C against the APIs that system has.  The supported audio formats are the ones its Core Audio decodes: mp3, AAC, Apple Lossless, AIFF, WAV, and CAF.  FLAC and Ogg Vorbis aren't supported.  I'd have to bundle a decoder, and I haven't.
 
-There is no Xcode project and there are no interface files. The interface is
-built in code, and the build is a single clang invocation, which is the one
-thing an Xcode 8 machine and a current toolchain both understand.
+There's no Xcode project and there are no nib files.  The whole interface is built in code, and the build is one clang invocation.  Xcode 8 and a current toolchain disagree about nearly everything else, and Swift 3 is a dead end.  Objective-C and one shell script work on both.
 
 ## Building
 
@@ -67,23 +65,18 @@ thing an Xcode 8 machine and a current toolchain both understand.
 ./build.sh --run        # build, then launch
 ```
 
-The architecture follows the machine doing the build. Set `ARCH=x86_64` to force
-an Intel build.
+The architecture follows the machine doing the build.  Set `ARCH=x86_64` to force an Intel build.
 
 ```
 ./tools/check-1011.sh   # flags anything newer than the target system
 ./tools/make-logo.sh    # redraws the artwork in resources/logo
 ```
 
-Enum constants compile away and are safe; classes, methods, and named constants
-are not. Run the first before handing a build to the Xcode 8 machine.
+Run `check-1011.sh` before handing a build to the Xcode 8 machine.  Enum constants compile away, so those are fine.  Anything else newer than 10.11 (classes, methods, named constants) builds fine on a modern Mac and then crashes on the old one.
 
 ## Deploying
 
-Three machines have three jobs. One edits and commits. `BUILD` compiles, because
-it is the only one with an Xcode old enough to produce a binary the target will
-load. `TARGET` plays music, and is the only place the app is ever run: a clean
-launch on a modern system says nothing about the one it was built for.
+I use three machines for this.  One edits and commits.  `BUILD` compiles.  It's the only one with an Xcode old enough to make a binary the target will load.  `TARGET` is the old Mac that plays music, and I only ever run the app there.  (I don't run it on the modern Mac, even to check a change.  Launching fine there says nothing about 10.11.)
 
 ```
 ./tools/deploy.sh                 # copy source to BUILD, compile, install on TARGET, start it
@@ -93,100 +86,48 @@ launch on a modern system says nothing about the one it was built for.
 ./tools/deploy.sh --applications  # also install into /Applications, and start that copy
 ```
 
-`--applications` needs sudo without a password on the target. If sudo asks for
-one the copy is skipped and the command to run by hand is printed, rather than
-the script hanging on a prompt no one can answer.
+`--applications` needs passwordless sudo on the target.  If sudo asks for a password, the script skips that step and prints the command for you to run by hand.
 
-Host names live in `env.local.sh`, which is not tracked. Copy `env.example.sh`
-to it and fill in the two machines:
+Host names live in `env.local.sh`, which isn't tracked.  Copy `env.example.sh` and fill in the two machines:
 
 ```
 cp env.example.sh env.local.sh
 ```
 
-The app travels through this machine rather than straight from `BUILD` to
-`TARGET`, so those two need no credentials for each other. Installing replaces
-only the bundle. The `BTunes Library` folder beside it holds the ratings and
-play counts and is never touched. Any copy already running on `TARGET` is
-stopped first, because two of them share one database and would overwrite
-each other's play counts.
+The app goes through the editing machine on its way from `BUILD` to `TARGET`, so those two don't need credentials for each other.  Installing replaces only the bundle; the `BTunes Library` folder beside it (ratings, play counts) is left alone.  Any copy already running on `TARGET` is stopped first.  Two copies share one database, and the second one to save overwrites the first.
 
 ## Settings
 
-Preferences, at Command-comma, holds four locations, kept apart because they move
-independently, and a switch for purple mode:
+Preferences (Command-comma) has four locations, plus a switch for purple mode (the main window draws in purple instead of blue).
 
-- **Music** is the folder the audio sits in, and the root every track's path is
-  stored against. A song is recorded as its place below this folder rather than
-  in full, so pointing the setting at the same music on another machine opens
-  the same library there. A file outside the folder keeps its full path and
-  still works. Existing libraries convert themselves the first time they load.
-- **Library** is where BTunes keeps its own database: ratings, play counts, and
-  playlists. Songs are not moved when it changes.
-- **iTunes** is the library file a sync reads. It is only ever read. Point it at
-  a copy while trying something out.
-- **Detune** is the folder of free recordings standing in for locked purchases,
-  holding `detune-mapping.json` and the audio beneath it. Left empty, locked
-  songs simply stay locked. It is a second root, so a song from it records its
-  place below that folder the same way ordinary music records its place below the
-  music folder.
+- **Music** is the folder the audio sits in, and the root every track's path is stored against.  A song is stored as its path below this folder.  Point the setting at the same music on another machine and the same library opens there.  A file outside the folder keeps its full path and still works.  Existing libraries convert themselves the first time they load.
+- **Library** is where BTunes keeps its own database: ratings, play counts, playlists.  Changing it doesn't move any songs.
+- **iTunes** is the library file a sync reads.  I point mine at a copy while I'm testing.
+- **Detune** is an optional second music folder, with a `detune-mapping.json` that joins its audio to iTunes entries by persistent id.  Songs from it are recorded by their place below that folder, same as ordinary music is below the music folder.  If you don't have one, leave it empty.
 
-The database is `btunes_library.json`. Without a setting it sits in a `BTunes Library`
-folder beside the application if there is one, and otherwise in
-`~/Library/Application Support/BTunes`. `BTUNES_LIBRARY_DIR` overrides both.
+The database is `btunes_library.json`.  With no setting it lives in a `BTunes Library` folder beside the app if there is one, otherwise in `~/Library/Application Support/BTunes`.  `BTUNES_LIBRARY_DIR` overrides both.
 
-Set the Library location explicitly if the app is installed in more than one
-place. It is a per-user setting rather than a per-copy one, so once chosen,
-every copy opens the same database. Left unchosen, each copy falls back to
-whatever sits beside it, which means two of them collecting separate play
-counts against separate libraries and no sign that anything is wrong.
+**If you install the app in more than one place, set the Library location explicitly.**  It's a per-user setting, not a per-copy one, and every copy opens the database it names.  Without it, each copy uses the folder beside it, and you get two sets of play counts and no warning.
 
-Volume, the open state of each folder, the selected source and the highlighted
-track carry over between runs.
+Volume, which folders are open, the selected source, and the highlighted track all carry over between runs.
 
-At startup BTunes checks that every song is where it recorded it. Anything that
-has moved is looked for in the iTunes library by its persistent id and pointed at
-its new place, which covers a media folder being reorganised or a tag edit
-renaming the file. Whatever is genuinely gone is reported, named in the dialog
-when there are fewer than ten and listed in full in `missing-files.log` beside
-the database. Nothing is removed on the strength of it: a file missing this
-morning may be a volume that is not mounted, and the ratings attached to it
-cannot be got back while the audio usually can.
+At startup BTunes checks that every song is still where it was.  Anything that moved is looked up in the iTunes library by persistent id and pointed at its new location (this covers reorganizing a media folder, or a tag edit that renamed the file).  Anything really gone is reported, in the dialog if there are fewer than ten, and in full in `missing-files.log` next to the database.  BTunes doesn't delete anything over this; a file that's missing might just be on a volume that isn't mounted.
 
-## Using it
+## Usage:
 
-Audio files are read and never modified, and nothing on disk is ever deleted.
-BTunes never copies them either: a song is played where it already lives, so
-the music stays where it is and BTunes owns only the database.
-
-- Add to Library, Command-O, adds files or folders.
-- iTunes Sync, in the File menu and on the button at the bottom right, compares
-  the iTunes library against this one and shows what is new. Songs and playlists
-  are ticked and only what is ticked comes across. The XML is read and never
-  written. Ratings, play counts, and date-added come across; a smart playlist
-  arrives as an ordinary playlist holding the songs it resolved to, because
-  iTunes stores the rules themselves in an undocumented form. What is turned down
-  starts unticked next time.
-- Burn Playlist to Disc, Command-B, makes an audio CD of the selected playlist.
-  The dialog says how much of the disc the playlist uses and holds Burn dead
-  until it fits a blank disc actually in the drive. The playlist name and each
-  song's title and artist are written as CD-Text where the drive supports it.
-- New Playlist is Command-N, new smart playlist adds Option, new folder adds
-  Shift. Double-click a playlist to rename it.
-- Space plays or pauses. Left and right skip tracks, up and down change volume,
-  M mutes. On a folder in the source list, left and right close and open it.
+- Add to Library (Command-O) adds files or folders.
+- iTunes Sync, in the File menu and on the button at the bottom right, compares the iTunes library against this one and shows what's new.  Check the songs and playlists you want and only those come across, with their ratings, play counts, and date added.  A smart playlist arrives as a plain playlist holding the songs it resolved to.  iTunes stores the actual rules in an undocumented binary blob.  Anything you left unchecked starts unchecked next time.
+- New Playlist is Command-N.  Add Option for a smart playlist, Shift for a folder.  Double click a playlist to rename it.
+- Space plays or pauses.  Left and right skip tracks, up and down change volume, M mutes.  On a folder in the source list, left and right close and open it.
 - Command-S toggles shuffle, Command-R cycles repeat, Command-F jumps to search.
-- Shift-Command-M switches to mini mode, as does the round button at the top
-  right and a double click on the mini panel.
-- Drag songs onto a playlist to add them. Drag playlists into a folder to group
-  them.
-- Delete removes songs from a playlist, or from the library when the library is
-  selected.
-- Point at a row in the song list and a play mark appears at its near end, where
-  the speaker sits for whatever is playing. Clicking anywhere in that narrow
-  column starts the song.
+- Drag songs onto a playlist to add them.  Drag playlists into a folder to group them.
+- Delete removes songs from a playlist, or from the library when the library is selected.
+- Hover over a row in the song list and a play mark appears at the left end, where the speaker icon sits for the song that's playing.  Click anywhere in that column to start the song.
+
+## AI disclosure
+
+A lot of the code in here was written with AI.  The spec, the design, and every decision about what it does and how it looks are mine.
 
 ## License
 
-BTunes is free software under the GNU General Public License, version 3 or any
-later version. The full text is in `LICENSE`.
+GPL v3 or later.  Full text in `LICENSE`.
