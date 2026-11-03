@@ -2,6 +2,8 @@
 
 bTunes is a music player for the Mac that looks and works like iTunes circa early 2000s, with a Winamp-style mini mode.
 
+![bTunes main window](docs/main-window.png)
+
 bTunes is not affiliated with or endorsed by Apple, or by whoever owns Winamp these days.  iTunes is a trademark of Apple Inc. and Winamp is a trademark of its owner.  None of their code or artwork is in here.  This is a personal, non-commercial project.
 
 **While bTunes can import (non-protected) music and playlists from iTunes, bTunes never writes to your audio files or to your iTunes library.**
