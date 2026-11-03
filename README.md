@@ -3,10 +3,9 @@
 A music player for macOS built to look and work like iTunes 4, with a mini mode
 shaped like classic Winamp.
 
-BTunes is an independent project with no affiliation with or endorsement from
-Apple or the owners of Winamp. iTunes and Apple are trademarks of Apple Inc.
-Winamp is a trademark of its owner. Nothing here is derived from their code or
-artwork; the resemblance is deliberate and built from scratch.
+BTunes is not affiliated with or endorsed by Apple or the owners of Winamp.
+iTunes is a trademark of Apple Inc. and Winamp is a trademark of its owner.
+None of their code or artwork is used here.
 
 ## What it does
 
