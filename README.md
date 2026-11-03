@@ -3,6 +3,11 @@
 A music player for macOS built to look and work like iTunes 4, with a mini mode
 shaped like classic Winamp.
 
+BTunes is an independent project with no affiliation with or endorsement from
+Apple or the owners of Winamp. iTunes and Apple are trademarks of Apple Inc.
+Winamp is a trademark of its owner. Nothing here is derived from their code or
+artwork; the resemblance is deliberate and built from scratch.
+
 ## What it does
 
 Sources sit on the left: the whole library, Recently Added, playlists, and
@@ -181,3 +186,8 @@ the music stays where it is and BTunes owns only the database.
 - Point at a row in the song list and a play mark appears at its near end, where
   the speaker sits for whatever is playing. Clicking anywhere in that narrow
   column starts the song.
+
+## License
+
+BTunes is free software under the GNU General Public License, version 3 or any
+later version. The full text is in `LICENSE`.
